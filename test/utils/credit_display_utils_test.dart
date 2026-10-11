@@ -18,7 +18,7 @@ void main() {
       name: 'Test',
       lender: 'Bank',
       cutoffDay: 15,
-      closedStatements: const [
+      statements: const [
         CardStatement(
           id: 's1',
           creditId: 'c1',

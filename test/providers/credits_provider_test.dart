@@ -98,7 +98,7 @@ void main() {
 
     final persisted = await db.loadAllCredits();
     final persistedCard = persisted.whereType<CardCredit>().first;
-    expect(persistedCard.closedStatements, isNotEmpty);
+    expect(persistedCard.statements, isNotEmpty);
     expect(persistedCard.lastAccrualCutoff, isNot(toDateStr(anchor)));
   });
 }
