@@ -76,7 +76,15 @@ void closeCurrentCycleIfDue(CardCredit credit, [DateTime? now]) {
     if (!cutoff.isBefore(todayMidnight)) break;
 
     final dailyRate = dailyRateFrom(credit.interestRate, credit.interestRateType);
-    final balanceBeforeInterest = computeStatementTotal(open, credit.movements);
+    // El interés se cobra sobre TODO lo que todavía se debe (este ciclo +
+    // extractos cerrados sin pagar), no solo lo cargado en este ciclo —
+    // igual que un banco real cobra interés corriente sobre el saldo total
+    // revolvente, no solo sobre las compras nuevas del mes.
+    final closedUnpaidTotal = credit.statements
+        .where((s) => s.id != open.id && s.status == CardStatementStatus.closed)
+        .fold(0.0, (sum, s) => sum + computeStatementTotal(s, credit.movements));
+    final balanceBeforeInterest =
+        computeStatementTotal(open, credit.movements) + closedUnpaidTotal;
     final openedAt = _openedAtFor(credit, open);
     final daysInCycle = cutoff.difference(openedAt).inDays;
     if (balanceBeforeInterest > 0 && dailyRate > 0) {
@@ -123,20 +131,22 @@ void closeCurrentCycleIfDue(CardCredit credit, [DateTime? now]) {
 
     final nextCutoffRef = DateTime(cutoff.year, cutoff.month + 1, 1);
     final nextCutoff = cutoffDateForMonth(nextCutoffRef.year, nextCutoffRef.month, cutoffDay);
-    // openingBalance SIEMPRE 0 — sin arrastre. Cada extracto representa
-    // solo los movimientos de su propio período; la deuda total sin pagar
-    // se obtiene sumando TODOS los extractos no-'paid' (ver
-    // recomputeCardBalance/getPayableSummary), nunca arrastrando un número
-    // fijo de un extracto a otro. Arrastrar quedaba "stale" en cuanto un
-    // pago posterior (FIFO) reducía el extracto cerrado directamente,
-    // duplicando la deuda entre los dos extractos.
+    // openingBalance SIEMPRE 0 o NEGATIVO — nunca arrastra deuda positiva.
+    // Deuda sin pagar vive en extractos 'closed' independientes, sumados en
+    // recomputeCardBalance/getPayableSummary — arrastrar un positivo
+    // quedaba "stale" en cuanto un pago (FIFO) reducía el extracto cerrado
+    // directamente, duplicando la deuda. Un SALDO A FAVOR (closingTotal
+    // negativo, por sobrepago) es distinto: no corresponde a ningún
+    // extracto 'closed' sin pagar (este que cierra queda 'paid'), así que
+    // arrastrarlo una sola vez hacia el siguiente no duplica nada — solo
+    // así el sobrepago se descuenta del próximo ciclo en vez de perderse.
     final newOpen = CardStatement(
       id: '${credit.id}-${nextCutoff.microsecondsSinceEpoch}',
       creditId: credit.id,
       cutoffDate: toDateStr(nextCutoff),
       dueDate: toDateStr(dueDateForCutoff(credit, nextCutoff)),
       closingBalance: 0,
-      openingBalance: 0,
+      openingBalance: closingTotal < 0 ? closingTotal : 0,
       status: CardStatementStatus.open,
       createdAt: toDateStr(todayMidnight),
     );
@@ -243,18 +253,57 @@ InstallmentPurchase registerInstallmentPurchase(
   return purchase;
 }
 
+/// Reemplaza `credit.statements[i]` por una copia con `status` recalculado
+/// desde `computeStatementTotal` (pagado si <= 0, cerrado si > 0) y
+/// `paidAmount` igualado a la suma de los movimientos tipo pago ligados a
+/// este extracto — un campo puramente informativo ("cuánto se ha abonado"),
+/// NUNCA restado de nuevo en ningún cálculo de deuda (esa resta ya ocurre,
+/// una sola vez, dentro de `computeStatementTotal` vía los movimientos).
+/// No toca extractos con status 'open' — esos nunca se marcan pagados aquí.
+void _refreshStatementStatus(CardCredit credit, String statementId) {
+  final idx = credit.statements.indexWhere((s) => s.id == statementId);
+  if (idx < 0) return;
+  final s = credit.statements[idx];
+  if (s.status == CardStatementStatus.open) return;
+  final total = computeStatementTotal(s, credit.movements);
+  final paidSoFar = _round2(credit.movements
+      .where((m) => m.statementId == s.id && m.type == CardMovementType.payment)
+      .fold(0.0, (sum, m) => sum + m.amount.abs()));
+  credit.statements[idx] = CardStatement(
+    id: s.id,
+    creditId: s.creditId,
+    cutoffDate: s.cutoffDate,
+    dueDate: s.dueDate,
+    closingBalance: s.closingBalance,
+    openingBalance: s.openingBalance,
+    paidAmount: paidSoFar,
+    status: total <= 0 ? CardStatementStatus.paid : CardStatementStatus.closed,
+    createdAt: s.createdAt,
+  );
+}
+
 /// Aplica [amount] primero a los extractos CERRADOS sin pagar, del más
 /// antiguo al más reciente (FIFO). Lo que sobre después de cubrirlos todos
 /// se registra como pago anticipado sobre el extracto ABIERTO (puede
-/// dejarlo en negativo — un "saldo a favor" que se descuenta del próximo
-/// cierre).
+/// dejarlo en negativo — un "saldo a favor" que se arrastra al cerrar, ver
+/// [closeCurrentCycleIfDue]).
+///
+/// Antes de repartir el pago, refresca el status de TODOS los extractos no
+/// abiertos — un extracto ya saldado por una corrección manual (o que debió
+/// pasar a 'paid' tras un ajuste anterior) nunca debe quedarse 'closed'
+/// para siempre esperando un pago que no necesita.
 void registerCardPayment(
   CardCredit credit,
   double amount, {
   DateTime? refDate,
 }) {
+  for (final s in credit.statements.where((s) => s.status != CardStatementStatus.open).toList()) {
+    _refreshStatementStatus(credit, s.id);
+  }
+
   final date = toDateStr(refDate ?? DateTime.now());
-  var remaining = amount.abs();
+  var remaining = _round2(amount.abs());
+  if (remaining <= 0) return;
 
   final unpaidClosed = credit.statements
       .where((s) => s.status == CardStatementStatus.closed)
@@ -263,29 +312,16 @@ void registerCardPayment(
 
   for (final statement in unpaidClosed) {
     if (remaining <= 0) break;
-    final total = computeStatementTotal(statement, credit.movements);
-    final owed = total - statement.paidAmount;
+    final owed = computeStatementTotal(statement, credit.movements);
     if (owed <= 0) continue;
     final applied = math.min(remaining, owed);
-    final idx = credit.statements.indexWhere((s) => s.id == statement.id);
-    final newPaid = _round2(statement.paidAmount + applied);
-    credit.statements[idx] = CardStatement(
-      id: statement.id,
-      creditId: statement.creditId,
-      cutoffDate: statement.cutoffDate,
-      dueDate: statement.dueDate,
-      closingBalance: statement.closingBalance,
-      openingBalance: statement.openingBalance,
-      paidAmount: newPaid,
-      status: newPaid >= total ? CardStatementStatus.paid : CardStatementStatus.closed,
-      createdAt: statement.createdAt,
-    );
     credit.movements.add(CardMovement(
       date: date,
       type: CardMovementType.payment,
       amount: applied,
       statementId: statement.id,
     ));
+    _refreshStatementStatus(credit, statement.id);
     remaining = _round2(remaining - applied);
   }
 
@@ -308,7 +344,12 @@ void recomputeCardBalance(CardCredit credit) {
   var total = 0.0;
   for (final statement in credit.statements) {
     if (statement.status == CardStatementStatus.paid) continue;
-    total += computeStatementTotal(statement, credit.movements) - statement.paidAmount;
+    // NO restar statement.paidAmount aquí — computeStatementTotal ya
+    // descuenta cada pago vía su CardMovement (type: payment) ligado a
+    // este extracto. paidAmount es solo informativo (ver
+    // _refreshStatementStatus); restarlo de nuevo contaba cada pago dos
+    // veces.
+    total += computeStatementTotal(statement, credit.movements);
   }
   for (final purchase in credit.installmentPurchases) {
     total += purchase.remainingAmount;
@@ -343,10 +384,10 @@ PayableSummary getPayableSummary(CardCredit credit) {
       .toList()
     ..sort((a, b) => a.cutoffDate.compareTo(b.cutoffDate));
 
+  // No restar s.paidAmount — ya está reflejado en computeStatementTotal
+  // vía los CardMovement tipo payment ligados a cada extracto.
   final exigible = _round2(unpaidClosed.fold(
-      0.0,
-      (sum, s) =>
-          sum + (computeStatementTotal(s, credit.movements) - s.paidAmount)));
+      0.0, (sum, s) => sum + computeStatementTotal(s, credit.movements)));
   final dueDate = unpaidClosed.isEmpty ? null : parseDateStr(unpaidClosed.first.dueDate);
 
   final openTotal = credit.statements
@@ -372,6 +413,14 @@ void deleteCardMovement(CardCredit credit, int index) {
   final removed = credit.movements[index];
   credit.movements.removeAt(index);
 
+  if (removed.statementId != null) {
+    // Un extracto 'paid' cuyo pago se borró debe volver a 'closed' (su
+    // deuda reaparece en exigible); uno 'closed' que quedó en 0 o menos
+    // tras borrar un cargo debe pasar a 'paid'. Nunca se queda con un
+    // status desactualizado.
+    _refreshStatementStatus(credit, removed.statementId!);
+  }
+
   final purchaseId = removed.installmentPurchaseId;
   if (purchaseId != null) {
     final purchase = credit.installmentPurchases
@@ -395,13 +444,34 @@ void deleteCardMovement(CardCredit credit, int index) {
 void migrateLegacyCardData(CardCredit credit, [DateTime? refDate]) {
   final legacyMovements =
       credit.movements.where((m) => m.statementId == null).toList();
+  if (legacyMovements.isEmpty) {
+    ensureOpenStatement(credit, refDate);
+    return;
+  }
+
+  // Asegurar el abierto PRIMERO: así sabemos su cutoffDate antes de
+  // decidir dónde va cada movimiento legado.
+  final open = ensureOpenStatement(credit, refDate);
+  final openCutoff = parseDateStr(open.cutoffDate);
 
   for (final m in legacyMovements) {
     final cutoffDate = m.statementCutoff ?? cycleKeyFor(m.date, credit.cutoffDay);
-    var statement = credit.statements
-        .where((s) => s.cutoffDate == cutoffDate)
-        .firstOrNull;
-    statement ??= _createLegacyStatement(credit, cutoffDate);
+    final inferredCutoff = parseDateStr(cutoffDate);
+    // Un corte igual o posterior al del extracto abierto actual pertenece
+    // al ciclo abierto — nunca a uno 'closed' nuevo. Sin esto, cuotas
+    // legadas de v1 con `statementCutoff` futuro (pre-facturadas de
+    // antemano, como hacía buildInstallmentMovements) quedaban marcadas
+    // 'closed' permanentemente — contadas como deuda ya exigible en vez de
+    // pendiente de facturar.
+    CardStatement statement;
+    if (!inferredCutoff.isBefore(openCutoff)) {
+      statement = open;
+    } else {
+      statement = credit.statements
+              .where((s) => s.cutoffDate == cutoffDate)
+              .firstOrNull ??
+          _createLegacyStatement(credit, cutoffDate);
+    }
     final idx = credit.movements.indexOf(m);
     credit.movements[idx] = CardMovement(
       date: m.date,
@@ -420,8 +490,6 @@ void migrateLegacyCardData(CardCredit credit, [DateTime? refDate]) {
       statementId: statement.id,
     );
   }
-
-  ensureOpenStatement(credit, refDate);
 }
 
 CardStatement _createLegacyStatement(CardCredit credit, String cutoffDate) {

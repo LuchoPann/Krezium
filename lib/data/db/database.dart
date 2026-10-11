@@ -169,7 +169,12 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(
                 cardMovements, cardMovements.installmentPurchaseId);
           }
-          if (from < 17) {
+          if (from >= 15 && from < 17) {
+            // Solo para quien ya tenía la tabla cardStatements (creada en
+            // el bloque from<15 de arriba) SIN esta columna. Alguien que
+            // viene de from<15 la crea de una vez con el schema actual
+            // (que ya incluye openingBalance) en ese mismo bloque — volver
+            // a agregarla aquí tiraría "duplicate column name".
             await m.addColumn(cardStatements, cardStatements.openingBalance);
           }
         },

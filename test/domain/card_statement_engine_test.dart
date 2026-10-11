@@ -199,6 +199,129 @@ void main() {
     });
   });
 
+  group('registerCardPayment — no double-subtracting (C2 regression)', () {
+    test('a partial payment reduces the live total by exactly the amount '
+        'paid, not twice — regression for paidAmount being subtracted both '
+        'via the payment movement AND again as a separate field', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-12', type: CardMovementType.charge, amount: 100000, statementId: open.id));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+      final closed = credit.statements.firstWhere((s) => s.status == CardStatementStatus.closed);
+
+      registerCardPayment(credit, 40000, refDate: DateTime(2026, 1, 20));
+
+      final stillClosed = credit.statements.firstWhere((s) => s.id == closed.id);
+      expect(computeStatementTotal(stillClosed, credit.movements), 60000);
+      recomputeCardBalance(credit);
+      expect(credit.currentBalance, 60000);
+      expect(getPayableSummary(credit).exigible, 60000);
+    });
+
+    test('two sequential partial payments reduce correctly and the second '
+        'one that completes the statement marks it paid with the exact '
+        'remaining amount, not an inflated one', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-12', type: CardMovementType.charge, amount: 100000, statementId: open.id));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+
+      registerCardPayment(credit, 40000, refDate: DateTime(2026, 1, 20));
+      registerCardPayment(credit, 60000, refDate: DateTime(2026, 1, 25));
+
+      final closed = credit.statements.firstWhere((s) => s.status != CardStatementStatus.open);
+      expect(closed.status, CardStatementStatus.paid);
+      recomputeCardBalance(credit);
+      expect(credit.currentBalance, 0);
+    });
+  });
+
+  group('status is re-derived live, never stuck (C3/I4 regression)', () {
+    test('a statement that would be skipped by FIFO because it is already '
+        'settled (owed <= 0) gets its status refreshed to paid instead of '
+        'staying closed forever', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-12', type: CardMovementType.charge, amount: 50000, statementId: open.id));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+      final closed = credit.statements.firstWhere((s) => s.status == CardStatementStatus.closed);
+      // Paga manualmente de más vía movimiento directo (simula una
+      // corrección manual) para dejarlo "ya saldado" sin pasar por
+      // registerCardPayment.
+      credit.movements.add(CardMovement(date: '2026-01-13', type: CardMovementType.payment, amount: 50000, statementId: closed.id));
+
+      // Un pago nuevo cualquiera debe refrescar el estado de TODOS los
+      // extractos cerrados, incluso los que no reciben el abono.
+      registerCardPayment(credit, 0.01, refDate: DateTime(2026, 1, 20));
+
+      final refreshed = credit.statements.firstWhere((s) => s.id == closed.id);
+      expect(refreshed.status, CardStatementStatus.paid);
+    });
+
+    test('deleting a payment from a paid statement brings its debt back '
+        'into exigible instead of disappearing forever', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-12', type: CardMovementType.charge, amount: 100000, statementId: open.id));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+      registerCardPayment(credit, 100000, refDate: DateTime(2026, 1, 20));
+      expect(getPayableSummary(credit).exigible, 0);
+
+      // El índice del movimiento de pago recién agregado.
+      final paymentIndex = credit.movements.indexWhere((m) => m.type == CardMovementType.payment);
+      deleteCardMovement(credit, paymentIndex);
+      recomputeCardBalance(credit);
+
+      expect(getPayableSummary(credit).exigible, 100000);
+    });
+  });
+
+  group('overpayment carries forward as a credit (I1 regression)', () {
+    test('an overpayment on the open statement survives the next close as '
+        'a negative openingBalance, reducing the next cycle\'s total — not '
+        'lost when the overpaid statement closes as paid', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-11', type: CardMovementType.charge, amount: 100000, statementId: open.id));
+      registerCardPayment(credit, 150000, refDate: DateTime(2026, 1, 12));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+
+      final newOpen = credit.statements.firstWhere((s) => s.status == CardStatementStatus.open);
+      expect(newOpen.openingBalance, -50000);
+
+      registerCardCharge(credit, 80000, refDate: DateTime(2026, 1, 20));
+      expect(computeStatementTotal(newOpen, credit.movements), 30000);
+    });
+  });
+
+  group('interest accrues on the full outstanding balance, not just the '
+      'open cycle (I2 regression)', () {
+    test('a cycle that closes with NO new charges of its own still accrues '
+        'interest, based on the still-unpaid closed statement from before '
+        '— not zero, which is what the open cycle\'s own (empty) total '
+        'would otherwise suggest', () {
+      final credit = CardCredit(
+        id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15,
+        interestRate: 36.5, // tasa diaria efectiva, ver interest_rate.dart
+      );
+      final open1 = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-12', type: CardMovementType.charge, amount: 100000, statementId: open1.id));
+      // Cierra el primer ciclo (genera su propio interés sobre los 100000
+      // recién cargados — esperado, no es lo que probamos aquí).
+      closeCurrentCycleIfDue(credit, DateTime(2026, 2, 16));
+      final movementsBeforeSecondClose = credit.movements.length;
+
+      // El segundo ciclo cierra SIN ningún cargo nuevo propio — su propio
+      // computeStatementTotal sería 0 si no se suma la deuda ya cerrada.
+      closeCurrentCycleIfDue(credit, DateTime(2026, 3, 16));
+
+      final newMovements = credit.movements.skip(movementsBeforeSecondClose).toList();
+      final secondCloseInterest = newMovements.where((m) => m.type == CardMovementType.interest).toList();
+      expect(secondCloseInterest, isNotEmpty);
+      expect(secondCloseInterest.first.amount, greaterThan(0));
+    });
+  });
+
   group('registerCardPayment', () {
     CardCredit cardWithOneClosedStatement(double closingTotal) {
       final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);

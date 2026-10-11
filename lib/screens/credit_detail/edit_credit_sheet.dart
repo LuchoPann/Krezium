@@ -300,6 +300,7 @@ class _EditCreditSheetState extends ConsumerState<EditCreditSheet> {
         // right now cannot be prorated mid-cycle — it will accrue in full
         // under whichever rate is current when its cutoff is reached.
         closeCurrentCycleIfDue(credit);
+        recomputeCardBalance(credit);
       }
       credit.interestRate = newCardRate;
       credit.interestRateType = _interestRateType;

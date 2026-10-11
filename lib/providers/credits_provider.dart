@@ -144,6 +144,13 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
     _clearInterestUnknownIfRateKnown(credit);
     if (credit is CardCredit) {
       ensureOpenStatement(credit);
+      // Si la tarjeta se crea con una fecha de inicio en el pasado (más
+      // allá del corte actual), el extracto recién abierto ya está
+      // vencido — cerrarlo de inmediato en vez de esperar al próximo
+      // arranque, para que el saldo inicial no quede atrapado en un
+      // ciclo "abierto" que en realidad ya cerró.
+      closeCurrentCycleIfDue(credit);
+      recomputeCardBalance(credit);
     }
     await _db.upsertCredit(credit);
     // Agrega el crédito nuevo al estado en memoria sin releer toda la DB.
@@ -239,6 +246,7 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
     final credits = state.value ?? [];
     final credit = credits.whereType<CardCredit>().where((c) => c.id == creditId).firstOrNull;
     if (credit == null) return;
+    final open = ensureOpenStatement(credit);
     final movement = CardMovement(
       date: date,
       type: CardMovementType.advance,
@@ -250,9 +258,10 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
       advanceCommission: commission,
       advanceFirstPaymentDate: firstPaymentDate,
       advanceDestination: destination,
+      statementId: open.id,
     );
-    credit.currentBalance = credit.currentBalance + amount.abs();
     credit.movements.add(movement);
+    recomputeCardBalance(credit);
     await _db.upsertCredit(credit);
     _notifyInPlace();
   }
