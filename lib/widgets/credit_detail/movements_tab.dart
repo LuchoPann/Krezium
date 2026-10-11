@@ -16,14 +16,20 @@ import '../kredit_bottom_dialogs.dart';
 /// assigned to a specific future extracto when registered; every other
 /// movement groups by [cycleKeyFor] (date + cutoffDay) — the single,
 /// consistent day-of-corte criterion shared with `accrueCardCredit`.
+///
+/// Keys come back sorted by cutoff date, most-recent/furthest-out first —
+/// NOT in insertion order. Without this, a purchase in several cuotas
+/// (whose movements can land in any order inside `credit.movements`)
+/// produced extracto groups in an effectively random order on screen.
 Map<String, List<CardMovement>> groupMovementsByCycle(
     List<CardMovement> movements, int cutoffDay) {
-  final groups = <String, List<CardMovement>>{};
+  final unordered = <String, List<CardMovement>>{};
   for (final m in movements) {
     final key = m.statementCutoff ?? cycleKeyFor(m.date, cutoffDay);
-    groups.putIfAbsent(key, () => []).add(m);
+    unordered.putIfAbsent(key, () => []).add(m);
   }
-  return groups;
+  final sortedKeys = unordered.keys.toList()..sort((a, b) => b.compareTo(a));
+  return {for (final k in sortedKeys) k: unordered[k]!};
 }
 
 /// Movement history grouped by billing cycle (extracto) — each group shows
@@ -41,6 +47,12 @@ class MovementsTab extends ConsumerWidget {
 
     // Group by billing cycle (extracto closing date), most-recent-first.
     final groups = groupMovementsByCycle(movements, credit.cutoffDay);
+    // Expand the extracto that's currently open/vigente by default — with
+    // cuotas creating future extracto groups ordered ahead of it, index 0
+    // is often a future cuota, not "now".
+    final currentCycleKey = cycleKeyFor(toDateStr(DateTime.now()), credit.cutoffDay);
+    final groupKeys = groups.keys.toList();
+    final defaultExpandedIndex = groupKeys.indexOf(currentCycleKey);
 
     return Column(
       children: [
@@ -133,7 +145,8 @@ class MovementsTab extends ConsumerWidget {
                         movements: groups.values.elementAt(i),
                         allMovements: credit.movements,
                         collapsible: groups.length > 1,
-                        initiallyExpanded: i == 0,
+                        initiallyExpanded:
+                            i == (defaultExpandedIndex >= 0 ? defaultExpandedIndex : 0),
                       ),
                   ],
                 ),

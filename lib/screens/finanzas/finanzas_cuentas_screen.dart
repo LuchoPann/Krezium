@@ -979,7 +979,7 @@ class _NuevoRegistroSheet extends ConsumerStatefulWidget {
 
 class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
   final _nombreController = TextEditingController();
-  final _saldoController = TextEditingController(text: '0');
+  final _saldoController = TextEditingController();
   Color _color = const Color(0xFFEF4444);
   bool _guardando = false;
 
@@ -1050,6 +1050,7 @@ class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
               labelText: 'Saldo inicial (opcional)',
+              hintText: '0',
               prefixText: '\$ ',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.tile)),
             ),
