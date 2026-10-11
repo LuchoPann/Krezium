@@ -4230,6 +4230,18 @@ class $CardStatementsTable extends CardStatements
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _openingBalanceMeta = const VerificationMeta(
+    'openingBalance',
+  );
+  @override
+  late final GeneratedColumn<double> openingBalance = GeneratedColumn<double>(
+    'opening_balance',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _paidAmountMeta = const VerificationMeta(
     'paidAmount',
   );
@@ -4270,6 +4282,7 @@ class $CardStatementsTable extends CardStatements
     cutoffDate,
     dueDate,
     closingBalance,
+    openingBalance,
     paidAmount,
     status,
     createdAt,
@@ -4326,6 +4339,15 @@ class $CardStatementsTable extends CardStatements
     } else if (isInserting) {
       context.missing(_closingBalanceMeta);
     }
+    if (data.containsKey('opening_balance')) {
+      context.handle(
+        _openingBalanceMeta,
+        openingBalance.isAcceptableOrUnknown(
+          data['opening_balance']!,
+          _openingBalanceMeta,
+        ),
+      );
+    }
     if (data.containsKey('paid_amount')) {
       context.handle(
         _paidAmountMeta,
@@ -4375,6 +4397,10 @@ class $CardStatementsTable extends CardStatements
         DriftSqlType.double,
         data['${effectivePrefix}closing_balance'],
       )!,
+      openingBalance: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}opening_balance'],
+      )!,
       paidAmount: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}paid_amount'],
@@ -4403,6 +4429,7 @@ class CardStatementRow extends DataClass
   final String cutoffDate;
   final String dueDate;
   final double closingBalance;
+  final double openingBalance;
   final double paidAmount;
   final String status;
   final String createdAt;
@@ -4412,6 +4439,7 @@ class CardStatementRow extends DataClass
     required this.cutoffDate,
     required this.dueDate,
     required this.closingBalance,
+    required this.openingBalance,
     required this.paidAmount,
     required this.status,
     required this.createdAt,
@@ -4424,6 +4452,7 @@ class CardStatementRow extends DataClass
     map['cutoff_date'] = Variable<String>(cutoffDate);
     map['due_date'] = Variable<String>(dueDate);
     map['closing_balance'] = Variable<double>(closingBalance);
+    map['opening_balance'] = Variable<double>(openingBalance);
     map['paid_amount'] = Variable<double>(paidAmount);
     map['status'] = Variable<String>(status);
     map['created_at'] = Variable<String>(createdAt);
@@ -4437,6 +4466,7 @@ class CardStatementRow extends DataClass
       cutoffDate: Value(cutoffDate),
       dueDate: Value(dueDate),
       closingBalance: Value(closingBalance),
+      openingBalance: Value(openingBalance),
       paidAmount: Value(paidAmount),
       status: Value(status),
       createdAt: Value(createdAt),
@@ -4454,6 +4484,7 @@ class CardStatementRow extends DataClass
       cutoffDate: serializer.fromJson<String>(json['cutoffDate']),
       dueDate: serializer.fromJson<String>(json['dueDate']),
       closingBalance: serializer.fromJson<double>(json['closingBalance']),
+      openingBalance: serializer.fromJson<double>(json['openingBalance']),
       paidAmount: serializer.fromJson<double>(json['paidAmount']),
       status: serializer.fromJson<String>(json['status']),
       createdAt: serializer.fromJson<String>(json['createdAt']),
@@ -4468,6 +4499,7 @@ class CardStatementRow extends DataClass
       'cutoffDate': serializer.toJson<String>(cutoffDate),
       'dueDate': serializer.toJson<String>(dueDate),
       'closingBalance': serializer.toJson<double>(closingBalance),
+      'openingBalance': serializer.toJson<double>(openingBalance),
       'paidAmount': serializer.toJson<double>(paidAmount),
       'status': serializer.toJson<String>(status),
       'createdAt': serializer.toJson<String>(createdAt),
@@ -4480,6 +4512,7 @@ class CardStatementRow extends DataClass
     String? cutoffDate,
     String? dueDate,
     double? closingBalance,
+    double? openingBalance,
     double? paidAmount,
     String? status,
     String? createdAt,
@@ -4489,6 +4522,7 @@ class CardStatementRow extends DataClass
     cutoffDate: cutoffDate ?? this.cutoffDate,
     dueDate: dueDate ?? this.dueDate,
     closingBalance: closingBalance ?? this.closingBalance,
+    openingBalance: openingBalance ?? this.openingBalance,
     paidAmount: paidAmount ?? this.paidAmount,
     status: status ?? this.status,
     createdAt: createdAt ?? this.createdAt,
@@ -4504,6 +4538,9 @@ class CardStatementRow extends DataClass
       closingBalance: data.closingBalance.present
           ? data.closingBalance.value
           : this.closingBalance,
+      openingBalance: data.openingBalance.present
+          ? data.openingBalance.value
+          : this.openingBalance,
       paidAmount: data.paidAmount.present
           ? data.paidAmount.value
           : this.paidAmount,
@@ -4520,6 +4557,7 @@ class CardStatementRow extends DataClass
           ..write('cutoffDate: $cutoffDate, ')
           ..write('dueDate: $dueDate, ')
           ..write('closingBalance: $closingBalance, ')
+          ..write('openingBalance: $openingBalance, ')
           ..write('paidAmount: $paidAmount, ')
           ..write('status: $status, ')
           ..write('createdAt: $createdAt')
@@ -4534,6 +4572,7 @@ class CardStatementRow extends DataClass
     cutoffDate,
     dueDate,
     closingBalance,
+    openingBalance,
     paidAmount,
     status,
     createdAt,
@@ -4547,6 +4586,7 @@ class CardStatementRow extends DataClass
           other.cutoffDate == this.cutoffDate &&
           other.dueDate == this.dueDate &&
           other.closingBalance == this.closingBalance &&
+          other.openingBalance == this.openingBalance &&
           other.paidAmount == this.paidAmount &&
           other.status == this.status &&
           other.createdAt == this.createdAt);
@@ -4558,6 +4598,7 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
   final Value<String> cutoffDate;
   final Value<String> dueDate;
   final Value<double> closingBalance;
+  final Value<double> openingBalance;
   final Value<double> paidAmount;
   final Value<String> status;
   final Value<String> createdAt;
@@ -4568,6 +4609,7 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
     this.cutoffDate = const Value.absent(),
     this.dueDate = const Value.absent(),
     this.closingBalance = const Value.absent(),
+    this.openingBalance = const Value.absent(),
     this.paidAmount = const Value.absent(),
     this.status = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -4579,6 +4621,7 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
     required String cutoffDate,
     required String dueDate,
     required double closingBalance,
+    this.openingBalance = const Value.absent(),
     this.paidAmount = const Value.absent(),
     this.status = const Value.absent(),
     required String createdAt,
@@ -4595,6 +4638,7 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
     Expression<String>? cutoffDate,
     Expression<String>? dueDate,
     Expression<double>? closingBalance,
+    Expression<double>? openingBalance,
     Expression<double>? paidAmount,
     Expression<String>? status,
     Expression<String>? createdAt,
@@ -4606,6 +4650,7 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
       if (cutoffDate != null) 'cutoff_date': cutoffDate,
       if (dueDate != null) 'due_date': dueDate,
       if (closingBalance != null) 'closing_balance': closingBalance,
+      if (openingBalance != null) 'opening_balance': openingBalance,
       if (paidAmount != null) 'paid_amount': paidAmount,
       if (status != null) 'status': status,
       if (createdAt != null) 'created_at': createdAt,
@@ -4619,6 +4664,7 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
     Value<String>? cutoffDate,
     Value<String>? dueDate,
     Value<double>? closingBalance,
+    Value<double>? openingBalance,
     Value<double>? paidAmount,
     Value<String>? status,
     Value<String>? createdAt,
@@ -4630,6 +4676,7 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
       cutoffDate: cutoffDate ?? this.cutoffDate,
       dueDate: dueDate ?? this.dueDate,
       closingBalance: closingBalance ?? this.closingBalance,
+      openingBalance: openingBalance ?? this.openingBalance,
       paidAmount: paidAmount ?? this.paidAmount,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
@@ -4655,6 +4702,9 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
     if (closingBalance.present) {
       map['closing_balance'] = Variable<double>(closingBalance.value);
     }
+    if (openingBalance.present) {
+      map['opening_balance'] = Variable<double>(openingBalance.value);
+    }
     if (paidAmount.present) {
       map['paid_amount'] = Variable<double>(paidAmount.value);
     }
@@ -4678,6 +4728,7 @@ class CardStatementsCompanion extends UpdateCompanion<CardStatementRow> {
           ..write('cutoffDate: $cutoffDate, ')
           ..write('dueDate: $dueDate, ')
           ..write('closingBalance: $closingBalance, ')
+          ..write('openingBalance: $openingBalance, ')
           ..write('paidAmount: $paidAmount, ')
           ..write('status: $status, ')
           ..write('createdAt: $createdAt, ')
@@ -12212,6 +12263,7 @@ typedef $$CardStatementsTableCreateCompanionBuilder =
       required String cutoffDate,
       required String dueDate,
       required double closingBalance,
+      Value<double> openingBalance,
       Value<double> paidAmount,
       Value<String> status,
       required String createdAt,
@@ -12224,6 +12276,7 @@ typedef $$CardStatementsTableUpdateCompanionBuilder =
       Value<String> cutoffDate,
       Value<String> dueDate,
       Value<double> closingBalance,
+      Value<double> openingBalance,
       Value<double> paidAmount,
       Value<String> status,
       Value<String> createdAt,
@@ -12283,6 +12336,11 @@ class $$CardStatementsTableFilterComposer
 
   ColumnFilters<double> get closingBalance => $composableBuilder(
     column: $table.closingBalance,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get openingBalance => $composableBuilder(
+    column: $table.openingBalance,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12354,6 +12412,11 @@ class $$CardStatementsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get openingBalance => $composableBuilder(
+    column: $table.openingBalance,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get paidAmount => $composableBuilder(
     column: $table.paidAmount,
     builder: (column) => ColumnOrderings(column),
@@ -12415,6 +12478,11 @@ class $$CardStatementsTableAnnotationComposer
 
   GeneratedColumn<double> get closingBalance => $composableBuilder(
     column: $table.closingBalance,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get openingBalance => $composableBuilder(
+    column: $table.openingBalance,
     builder: (column) => column,
   );
 
@@ -12488,6 +12556,7 @@ class $$CardStatementsTableTableManager
                 Value<String> cutoffDate = const Value.absent(),
                 Value<String> dueDate = const Value.absent(),
                 Value<double> closingBalance = const Value.absent(),
+                Value<double> openingBalance = const Value.absent(),
                 Value<double> paidAmount = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<String> createdAt = const Value.absent(),
@@ -12498,6 +12567,7 @@ class $$CardStatementsTableTableManager
                 cutoffDate: cutoffDate,
                 dueDate: dueDate,
                 closingBalance: closingBalance,
+                openingBalance: openingBalance,
                 paidAmount: paidAmount,
                 status: status,
                 createdAt: createdAt,
@@ -12510,6 +12580,7 @@ class $$CardStatementsTableTableManager
                 required String cutoffDate,
                 required String dueDate,
                 required double closingBalance,
+                Value<double> openingBalance = const Value.absent(),
                 Value<double> paidAmount = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 required String createdAt,
@@ -12520,6 +12591,7 @@ class $$CardStatementsTableTableManager
                 cutoffDate: cutoffDate,
                 dueDate: dueDate,
                 closingBalance: closingBalance,
+                openingBalance: openingBalance,
                 paidAmount: paidAmount,
                 status: status,
                 createdAt: createdAt,

@@ -20,7 +20,13 @@ class CardStatement {
   final String dueDate;
 
   /// Saldo total a pagar de este extracto, fijado al momento de cerrar.
+  /// Caché de solo-escritura — el valor autoritativo siempre se calcula
+  /// con `computeStatementTotal` en card_statement_engine.dart.
   final double closingBalance;
+
+  /// Saldo sin pagar del extracto anterior al momento en que ESTE abrió.
+  /// Fijo una vez creado, nunca se recalcula retroactivamente.
+  final double openingBalance;
 
   /// Monto abonado a este extracto específico.
   final double paidAmount;
@@ -37,6 +43,7 @@ class CardStatement {
     required this.cutoffDate,
     required this.dueDate,
     required this.closingBalance,
+    this.openingBalance = 0,
     this.paidAmount = 0,
     this.status = CardStatementStatus.closed,
     required this.createdAt,
@@ -48,6 +55,7 @@ class CardStatement {
         'cutoffDate': cutoffDate,
         'dueDate': dueDate,
         'closingBalance': closingBalance,
+        'openingBalance': openingBalance,
         'paidAmount': paidAmount,
         'status': status,
         'createdAt': createdAt,
@@ -59,6 +67,7 @@ class CardStatement {
         cutoffDate: json['cutoffDate'] as String,
         dueDate: json['dueDate'] as String,
         closingBalance: (json['closingBalance'] as num).toDouble(),
+        openingBalance: (json['openingBalance'] as num?)?.toDouble() ?? 0,
         paidAmount: (json['paidAmount'] as num?)?.toDouble() ?? 0,
         status: json['status'] as String? ?? CardStatementStatus.closed,
         createdAt: json['createdAt'] as String,

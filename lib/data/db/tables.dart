@@ -220,6 +220,7 @@ class CardStatements extends Table {
   TextColumn get cutoffDate => text()(); // YYYY-MM-DD
   TextColumn get dueDate => text()(); // YYYY-MM-DD
   RealColumn get closingBalance => real()();
+  RealColumn get openingBalance => real().withDefault(const Constant(0))();
   RealColumn get paidAmount => real().withDefault(const Constant(0))();
   TextColumn get status => text().withDefault(const Constant('closed'))();
   TextColumn get createdAt => text()(); // YYYY-MM-DD

@@ -70,7 +70,7 @@ class CardCycleDates {
 /// `paymentDueOffsetDays` fallback). Factored out of [getCardCycleDates] so
 /// the cycle-closing logic in `accrueCardCredit` can compute the exact same
 /// due date for a specific (not necessarily "today") cutoff.
-DateTime _dueDateForCutoff(CardCredit credit, DateTime cutoff) {
+DateTime dueDateForCutoff(CardCredit credit, DateTime cutoff) {
   if (credit.paymentDueDay > 0) {
     // paymentDueDay es un día del mes: el vencimiento cae ese día en el mes
     // siguiente al corte (ej: corte sep 15 → pago oct 5).
@@ -108,7 +108,7 @@ CardCycleDates getCardCycleDates(CardCredit credit, [DateTime? refDate]) {
   return CardCycleDates(
     lastCutoff: lastCutoff,
     nextCutoff: nextCutoff,
-    dueDate: _dueDateForCutoff(credit, lastCutoff),
+    dueDate: dueDateForCutoff(credit, lastCutoff),
   );
 }
 
@@ -219,9 +219,9 @@ void accrueCardCredit(CardCredit credit, [DateTime? now]) {
           ? -m.amount.abs()
           : m.amount.abs();
     }
-    final openingBalance = credit.closedStatements.isNotEmpty
-        ? (credit.closedStatements.last.closingBalance -
-            credit.closedStatements.last.paidAmount)
+    final openingBalance = credit.statements.isNotEmpty
+        ? (credit.statements.last.closingBalance -
+            credit.statements.last.paidAmount)
         : seedBalance;
     // Defends against lastAccrualCutoff ever pointing at a cutoffDate that
     // already has a statement (e.g. an inconsistent restored backup) —
@@ -229,13 +229,13 @@ void accrueCardCredit(CardCredit credit, [DateTime? now]) {
     // throw a UNIQUE constraint violation on the next upsertCredit and lose
     // the whole save, not just this one statement.
     final alreadyExists =
-        credit.closedStatements.any((s) => s.cutoffDate == cycleEndStr);
+        credit.statements.any((s) => s.cutoffDate == cycleEndStr);
     if (!alreadyExists) {
-      credit.closedStatements.add(CardStatement(
+      credit.statements.add(CardStatement(
         id: '${credit.id}-$cycleEndStr',
         creditId: credit.id,
         cutoffDate: cycleEndStr,
-        dueDate: toDateStr(_dueDateForCutoff(credit, next)),
+        dueDate: toDateStr(dueDateForCutoff(credit, next)),
         closingBalance: _round2(openingBalance + netAmount),
         createdAt: toDateStr(todayMidnight),
       ));
@@ -317,10 +317,10 @@ void registerCardMovement(
 /// covered. No-op when there are no closed statements yet (every charge is
 /// still in the open cycle — nothing to pay down yet).
 void _applyPaymentToLatestStatement(CardCredit credit, double amount) {
-  if (credit.closedStatements.isEmpty) return;
-  final latest = credit.closedStatements.last;
+  if (credit.statements.isEmpty) return;
+  final latest = credit.statements.last;
   final newPaid = math.min(latest.closingBalance, latest.paidAmount + amount);
-  credit.closedStatements[credit.closedStatements.length - 1] = CardStatement(
+  credit.statements[credit.statements.length - 1] = CardStatement(
     id: latest.id,
     creditId: latest.creditId,
     cutoffDate: latest.cutoffDate,
@@ -461,10 +461,10 @@ PayableSummary getPayableSummary(CardCredit credit) {
   // (each statement's closingBalance already carries the prior unpaid
   // amount via `openingBalance` in accrueCardCredit) — summing every unpaid
   // statement would double-count debt that already rolled into this one.
-  if (credit.closedStatements.isEmpty) {
+  if (credit.statements.isEmpty) {
     return const PayableSummary(exigible: 0, pendienteFacturar: 0);
   }
-  final latest = credit.closedStatements.last;
+  final latest = credit.statements.last;
   if (latest.status == CardStatementStatus.paid) {
     return PayableSummary(
       exigible: 0,

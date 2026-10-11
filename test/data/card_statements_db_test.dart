@@ -16,7 +16,7 @@ void main() {
     await db.close();
   });
 
-  test('round-trips a card credit with closedStatements and installment '
+  test('round-trips a card credit with statements and installment '
       'movement fields', () async {
     final card = CardCredit(
       id: 'card1',
@@ -24,7 +24,7 @@ void main() {
       lender: 'Bancolombia',
       cutoffDay: 15,
       currentBalance: 150000,
-      closedStatements: const [
+      statements: const [
         CardStatement(
           id: 'card1-2026-01-15',
           creditId: 'card1',
@@ -53,19 +53,19 @@ void main() {
 
     expect(all, hasLength(1));
     final loaded = all.first as CardCredit;
-    expect(loaded.closedStatements, hasLength(1));
-    expect(loaded.closedStatements.first.closingBalance, 100000);
+    expect(loaded.statements, hasLength(1));
+    expect(loaded.statements.first.closingBalance, 100000);
     expect(loaded.movements, hasLength(1));
     expect(loaded.movements.first.installmentIndex, 1);
     expect(loaded.movements.first.statementCutoff, '2026-01-15');
   });
 
-  test('clearAllData removes closedStatements', () async {
+  test('clearAllData removes statements', () async {
     final card = CardCredit(
       id: 'card1',
       name: 'Visa',
       lender: 'Bancolombia',
-      closedStatements: const [
+      statements: const [
         CardStatement(
           id: 'card1-2026-01-15',
           creditId: 'card1',
