@@ -145,7 +145,7 @@ void main() {
 
       expect(result.credits, hasLength(1));
       final card = result.credits.first as CardCredit;
-      expect(card.closedStatements, isEmpty);
+      expect(card.statements, isEmpty);
     });
   });
 }

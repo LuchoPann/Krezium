@@ -537,7 +537,7 @@ void main() {
         name: 'Test',
         lender: 'Bank',
         currentBalance: 180000,
-        closedStatements: const [
+        statements: const [
           CardStatement(
             id: 's1',
             creditId: 'c1',
@@ -564,7 +564,7 @@ void main() {
         name: 'Test',
         lender: 'Bank',
         currentBalance: 80000,
-        closedStatements: const [
+        statements: const [
           CardStatement(
             id: 's1',
             creditId: 'c1',
@@ -594,7 +594,7 @@ void main() {
         name: 'Test',
         lender: 'Bank',
         currentBalance: 150000,
-        closedStatements: const [
+        statements: const [
           CardStatement(
             id: 's1',
             creditId: 'c1',
@@ -628,7 +628,7 @@ void main() {
         name: 'Test',
         lender: 'Bank',
         currentBalance: 50000,
-        closedStatements: const [
+        statements: const [
           CardStatement(
             id: 's1',
             creditId: 'c1',
@@ -655,7 +655,7 @@ void main() {
         name: 'Test',
         lender: 'Bank',
         currentBalance: 100000,
-        closedStatements: [
+        statements: [
           const CardStatement(
             id: 's1',
             creditId: 'c1',
@@ -670,8 +670,8 @@ void main() {
       registerCardMovement(credit, CardMovementType.payment, 100000);
 
       expect(credit.currentBalance, 0);
-      expect(credit.closedStatements.first.paidAmount, 100000);
-      expect(credit.closedStatements.first.status, CardStatementStatus.paid);
+      expect(credit.statements.first.paidAmount, 100000);
+      expect(credit.statements.first.status, CardStatementStatus.paid);
       expect(getPayableSummary(credit).exigible, 0);
     });
 
@@ -682,7 +682,7 @@ void main() {
         name: 'Test',
         lender: 'Bank',
         currentBalance: 100000,
-        closedStatements: [
+        statements: [
           const CardStatement(
             id: 's1',
             creditId: 'c1',
@@ -696,8 +696,8 @@ void main() {
 
       registerCardMovement(credit, CardMovementType.payment, 40000);
 
-      expect(credit.closedStatements.first.paidAmount, 40000);
-      expect(credit.closedStatements.first.status, CardStatementStatus.closed);
+      expect(credit.statements.first.paidAmount, 40000);
+      expect(credit.statements.first.status, CardStatementStatus.closed);
       expect(getPayableSummary(credit).exigible, 60000);
     });
 
@@ -708,7 +708,7 @@ void main() {
         name: 'Test',
         lender: 'Bank',
         currentBalance: 100000,
-        closedStatements: [
+        statements: [
           const CardStatement(
             id: 's1',
             creditId: 'c1',
@@ -722,8 +722,8 @@ void main() {
 
       registerCardMovement(credit, CardMovementType.payment, 150000);
 
-      expect(credit.closedStatements.first.paidAmount, 100000);
-      expect(credit.closedStatements.first.status, CardStatementStatus.paid);
+      expect(credit.statements.first.paidAmount, 100000);
+      expect(credit.statements.first.status, CardStatementStatus.paid);
     });
 
   });
@@ -742,7 +742,7 @@ void main() {
         lastAccrualCutoff: '2026-01-15',
       );
       accrueCardCredit(credit, DateTime(2026, 2, 15)); // exactamente el corte
-      expect(credit.closedStatements, isEmpty);
+      expect(credit.statements, isEmpty);
       expect(credit.lastAccrualCutoff, '2026-01-15');
     });
 
@@ -755,18 +755,18 @@ void main() {
         lastAccrualCutoff: '2026-01-15',
       );
       accrueCardCredit(credit, DateTime(2026, 2, 16));
-      expect(credit.closedStatements, hasLength(1));
-      expect(credit.closedStatements.first.cutoffDate, '2026-02-15');
+      expect(credit.statements, hasLength(1));
+      expect(credit.statements.first.cutoffDate, '2026-02-15');
       expect(credit.lastAccrualCutoff, '2026-02-15');
     });
   });
 
   group('payment application regression — no closed statements', () {
     test('a payment with no closed statements yet (all charges still in the '
-        'open cycle) does not touch closedStatements', () {
+        'open cycle) does not touch statements', () {
       final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', currentBalance: 50000);
       registerCardMovement(credit, CardMovementType.payment, 50000);
-      expect(credit.closedStatements, isEmpty);
+      expect(credit.statements, isEmpty);
       expect(credit.currentBalance, 0);
     });
   });
@@ -792,8 +792,8 @@ void main() {
 
       accrueCardCredit(credit, DateTime(2026, 2, 16));
 
-      expect(credit.closedStatements, hasLength(1));
-      final s = credit.closedStatements.first;
+      expect(credit.statements, hasLength(1));
+      final s = credit.statements.first;
       expect(s.cutoffDate, '2026-02-15');
       expect(s.closingBalance, 50000);
       expect(s.dueDate, '2026-03-07'); // 2026-02-15 + 20 días
@@ -823,8 +823,8 @@ void main() {
 
       accrueCardCredit(credit, DateTime(2026, 2, 16));
 
-      expect(credit.closedStatements, hasLength(1));
-      expect(credit.closedStatements.first.closingBalance, 800000);
+      expect(credit.statements, hasLength(1));
+      expect(credit.statements.first.closingBalance, 800000);
     });
 
     test('calling accrueCardCredit twice without a new cycle elapsing does '
@@ -837,9 +837,9 @@ void main() {
         lastAccrualCutoff: '2026-01-15',
       );
       accrueCardCredit(credit, DateTime(2026, 2, 16));
-      final countAfterFirst = credit.closedStatements.length;
+      final countAfterFirst = credit.statements.length;
       accrueCardCredit(credit, DateTime(2026, 2, 16));
-      expect(credit.closedStatements.length, countAfterFirst);
+      expect(credit.statements.length, countAfterFirst);
     });
   });
 
@@ -853,7 +853,7 @@ void main() {
         lender: 'Bank',
         cutoffDay: 15,
         lastAccrualCutoff: '2026-01-15',
-        closedStatements: [
+        statements: [
           const CardStatement(
             id: 'c1-2026-02-15',
             creditId: 'c1',
@@ -867,7 +867,7 @@ void main() {
 
       accrueCardCredit(credit, DateTime(2026, 2, 16));
 
-      expect(credit.closedStatements, hasLength(1));
+      expect(credit.statements, hasLength(1));
     });
   });
 
