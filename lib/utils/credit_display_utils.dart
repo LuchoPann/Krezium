@@ -29,8 +29,10 @@ Color parseHexColor(String? hex) {
 }
 
 /// Next relevant due date for a credit: earliest unpaid installment for
-/// loans, current cycle's payment due date for cards. Null if a loan has no
-/// unpaid installments left.
+/// loans, earliest unpaid CLOSED statement's due date for cards (NOT the
+/// open cycle's projected due date — charges in the still-open cycle
+/// aren't due yet). Null if a loan has no unpaid installments left, or a
+/// card has no closed unpaid statements.
 DateTime? getNextDueDate(Credit credit) {
   if (credit is LoanCredit) {
     final unpaid = credit.installments.where((i) => !i.paid).toList()
@@ -39,7 +41,7 @@ DateTime? getNextDueDate(Credit credit) {
     return parseDateStr(unpaid.first.dueDate);
   }
   if (credit is CardCredit) {
-    return getCardCycleDates(credit).dueDate;
+    return getPayableSummary(credit).dueDate;
   }
   return null;
 }

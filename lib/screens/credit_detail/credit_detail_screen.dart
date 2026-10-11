@@ -570,11 +570,12 @@ class _CreditOverviewTiles extends StatelessWidget {
     } else {
       final card = credit as CardCredit;
       final dates = getCardCycleDates(card);
+      final summary = getPayableSummary(card);
       leftLabel = 'Fecha de corte';
       leftValue = toDateStr(dates.nextCutoff);
       leftIcon = Icons.event_repeat_outlined;
-      rightLabel = 'Límite de pago';
-      rightValue = toDateStr(dates.dueDate);
+      rightLabel = summary.dueDate != null ? 'Límite de pago' : 'Sin pagos pendientes';
+      rightValue = summary.dueDate != null ? toDateStr(summary.dueDate!) : '—';
       rightIcon = Icons.event_available_outlined;
     }
 

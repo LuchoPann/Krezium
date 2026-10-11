@@ -1077,13 +1077,13 @@ List<_StatItem> _statsFor(Credit credit) {
         ),
       );
     }
-    if (credit.currentBalance > 0) {
-      final due = getCardCycleDates(credit).dueDate;
+    final summary = getPayableSummary(credit);
+    if (summary.exigible > 0 && summary.dueDate != null) {
       items.add(
         _StatItem(
           icon: Icons.event_outlined,
           label: 'Próximo pago',
-          value: formatDate(toDateStr(due)),
+          value: formatDate(toDateStr(summary.dueDate!)),
         ),
       );
     }
