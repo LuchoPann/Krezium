@@ -83,11 +83,11 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
         // first null→anchor assignment (first app launch for this card)
         // would count as "changed" too, forcing an extra persist+reload
         // on every brand-new card for no real data change.
-        final beforeStatements = c.closedStatements.length;
+        final beforeStatements = c.statements.length;
         accrueCardCredit(c);
         changed = c.currentBalance != before ||
             c.movements.length != beforeMovements ||
-            c.closedStatements.length != beforeStatements;
+            c.statements.length != beforeStatements;
       } else if (c is LoanCredit && !c.scheduleManuallyAdjusted) {
         // Skip the recompute once the loan's schedule has diverged from
         // what its base fields alone would reproduce — persisted via the
