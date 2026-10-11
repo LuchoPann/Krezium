@@ -179,6 +179,35 @@ class CardMovements extends Table {
   /// "YYYY-MM-DD" — corte del extracto al que esta cuota fue asignada al
   /// registrarse. Null = se agrupa por el criterio normal de fecha+corte.
   TextColumn get statementCutoff => text().nullable()();
+
+  /// FK al CardStatement (abierto o cerrado) al que este movimiento está
+  /// ligado. Null solo en filas legadas de antes de esta versión.
+  TextColumn get statementId => text().nullable()();
+
+  /// FK a InstallmentPurchases cuando este movimiento es una cuota de una
+  /// compra a plazos.
+  TextColumn get installmentPurchaseId => text().nullable()();
+}
+
+/// Una compra a plazos. Ver lib/data/models/installment_purchase.dart.
+@DataClassName('InstallmentPurchaseRow')
+class InstallmentPurchases extends Table {
+  TextColumn get id => text()();
+  TextColumn get creditId =>
+      text().references(Credits, #id, onDelete: KeyAction.cascade)();
+  TextColumn get purchaseDate => text()(); // YYYY-MM-DD
+  RealColumn get totalAmount => real()();
+  IntColumn get installments => integer()();
+  RealColumn get perInstallmentAmount => real()();
+  RealColumn get lastInstallmentAmount => real()();
+  TextColumn get note => text().withDefault(const Constant(''))();
+  TextColumn get categoria => text().nullable()();
+  IntColumn get installmentsBilled =>
+      integer().withDefault(const Constant(1))();
+  TextColumn get createdAt => text()(); // YYYY-MM-DD
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 /// Un extracto de tarjeta ya cerrado (histórico). Ver

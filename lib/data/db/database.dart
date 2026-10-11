@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import '../../domain/interest_rate.dart';
 import '../models/card_movement.dart';
 import '../models/card_statement.dart';
+import '../models/installment_purchase.dart';
 import '../models/commercial_quota.dart';
 import '../models/credit.dart';
 import '../models/installment.dart';
@@ -33,8 +34,8 @@ class QuotaHasActivePurchasesException implements Exception {
 /// just stashed the whole `state` object as one JSON blob) with a proper
 /// relational schema — see lib/data/db/tables.dart for the mapping notes.
 @DriftDatabase(tables: [
-  Credits, Installments, CardMovements, CardStatements, LoanAbonos,
-  CommercialQuotas, PagosRealizados,
+  Credits, Installments, CardMovements, CardStatements,
+  InstallmentPurchases, LoanAbonos, CommercialQuotas, PagosRealizados,
   FinanceAccounts, FinanceCategories, FinanceTransactions, FinanceBudgets,
   FinancePlaces, FinanceTemplates,
 ])
@@ -45,7 +46,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -162,6 +163,12 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(cardMovements, cardMovements.installmentIndex);
             await m.addColumn(cardMovements, cardMovements.statementCutoff);
           }
+          if (from < 16) {
+            await m.createTable(installmentPurchases);
+            await m.addColumn(cardMovements, cardMovements.statementId);
+            await m.addColumn(
+                cardMovements, cardMovements.installmentPurchaseId);
+          }
         },
         // SQLite ignores FK constraints (like Credits.quotaId's
         // onDelete: restrict) unless this pragma is set per-connection —
@@ -204,7 +211,8 @@ class AppDatabase extends _$AppDatabase {
 
   CardCredit _cardFromRow(
       CreditRow row, List<CardMovement> movements,
-      List<CardStatement> closedStatements) {
+      List<CardStatement> statements,
+      List<InstallmentPurchase> installmentPurchases) {
     return CardCredit(
       id: row.id,
       name: row.name,
@@ -229,7 +237,8 @@ class AppDatabase extends _$AppDatabase {
       oneInstallmentInterestPolicy: row.oneInstallmentInterestPolicy,
       notificationDaysBefore: row.notificationDaysBefore,
       movements: movements,
-      closedStatements: closedStatements,
+      statements: statements,
+      installmentPurchases: installmentPurchases,
     );
   }
 
@@ -304,6 +313,10 @@ class AppDatabase extends _$AppDatabase {
               ..where((s) => s.creditId.equals(row.id))
               ..orderBy([(s) => OrderingTerm.asc(s.cutoffDate)]))
             .get();
+        final installmentPurchaseRows = await (select(installmentPurchases)
+              ..where((p) => p.creditId.equals(row.id))
+              ..orderBy([(p) => OrderingTerm.asc(p.purchaseDate)]))
+            .get();
         result.add(_cardFromRow(
           row,
           movementRows
@@ -321,6 +334,8 @@ class AppDatabase extends _$AppDatabase {
                     categoria: m.categoria,
                     installmentIndex: m.installmentIndex,
                     statementCutoff: m.statementCutoff,
+                    statementId: m.statementId,
+                    installmentPurchaseId: m.installmentPurchaseId,
                   ))
               .toList(),
           statementRows
@@ -333,6 +348,21 @@ class AppDatabase extends _$AppDatabase {
                     paidAmount: s.paidAmount,
                     status: s.status,
                     createdAt: s.createdAt,
+                  ))
+              .toList(),
+          installmentPurchaseRows
+              .map((p) => InstallmentPurchase(
+                    id: p.id,
+                    creditId: p.creditId,
+                    purchaseDate: p.purchaseDate,
+                    totalAmount: p.totalAmount,
+                    installments: p.installments,
+                    perInstallmentAmount: p.perInstallmentAmount,
+                    lastInstallmentAmount: p.lastInstallmentAmount,
+                    note: p.note,
+                    categoria: p.categoria,
+                    installmentsBilled: p.installmentsBilled,
+                    createdAt: p.createdAt,
                   ))
               .toList(),
         ));
@@ -529,12 +559,14 @@ class AppDatabase extends _$AppDatabase {
             categoria: Value(mv.categoria),
             installmentIndex: Value(mv.installmentIndex),
             statementCutoff: Value(mv.statementCutoff),
+            statementId: Value(mv.statementId),
+            installmentPurchaseId: Value(mv.installmentPurchaseId),
           ));
         }
         await (delete(cardStatements)
               ..where((s) => s.creditId.equals(credit.id)))
             .go();
-        for (final s in credit.closedStatements) {
+        for (final s in credit.statements) {
           await into(cardStatements).insert(CardStatementsCompanion.insert(
             id: s.id,
             creditId: credit.id,
@@ -544,6 +576,25 @@ class AppDatabase extends _$AppDatabase {
             paidAmount: Value(s.paidAmount),
             status: Value(s.status),
             createdAt: s.createdAt,
+          ));
+        }
+        await (delete(installmentPurchases)
+              ..where((p) => p.creditId.equals(credit.id)))
+            .go();
+        for (final p in credit.installmentPurchases) {
+          await into(installmentPurchases)
+              .insert(InstallmentPurchasesCompanion.insert(
+            id: p.id,
+            creditId: credit.id,
+            purchaseDate: p.purchaseDate,
+            totalAmount: p.totalAmount,
+            installments: p.installments,
+            perInstallmentAmount: p.perInstallmentAmount,
+            lastInstallmentAmount: p.lastInstallmentAmount,
+            note: Value(p.note),
+            categoria: Value(p.categoria),
+            installmentsBilled: Value(p.installmentsBilled),
+            createdAt: p.createdAt,
           ));
         }
       }
@@ -697,6 +748,7 @@ class AppDatabase extends _$AppDatabase {
       await delete(installments).go();
       await delete(cardMovements).go();
       await delete(cardStatements).go();
+      await delete(installmentPurchases).go();
       await delete(loanAbonos).go();
       await delete(pagosRealizados).go();
       await delete(credits).go();
@@ -719,6 +771,7 @@ class AppDatabase extends _$AppDatabase {
       await delete(installments).go();
       await delete(cardMovements).go();
       await delete(cardStatements).go();
+      await delete(installmentPurchases).go();
       await delete(loanAbonos).go();
       await delete(pagosRealizados).go();
       await delete(credits).go();
