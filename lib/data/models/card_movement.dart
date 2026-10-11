@@ -38,6 +38,18 @@ class CardMovement {
   /// Para charges: tasa mensual override (null = usar la de la tarjeta)
   final double? chargeMonthlyRate;
 
+  /// Posición de esta cuota dentro de su compra a plazos (1-based).
+  /// Null para movimientos que no son cuota de una compra (pago único,
+  /// pago, interés, cuota de manejo, avance).
+  final int? installmentIndex;
+
+  /// "YYYY-MM-DD" — fecha de corte del extracto al que esta cuota
+  /// específica fue asignada al registrarse. Null = se agrupa por el
+  /// criterio normal de fecha+corte (ver `cycleKeyFor` en
+  /// card_calculator.dart), usado por cargos de 1 sola cuota, pagos,
+  /// intereses, cuotas de manejo y avances.
+  final String? statementCutoff;
+
   CardMovement({
     required this.date,
     required this.type,
@@ -52,6 +64,8 @@ class CardMovement {
     this.categoria,
     this.chargeInstallments,
     this.chargeMonthlyRate,
+    this.installmentIndex,
+    this.statementCutoff,
   });
 
   Map<String, dynamic> toJson() => {
@@ -68,6 +82,8 @@ class CardMovement {
         'categoria': categoria,
         'chargeInstallments': chargeInstallments,
         'chargeMonthlyRate': chargeMonthlyRate,
+        'installmentIndex': installmentIndex,
+        'statementCutoff': statementCutoff,
       };
 
   factory CardMovement.fromJson(Map<String, dynamic> json) => CardMovement(
@@ -84,5 +100,7 @@ class CardMovement {
         categoria: json['categoria'] as String?,
         chargeInstallments: json['chargeInstallments'] as int?,
         chargeMonthlyRate: (json['chargeMonthlyRate'] as num?)?.toDouble(),
+        installmentIndex: json['installmentIndex'] as int?,
+        statementCutoff: json['statementCutoff'] as String?,
       );
 }
