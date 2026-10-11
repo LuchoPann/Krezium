@@ -171,6 +171,32 @@ class CardMovements extends Table {
   /// Valores sugeridos: 'alimentacion' | 'transporte' | 'salud' | 'ropa' |
   /// 'entretenimiento' | 'servicios' | 'viajes' | 'otro'.
   TextColumn get categoria => text().nullable()();
+
+  /// Posición de esta cuota dentro de su compra a plazos (1-based). Null
+  /// para movimientos que no son cuota de una compra.
+  IntColumn get installmentIndex => integer().nullable()();
+
+  /// "YYYY-MM-DD" — corte del extracto al que esta cuota fue asignada al
+  /// registrarse. Null = se agrupa por el criterio normal de fecha+corte.
+  TextColumn get statementCutoff => text().nullable()();
+}
+
+/// Un extracto de tarjeta ya cerrado (histórico). Ver
+/// lib/data/models/card_statement.dart.
+@DataClassName('CardStatementRow')
+class CardStatements extends Table {
+  TextColumn get id => text()();
+  TextColumn get creditId =>
+      text().references(Credits, #id, onDelete: KeyAction.cascade)();
+  TextColumn get cutoffDate => text()(); // YYYY-MM-DD
+  TextColumn get dueDate => text()(); // YYYY-MM-DD
+  RealColumn get closingBalance => real()();
+  RealColumn get paidAmount => real().withDefault(const Constant(0))();
+  TextColumn get status => text().withDefault(const Constant('closed'))();
+  TextColumn get createdAt => text()(); // YYYY-MM-DD
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 /// Pagos reales registrados manualmente por el usuario para préstamos

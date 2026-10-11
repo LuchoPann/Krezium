@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 
 import '../../domain/interest_rate.dart';
 import '../models/card_movement.dart';
+import '../models/card_statement.dart';
 import '../models/commercial_quota.dart';
 import '../models/credit.dart';
 import '../models/installment.dart';
@@ -32,7 +33,8 @@ class QuotaHasActivePurchasesException implements Exception {
 /// just stashed the whole `state` object as one JSON blob) with a proper
 /// relational schema — see lib/data/db/tables.dart for the mapping notes.
 @DriftDatabase(tables: [
-  Credits, Installments, CardMovements, LoanAbonos, CommercialQuotas, PagosRealizados,
+  Credits, Installments, CardMovements, CardStatements, LoanAbonos,
+  CommercialQuotas, PagosRealizados,
   FinanceAccounts, FinanceCategories, FinanceTransactions, FinanceBudgets,
   FinancePlaces, FinanceTemplates,
 ])
@@ -43,7 +45,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -155,6 +157,11 @@ class AppDatabase extends _$AppDatabase {
               await m.createTable(pagosRealizados);
             }
           }
+          if (from < 15) {
+            await m.createTable(cardStatements);
+            await m.addColumn(cardMovements, cardMovements.installmentIndex);
+            await m.addColumn(cardMovements, cardMovements.statementCutoff);
+          }
         },
         // SQLite ignores FK constraints (like Credits.quotaId's
         // onDelete: restrict) unless this pragma is set per-connection —
@@ -196,7 +203,8 @@ class AppDatabase extends _$AppDatabase {
   }
 
   CardCredit _cardFromRow(
-      CreditRow row, List<CardMovement> movements) {
+      CreditRow row, List<CardMovement> movements,
+      List<CardStatement> closedStatements) {
     return CardCredit(
       id: row.id,
       name: row.name,
@@ -221,6 +229,7 @@ class AppDatabase extends _$AppDatabase {
       oneInstallmentInterestPolicy: row.oneInstallmentInterestPolicy,
       notificationDaysBefore: row.notificationDaysBefore,
       movements: movements,
+      closedStatements: closedStatements,
     );
   }
 
@@ -291,6 +300,10 @@ class AppDatabase extends _$AppDatabase {
               ..where((m) => m.creditId.equals(row.id))
               ..orderBy([(m) => OrderingTerm.asc(m.rowId)]))
             .get();
+        final statementRows = await (select(cardStatements)
+              ..where((s) => s.creditId.equals(row.id))
+              ..orderBy([(s) => OrderingTerm.asc(s.cutoffDate)]))
+            .get();
         result.add(_cardFromRow(
           row,
           movementRows
@@ -306,6 +319,20 @@ class AppDatabase extends _$AppDatabase {
                     advanceFirstPaymentDate: m.advanceFirstPaymentDate,
                     advanceDestination: m.advanceDestination,
                     categoria: m.categoria,
+                    installmentIndex: m.installmentIndex,
+                    statementCutoff: m.statementCutoff,
+                  ))
+              .toList(),
+          statementRows
+              .map((s) => CardStatement(
+                    id: s.id,
+                    creditId: s.creditId,
+                    cutoffDate: s.cutoffDate,
+                    dueDate: s.dueDate,
+                    closingBalance: s.closingBalance,
+                    paidAmount: s.paidAmount,
+                    status: s.status,
+                    createdAt: s.createdAt,
                   ))
               .toList(),
         ));
@@ -500,6 +527,23 @@ class AppDatabase extends _$AppDatabase {
             advanceFirstPaymentDate: Value(mv.advanceFirstPaymentDate),
             advanceDestination: Value(mv.advanceDestination),
             categoria: Value(mv.categoria),
+            installmentIndex: Value(mv.installmentIndex),
+            statementCutoff: Value(mv.statementCutoff),
+          ));
+        }
+        await (delete(cardStatements)
+              ..where((s) => s.creditId.equals(credit.id)))
+            .go();
+        for (final s in credit.closedStatements) {
+          await into(cardStatements).insert(CardStatementsCompanion.insert(
+            id: s.id,
+            creditId: credit.id,
+            cutoffDate: s.cutoffDate,
+            dueDate: s.dueDate,
+            closingBalance: s.closingBalance,
+            paidAmount: Value(s.paidAmount),
+            status: Value(s.status),
+            createdAt: s.createdAt,
           ));
         }
       }
@@ -652,6 +696,7 @@ class AppDatabase extends _$AppDatabase {
     await transaction(() async {
       await delete(installments).go();
       await delete(cardMovements).go();
+      await delete(cardStatements).go();
       await delete(loanAbonos).go();
       await delete(pagosRealizados).go();
       await delete(credits).go();
@@ -673,6 +718,7 @@ class AppDatabase extends _$AppDatabase {
     await transaction(() async {
       await delete(installments).go();
       await delete(cardMovements).go();
+      await delete(cardStatements).go();
       await delete(loanAbonos).go();
       await delete(pagosRealizados).go();
       await delete(credits).go();
