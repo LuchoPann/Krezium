@@ -377,3 +377,59 @@ void deleteCardMovement(CardCredit credit, int index) {
     }
   }
 }
+
+/// Migra datos de tarjetas creadas antes del motor de extractos v2:
+/// liga cada CardMovement sin `statementId` al extracto que le
+/// corresponde (inferido con el mismo criterio de agrupación legado,
+/// `cycleKeyFor`), creando ese CardStatement si no existe todavía —
+/// reutilizando uno existente con el mismo `cutoffDate` si ya se creó
+/// para otro movimiento del mismo ciclo. Idempotente: una tarjeta sin
+/// nada legado no se modifica. Llamar SIEMPRE antes de
+/// `closeCurrentCycleIfDue` en el flujo de arranque.
+void migrateLegacyCardData(CardCredit credit, [DateTime? refDate]) {
+  final legacyMovements =
+      credit.movements.where((m) => m.statementId == null).toList();
+
+  for (final m in legacyMovements) {
+    final cutoffDate = m.statementCutoff ?? cycleKeyFor(m.date, credit.cutoffDay);
+    var statement = credit.statements
+        .where((s) => s.cutoffDate == cutoffDate)
+        .firstOrNull;
+    statement ??= _createLegacyStatement(credit, cutoffDate);
+    final idx = credit.movements.indexOf(m);
+    credit.movements[idx] = CardMovement(
+      date: m.date,
+      type: m.type,
+      amount: m.amount,
+      note: m.note,
+      advanceInstallments: m.advanceInstallments,
+      advanceInterestRate: m.advanceInterestRate,
+      advanceInterestRateType: m.advanceInterestRateType,
+      advanceCommission: m.advanceCommission,
+      advanceFirstPaymentDate: m.advanceFirstPaymentDate,
+      advanceDestination: m.advanceDestination,
+      categoria: m.categoria,
+      chargeInstallments: m.chargeInstallments,
+      installmentIndex: m.installmentIndex,
+      statementId: statement.id,
+    );
+  }
+
+  ensureOpenStatement(credit, refDate);
+}
+
+CardStatement _createLegacyStatement(CardCredit credit, String cutoffDate) {
+  final cutoff = parseDateStr(cutoffDate);
+  final dueDate = toDateStr(dueDateForCutoff(credit, cutoff));
+  final statement = CardStatement(
+    id: '${credit.id}-legacy-$cutoffDate',
+    creditId: credit.id,
+    cutoffDate: cutoffDate,
+    dueDate: dueDate,
+    closingBalance: 0,
+    status: CardStatementStatus.closed,
+    createdAt: cutoffDate,
+  );
+  credit.statements.add(statement);
+  return statement;
+}
