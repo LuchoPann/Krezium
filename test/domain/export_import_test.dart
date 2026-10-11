@@ -117,8 +117,40 @@ void main() {
       expect(imported.credits, hasLength(1));
     });
 
-    test('kBackupFormatVersion is 4', () {
-      expect(kBackupFormatVersion, 4);
+    test('kBackupFormatVersion is 5', () {
+      expect(kBackupFormatVersion, 5);
+    });
+
+    test('imports a v4 backup (field name "closedStatements", no '
+        'installmentPurchases) without error — statements/installmentPurchases '
+        'end up populated/empty correctly', () {
+      final v4Json = jsonEncode({
+        'format': kBackupFormatMarker,
+        'version': 4,
+        'exportedAt': '2026-01-01T00:00:00.000Z',
+        'credits': [
+          {
+            'id': 'c1', 'type': 'card', 'name': 'Visa', 'lender': 'Bank',
+            'currentBalance': 100000.0, 'cutoffDay': 15,
+            'movements': [],
+            'closedStatements': [
+              {
+                'id': 's1', 'creditId': 'c1', 'cutoffDate': '2026-01-15',
+                'dueDate': '2026-02-05', 'closingBalance': 100000.0,
+                'paidAmount': 0.0, 'status': 'closed', 'createdAt': '2026-01-15',
+              }
+            ],
+          }
+        ],
+        'commercialQuotas': [],
+      });
+
+      final result = importStateFromJson(v4Json);
+
+      final card = result.credits.first as CardCredit;
+      expect(card.statements, hasLength(1));
+      expect(card.statements.first.cutoffDate, '2026-01-15');
+      expect(card.installmentPurchases, isEmpty);
     });
 
     test('imports a v3 backup (no closedStatements field) without error, '
