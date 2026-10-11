@@ -138,10 +138,10 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
 
   // Card fields
   final _limitCtrl = TextEditingController();
-  final _balanceCtrl = TextEditingController(text: '0');
+  final _balanceCtrl = TextEditingController();
   final _cutoffDayCtrl = TextEditingController(text: '15');
   final _paymentOffsetCtrl = TextEditingController(text: '20');
-  final _managementFeeCtrl = TextEditingController(text: '0');
+  final _managementFeeCtrl = TextEditingController();
   String _managementFeeFrequency = ManagementFeeFrequency.monthly;
 
   // Nuevos campos para flujo tarjeta

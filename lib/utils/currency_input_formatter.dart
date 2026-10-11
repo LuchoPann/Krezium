@@ -23,8 +23,14 @@ class CurrencyInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    // Keep only digits.
-    final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    // Keep only digits, then strip any leading zeros — without this, a
+    // field that starts at "0" (or is cleared back to "0") gets a new
+    // digit appended after it instead of replacing it ("0"+"5" → "05",
+    // "052", ... forever), which reads as the keyboard "locking up" since
+    // the displayed value never matches what the user actually typed.
+    final digitsOnly = newValue.text
+        .replaceAll(RegExp(r'[^0-9]'), '')
+        .replaceFirst(RegExp(r'^0+'), '');
 
     if (digitsOnly.isEmpty) {
       return const TextEditingValue(text: '');
