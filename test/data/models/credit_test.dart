@@ -1,7 +1,48 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:krezium/data/models/card_statement.dart';
 import 'package:krezium/data/models/credit.dart';
 
 void main() {
+  group('CardCredit closedStatements', () {
+    test('defaults to empty list', () {
+      final card = CardCredit(id: 'c1', name: 'Test', lender: 'Bank');
+      expect(card.closedStatements, isEmpty);
+    });
+
+    test('toJson/fromJson round-trips closedStatements', () {
+      final card = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        closedStatements: [
+          const CardStatement(
+            id: 'c1-2026-01-15',
+            creditId: 'c1',
+            cutoffDate: '2026-01-15',
+            dueDate: '2026-02-05',
+            closingBalance: 100000,
+            createdAt: '2026-01-15',
+          ),
+        ],
+      );
+
+      final decoded = CardCredit.fromJson(card.toJson());
+
+      expect(decoded.closedStatements, hasLength(1));
+      expect(decoded.closedStatements.first.cutoffDate, '2026-01-15');
+    });
+
+    test('fromJson defaults closedStatements to empty when absent '
+        '(backup v3 compat)', () {
+      final decoded = CardCredit.fromJson({
+        'id': 'c1',
+        'name': 'Test',
+        'lender': 'Bank',
+      });
+      expect(decoded.closedStatements, isEmpty);
+    });
+  });
+
   group('LoanCredit cupo comercial fields', () {
     test('fromJson without new fields defaults safely', () {
       final loan = LoanCredit.fromJson({
