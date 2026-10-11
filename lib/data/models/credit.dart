@@ -2,6 +2,7 @@ import '../../domain/interest_rate.dart';
 import 'card_movement.dart';
 import 'card_statement.dart';
 import 'installment.dart';
+import 'installment_purchase.dart';
 import 'loan_abono.dart';
 
 /// `type` discriminator values, matching app.js string literals exactly.
@@ -213,9 +214,14 @@ class CardCredit extends Credit {
   /// false = sí cobra interés en compras a 1 cuota
   bool? oneInstallmentInterestPolicy;
 
-  /// Extractos ya cerrados (histórico). El extracto actualmente abierto no
-  /// está aquí — se calcula on-the-fly. Ver card_statement.dart.
-  List<CardStatement> closedStatements;
+  /// Todos los extractos de esta tarjeta — abierto, cerrados y pagados.
+  /// Invariante: exactamente uno tiene status == CardStatementStatus.open
+  /// en todo momento (ver ensureOpenStatement en card_statement_engine.dart).
+  List<CardStatement> statements;
+
+  /// Compras a plazos registradas (N cuotas). Cada cuota se factura sola,
+  /// automáticamente, cuando el extracto correspondiente abre.
+  List<InstallmentPurchase> installmentPurchases;
 
   CardCredit({
     required super.id,
@@ -239,9 +245,11 @@ class CardCredit extends Credit {
     this.quotaId,
     this.oneInstallmentInterestPolicy,
     List<CardMovement>? movements,
-    List<CardStatement>? closedStatements,
+    List<CardStatement>? statements,
+    List<InstallmentPurchase>? installmentPurchases,
   })  : movements = movements ?? [],
-        closedStatements = closedStatements ?? [],
+        statements = statements ?? [],
+        installmentPurchases = installmentPurchases ?? [],
         super(type: CreditType.card);
 
   Map<String, dynamic> toJson() => {
@@ -267,7 +275,9 @@ class CardCredit extends Credit {
         'oneInstallmentInterestPolicy': oneInstallmentInterestPolicy,
         'notificationDaysBefore': notificationDaysBefore,
         'movements': movements.map((m) => m.toJson()).toList(),
-        'closedStatements': closedStatements.map((s) => s.toJson()).toList(),
+        'statements': statements.map((s) => s.toJson()).toList(),
+        'installmentPurchases':
+            installmentPurchases.map((p) => p.toJson()).toList(),
       };
 
   factory CardCredit.fromJson(Map<String, dynamic> json) => CardCredit(
@@ -298,9 +308,16 @@ class CardCredit extends Credit {
         movements: (json['movements'] as List<dynamic>? ?? [])
             .map((e) => CardMovement.fromJson(e as Map<String, dynamic>))
             .toList(),
-        closedStatements: (json['closedStatements'] as List<dynamic>? ?? [])
+        statements: ((json['statements'] ?? json['closedStatements'])
+                    as List<dynamic>? ??
+                [])
             .map((e) => CardStatement.fromJson(e as Map<String, dynamic>))
             .toList(),
+        installmentPurchases:
+            (json['installmentPurchases'] as List<dynamic>? ?? [])
+                .map((e) =>
+                    InstallmentPurchase.fromJson(e as Map<String, dynamic>))
+                .toList(),
       );
 }
 
