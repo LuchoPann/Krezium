@@ -410,6 +410,23 @@ void main() {
         'closing cycle', () {
       expect(cycleKeyFor('2026-01-16', 15), '2026-02-15');
     });
+
+    test('cutoffDay 30 keeps the real day (not clamped to 28) for a '
+        '31-day month', () {
+      // Regression: the old implementation clamped cutoffDay to 28,
+      // disagreeing with accrueCardCredit's cutoffDateForMonth (which uses
+      // the real day). A charge on the 10th with cutoffDay 30 must close
+      // on the 30th, not the 28th.
+      expect(cycleKeyFor('2026-04-10', 30), '2026-04-30');
+    });
+
+    test('cutoffDay 31 clamps to the last day of a 30-day month (April)', () {
+      expect(cycleKeyFor('2026-04-10', 31), '2026-04-30');
+    });
+
+    test('cutoffDay 31 clamps to Feb 28 on a non-leap year', () {
+      expect(cycleKeyFor('2026-02-10', 31), '2026-02-28');
+    });
   });
 
   group('buildInstallmentMovements', () {
@@ -435,6 +452,39 @@ void main() {
       expect(movements[0].amount, 100000);
       expect(movements[1].amount, 100000);
       expect(movements[2].amount, 100000);
+    });
+
+    test('a purchase made exactly on the cutoff day assigns installment 1 '
+        'to the SAME extracto a single-cuota charge on that day would get '
+        '(via cycleKeyFor) — regression for the installment-vs-single-charge '
+        'inconsistency on the cutoff day', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final refDate = DateTime(2026, 1, 15); // exactamente el día de corte
+
+      final movements = buildInstallmentMovements(
+        credit: credit,
+        totalAmount: 300000,
+        installments: 3,
+        refDate: refDate,
+      );
+
+      expect(movements[0].statementCutoff,
+          cycleKeyFor('2026-01-15', credit.cutoffDay));
+      expect(movements[0].statementCutoff, '2026-01-15');
+      expect(movements[1].statementCutoff, '2026-02-15');
+      expect(movements[2].statementCutoff, '2026-03-15');
+    });
+
+    test('works with cutoffDay 30 (end-of-month aware, no 28-day clamp)', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 30);
+      final movements = buildInstallmentMovements(
+        credit: credit,
+        totalAmount: 200000,
+        installments: 2,
+        refDate: DateTime(2026, 4, 10),
+      );
+      expect(movements[0].statementCutoff, '2026-04-30');
+      expect(movements[1].statementCutoff, '2026-05-30');
     });
 
     test('rounding remainder goes entirely on the last installment — sum '
@@ -480,8 +530,8 @@ void main() {
   });
 
   group('getPayableSummary', () {
-    test('exigible = sum of unpaid closed statements; pendienteFacturar = '
-        'currentBalance minus that', () {
+    test('exigible = the LATEST closed statement\'s unpaid balance; '
+        'pendienteFacturar = currentBalance minus that', () {
       final credit = CardCredit(
         id: 'c1',
         name: 'Test',
@@ -508,7 +558,7 @@ void main() {
       expect(summary.dueDate, parseDateStr('2026-02-05'));
     });
 
-    test('a fully paid statement does not count toward exigible', () {
+    test('a fully paid latest statement does not count toward exigible', () {
       final credit = CardCredit(
         id: 'c1',
         name: 'Test',
@@ -533,6 +583,192 @@ void main() {
       expect(summary.exigible, 0);
       expect(summary.dueDate, isNull);
     });
+
+    test('does NOT double-count across multiple unpaid statements — the '
+        'balance already rolls forward via openingBalance, so exigible is '
+        'only the LATEST statement\'s outstanding amount', () {
+      // Regression: summing every unpaid statement double-counts debt that
+      // already rolled forward into the next statement's closingBalance.
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        currentBalance: 150000,
+        closedStatements: const [
+          CardStatement(
+            id: 's1',
+            creditId: 'c1',
+            cutoffDate: '2026-01-15',
+            dueDate: '2026-02-05',
+            closingBalance: 100000,
+            createdAt: '2026-01-15',
+          ),
+          CardStatement(
+            id: 's2',
+            creditId: 'c1',
+            cutoffDate: '2026-02-15',
+            dueDate: '2026-03-07',
+            closingBalance: 150000, // ya incluye los 100000 del extracto anterior
+            createdAt: '2026-02-15',
+          ),
+        ],
+      );
+
+      final summary = getPayableSummary(credit);
+
+      expect(summary.exigible, 150000);
+      expect(summary.pendienteFacturar, 0);
+      expect(summary.dueDate, parseDateStr('2026-03-07'));
+    });
+
+    test('pendienteFacturar never goes negative even if data is '
+        'inconsistent (currentBalance lower than the latest exigible)', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        currentBalance: 50000,
+        closedStatements: const [
+          CardStatement(
+            id: 's1',
+            creditId: 'c1',
+            cutoffDate: '2026-01-15',
+            dueDate: '2026-02-05',
+            closingBalance: 100000,
+            createdAt: '2026-01-15',
+          ),
+        ],
+      );
+
+      final summary = getPayableSummary(credit);
+
+      expect(summary.pendienteFacturar, 0);
+    });
+  });
+
+  group('applying a payment to the latest unpaid statement', () {
+    test('registerCardMovement payment reduces the latest closed '
+        'statement\'s outstanding amount and marks it paid once fully '
+        'covered — fixes "I paid my card but exigible stayed the same"', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        currentBalance: 100000,
+        closedStatements: [
+          const CardStatement(
+            id: 's1',
+            creditId: 'c1',
+            cutoffDate: '2026-01-15',
+            dueDate: '2026-02-05',
+            closingBalance: 100000,
+            createdAt: '2026-01-15',
+          ),
+        ],
+      );
+
+      registerCardMovement(credit, CardMovementType.payment, 100000);
+
+      expect(credit.currentBalance, 0);
+      expect(credit.closedStatements.first.paidAmount, 100000);
+      expect(credit.closedStatements.first.status, CardStatementStatus.paid);
+      expect(getPayableSummary(credit).exigible, 0);
+    });
+
+    test('a partial payment reduces exigible without marking the statement '
+        'paid', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        currentBalance: 100000,
+        closedStatements: [
+          const CardStatement(
+            id: 's1',
+            creditId: 'c1',
+            cutoffDate: '2026-01-15',
+            dueDate: '2026-02-05',
+            closingBalance: 100000,
+            createdAt: '2026-01-15',
+          ),
+        ],
+      );
+
+      registerCardMovement(credit, CardMovementType.payment, 40000);
+
+      expect(credit.closedStatements.first.paidAmount, 40000);
+      expect(credit.closedStatements.first.status, CardStatementStatus.closed);
+      expect(getPayableSummary(credit).exigible, 60000);
+    });
+
+    test('an overpayment clamps paidAmount to closingBalance (never exceeds '
+        'what was actually owed on that statement)', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        currentBalance: 100000,
+        closedStatements: [
+          const CardStatement(
+            id: 's1',
+            creditId: 'c1',
+            cutoffDate: '2026-01-15',
+            dueDate: '2026-02-05',
+            closingBalance: 100000,
+            createdAt: '2026-01-15',
+          ),
+        ],
+      );
+
+      registerCardMovement(credit, CardMovementType.payment, 150000);
+
+      expect(credit.closedStatements.first.paidAmount, 100000);
+      expect(credit.closedStatements.first.status, CardStatementStatus.paid);
+    });
+
+  });
+
+  group('accrueCardCredit does not close a cycle until the day AFTER its '
+      'cutoff (the cutoff day itself still belongs to that cycle, per the '
+      'documented "until 23:59" semantics — a movement registered later '
+      'that same day must still be counted)', () {
+    test('calling accrueCardCredit ON the cutoff day does not close the '
+        'cycle yet', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        cutoffDay: 15,
+        lastAccrualCutoff: '2026-01-15',
+      );
+      accrueCardCredit(credit, DateTime(2026, 2, 15)); // exactamente el corte
+      expect(credit.closedStatements, isEmpty);
+      expect(credit.lastAccrualCutoff, '2026-01-15');
+    });
+
+    test('calling it the day AFTER the cutoff closes the cycle', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        cutoffDay: 15,
+        lastAccrualCutoff: '2026-01-15',
+      );
+      accrueCardCredit(credit, DateTime(2026, 2, 16));
+      expect(credit.closedStatements, hasLength(1));
+      expect(credit.closedStatements.first.cutoffDate, '2026-02-15');
+      expect(credit.lastAccrualCutoff, '2026-02-15');
+    });
+  });
+
+  group('payment application regression — no closed statements', () {
+    test('a payment with no closed statements yet (all charges still in the '
+        'open cycle) does not touch closedStatements', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', currentBalance: 50000);
+      registerCardMovement(credit, CardMovementType.payment, 50000);
+      expect(credit.closedStatements, isEmpty);
+      expect(credit.currentBalance, 0);
+    });
   });
 
   group('accrueCardCredit creates CardStatements', () {
@@ -544,6 +780,8 @@ void main() {
         lender: 'Bank',
         cutoffDay: 15,
         paymentDueOffsetDays: 20,
+        currentBalance: 50000, // sincronizado con el movimiento de abajo,
+        // igual que haría registerCardMovement en producción.
         lastAccrualCutoff: '2026-01-15',
       );
       credit.movements.add(CardMovement(
@@ -561,6 +799,34 @@ void main() {
       expect(s.dueDate, '2026-03-07'); // 2026-02-15 + 20 días
     });
 
+    test('an existing card with pre-feature debt (currentBalance set with '
+        'no CardStatement history yet) seeds the first statement\'s opening '
+        'balance from that debt, instead of ignoring it as if it were 0', () {
+      // Regression: a real user's card already has currentBalance = 1,000,000
+      // (accumulated before this feature existed) and a payment of 200,000
+      // registered this cycle. The first CardStatement generated after this
+      // update must reflect the REAL total owed (800,000), not just the
+      // cycle's own net movement (-200,000).
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        cutoffDay: 15,
+        currentBalance: 800000, // 1,000,000 pre-existing - 200,000 pagados
+        lastAccrualCutoff: '2026-01-15',
+      );
+      credit.movements.add(CardMovement(
+        date: '2026-01-20',
+        type: CardMovementType.payment,
+        amount: 200000,
+      ));
+
+      accrueCardCredit(credit, DateTime(2026, 2, 16));
+
+      expect(credit.closedStatements, hasLength(1));
+      expect(credit.closedStatements.first.closingBalance, 800000);
+    });
+
     test('calling accrueCardCredit twice without a new cycle elapsing does '
         'not create duplicate CardStatements', () {
       final credit = CardCredit(
@@ -574,6 +840,34 @@ void main() {
       final countAfterFirst = credit.closedStatements.length;
       accrueCardCredit(credit, DateTime(2026, 2, 16));
       expect(credit.closedStatements.length, countAfterFirst);
+    });
+  });
+
+  group('accrueCardCredit defends against a duplicate statement id', () {
+    test('does not add a second CardStatement for a cutoffDate that '
+        'already has one — defends against lastAccrualCutoff ever pointing '
+        'backward (e.g. an inconsistent restored backup)', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        cutoffDay: 15,
+        lastAccrualCutoff: '2026-01-15',
+        closedStatements: [
+          const CardStatement(
+            id: 'c1-2026-02-15',
+            creditId: 'c1',
+            cutoffDate: '2026-02-15',
+            dueDate: '2026-03-07',
+            closingBalance: 50000,
+            createdAt: '2026-02-15',
+          ),
+        ],
+      );
+
+      accrueCardCredit(credit, DateTime(2026, 2, 16));
+
+      expect(credit.closedStatements, hasLength(1));
     });
   });
 

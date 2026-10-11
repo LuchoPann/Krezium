@@ -39,16 +39,18 @@ String cycleKeyFor(String movementDate, int cutoffDay) {
   if (movementDate.length < 10) return movementDate;
   final d = DateTime.tryParse(movementDate);
   if (d == null) return movementDate;
-  final clampedCutoff = _clampCutoffDay(cutoffDay).clamp(1, 28);
-  DateTime cycleEnd;
-  if (d.day <= clampedCutoff) {
-    cycleEnd = DateTime(d.year, d.month, clampedCutoff);
-  } else {
-    final nextMonth = d.month == 12 ? 1 : d.month + 1;
-    final nextYear = d.month == 12 ? d.year + 1 : d.year;
-    cycleEnd = DateTime(nextYear, nextMonth, clampedCutoff);
+  final cutoffDayClamped = _clampCutoffDay(cutoffDay);
+  // Use the real cutoff day (clamped to the end of each month via
+  // cutoffDateForMonth, e.g. day 31 in April → the 30th), matching
+  // accrueCardCredit's cycle-end computation exactly — NOT a flat clamp to
+  // 28, which disagreed with it for any cutoffDay above 28.
+  final thisMonthEnd = cutoffDateForMonth(d.year, d.month, cutoffDayClamped);
+  if (d.day <= thisMonthEnd.day) {
+    return toDateStr(thisMonthEnd);
   }
-  return toDateStr(cycleEnd);
+  final nextMonth = d.month == 12 ? 1 : d.month + 1;
+  final nextYear = d.month == 12 ? d.year + 1 : d.year;
+  return toDateStr(cutoffDateForMonth(nextYear, nextMonth, cutoffDayClamped));
 }
 
 class CardCycleDates {
@@ -143,9 +145,30 @@ void accrueCardCredit(CardCredit credit, [DateTime? now]) {
   final lastCursor = parseDateStr(credit.lastAccrualCutoff!);
   final earlyNextRef = DateTime(lastCursor.year, lastCursor.month + 1, 1);
   final earlyNext = cutoffDateForMonth(earlyNextRef.year, earlyNextRef.month, cutoffDay);
-  if (earlyNext.isAfter(todayMidnight)) return;
+  // The cutoff day itself still belongs to the cycle closing that day (per
+  // getCardCycleDates' documented "until 23:59" semantics) — a movement
+  // registered later that same day must still be counted, so a cycle only
+  // actually CLOSES (snapshots into a CardStatement) the day AFTER its
+  // cutoff, never on the cutoff day itself.
+  if (!earlyNext.isBefore(todayMidnight)) return;
 
   final dailyRate = dailyRateFrom(credit.interestRate, credit.interestRateType);
+
+  // Seed for the FIRST CardStatement this card ever gets: a card that
+  // already had debt before this feature existed (currentBalance set
+  // directly, or accrued over past cycles with no CardStatement history)
+  // must not have that debt silently ignored as if openingBalance were 0.
+  // currentBalance = seed + net(all movements so far) always holds, since
+  // every balance-changing operation also appends a matching movement —
+  // so seed = currentBalance - net(movements), captured BEFORE this call's
+  // loop adds any new interest/fee movements.
+  final seedBalance = credit.currentBalance -
+      credit.movements.fold<double>(
+          0.0,
+          (sum, m) => sum +
+              (m.type == CardMovementType.payment
+                  ? -m.amount.abs()
+                  : m.amount.abs()));
 
   var cursorStr = credit.lastAccrualCutoff!;
   var safety = 0;
@@ -153,7 +176,7 @@ void accrueCardCredit(CardCredit credit, [DateTime? now]) {
     final cursor = parseDateStr(cursorStr);
     final nextRef = DateTime(cursor.year, cursor.month + 1, 1);
     final next = cutoffDateForMonth(nextRef.year, nextRef.month, cutoffDay);
-    if (next.isAfter(todayMidnight)) break;
+    if (!next.isBefore(todayMidnight)) break;
 
     final daysInCycle = next.difference(cursor).inDays;
     if (credit.currentBalance > 0 && dailyRate > 0) {
@@ -199,15 +222,24 @@ void accrueCardCredit(CardCredit credit, [DateTime? now]) {
     final openingBalance = credit.closedStatements.isNotEmpty
         ? (credit.closedStatements.last.closingBalance -
             credit.closedStatements.last.paidAmount)
-        : 0.0;
-    credit.closedStatements.add(CardStatement(
-      id: '${credit.id}-$cycleEndStr',
-      creditId: credit.id,
-      cutoffDate: cycleEndStr,
-      dueDate: toDateStr(_dueDateForCutoff(credit, next)),
-      closingBalance: _round2(openingBalance + netAmount),
-      createdAt: toDateStr(todayMidnight),
-    ));
+        : seedBalance;
+    // Defends against lastAccrualCutoff ever pointing at a cutoffDate that
+    // already has a statement (e.g. an inconsistent restored backup) —
+    // without this, re-adding one with the same deterministic id would
+    // throw a UNIQUE constraint violation on the next upsertCredit and lose
+    // the whole save, not just this one statement.
+    final alreadyExists =
+        credit.closedStatements.any((s) => s.cutoffDate == cycleEndStr);
+    if (!alreadyExists) {
+      credit.closedStatements.add(CardStatement(
+        id: '${credit.id}-$cycleEndStr',
+        creditId: credit.id,
+        cutoffDate: cycleEndStr,
+        dueDate: toDateStr(_dueDateForCutoff(credit, next)),
+        closingBalance: _round2(openingBalance + netAmount),
+        createdAt: toDateStr(todayMidnight),
+      ));
+    }
 
     cursorStr = cycleEndStr;
     safety++;
@@ -272,6 +304,34 @@ void registerCardMovement(
     categoria: categoria,
     chargeInstallments: type == CardMovementType.charge ? chargeInstallments : null,
   ));
+  if (type == CardMovementType.payment) {
+    _applyPaymentToLatestStatement(credit, amount.abs());
+  }
+}
+
+/// Applies [amount] against the LATEST closed statement's unpaid balance
+/// (the only one that matters for [getPayableSummary] — older statements'
+/// unpaid balances already rolled forward into it via `openingBalance`).
+/// Clamps `paidAmount` to `closingBalance` so an overpayment never shows as
+/// "paid more than was owed", and flips `status` to paid once fully
+/// covered. No-op when there are no closed statements yet (every charge is
+/// still in the open cycle — nothing to pay down yet).
+void _applyPaymentToLatestStatement(CardCredit credit, double amount) {
+  if (credit.closedStatements.isEmpty) return;
+  final latest = credit.closedStatements.last;
+  final newPaid = math.min(latest.closingBalance, latest.paidAmount + amount);
+  credit.closedStatements[credit.closedStatements.length - 1] = CardStatement(
+    id: latest.id,
+    creditId: latest.creditId,
+    cutoffDate: latest.cutoffDate,
+    dueDate: latest.dueDate,
+    closingBalance: latest.closingBalance,
+    paidAmount: _round2(newPaid),
+    status: newPaid >= latest.closingBalance
+        ? CardStatementStatus.paid
+        : CardStatementStatus.closed,
+    createdAt: latest.createdAt,
+  );
 }
 
 /// Splits a purchase of [totalAmount] into [installments] movements, one
@@ -292,8 +352,13 @@ List<CardMovement> buildInstallmentMovements({
   final lastInstallment =
       _round2(totalAmount - perInstallment * (installments - 1));
   final purchaseDate = toDateStr(refDate ?? DateTime.now());
+  final cutoffDay = _clampCutoffDay(credit.cutoffDay);
 
-  var cycle = getCardCycleDates(credit, refDate);
+  // The first installment goes to whichever extracto cycleKeyFor would
+  // assign a single-cuota charge made on [purchaseDate] — same function
+  // used everywhere else to group by extracto, so a purchase on the cutoff
+  // day behaves identically whether it's 1 cuota or N.
+  var cutoff = parseDateStr(cycleKeyFor(purchaseDate, cutoffDay));
   final movements = <CardMovement>[];
   for (var i = 1; i <= installments; i++) {
     movements.add(CardMovement(
@@ -304,12 +369,10 @@ List<CardMovement> buildInstallmentMovements({
       categoria: categoria,
       chargeInstallments: installments,
       installmentIndex: i,
-      statementCutoff: toDateStr(cycle.nextCutoff),
+      statementCutoff: toDateStr(cutoff),
     ));
-    cycle = getCardCycleDates(
-      credit,
-      cycle.nextCutoff.add(const Duration(days: 1)),
-    );
+    final nextMonthRef = DateTime(cutoff.year, cutoff.month + 1, 1);
+    cutoff = cutoffDateForMonth(nextMonthRef.year, nextMonthRef.month, cutoffDay);
   }
   return movements;
 }
@@ -394,18 +457,27 @@ class PayableSummary {
 }
 
 PayableSummary getPayableSummary(CardCredit credit) {
-  final unpaid = credit.closedStatements
-      .where((s) => s.status != CardStatementStatus.paid)
-      .toList()
-    ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
-  final exigible =
-      unpaid.fold(0.0, (sum, s) => sum + (s.closingBalance - s.paidAmount));
-  final dueDate = unpaid.isEmpty ? null : parseDateStr(unpaid.first.dueDate);
-  final pendienteFacturar = _round2(credit.currentBalance - exigible);
+  // Only the LATEST closed statement matters: the balance rolls forward
+  // (each statement's closingBalance already carries the prior unpaid
+  // amount via `openingBalance` in accrueCardCredit) — summing every unpaid
+  // statement would double-count debt that already rolled into this one.
+  if (credit.closedStatements.isEmpty) {
+    return const PayableSummary(exigible: 0, pendienteFacturar: 0);
+  }
+  final latest = credit.closedStatements.last;
+  if (latest.status == CardStatementStatus.paid) {
+    return PayableSummary(
+      exigible: 0,
+      pendienteFacturar: math.max(0.0, _round2(credit.currentBalance)),
+    );
+  }
+  final exigible = _round2(latest.closingBalance - latest.paidAmount);
+  final pendienteFacturar =
+      math.max(0.0, _round2(credit.currentBalance - exigible));
   return PayableSummary(
     exigible: exigible,
     pendienteFacturar: pendienteFacturar,
-    dueDate: dueDate,
+    dueDate: parseDateStr(latest.dueDate),
   );
 }
 

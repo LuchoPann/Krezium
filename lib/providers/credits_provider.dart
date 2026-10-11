@@ -75,8 +75,19 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
       if (c is CardCredit) {
         final before = c.currentBalance;
         final beforeMovements = c.movements.length;
+        // closedStatements.length catches a cycle that closed with zero
+        // interest/fee (0% rate, no management fee) — currentBalance and
+        // movements.length alone miss that case, leaving the new
+        // CardStatement and the advanced lastAccrualCutoff unpersisted.
+        // Deliberately NOT comparing lastAccrualCutoff directly: its very
+        // first null→anchor assignment (first app launch for this card)
+        // would count as "changed" too, forcing an extra persist+reload
+        // on every brand-new card for no real data change.
+        final beforeStatements = c.closedStatements.length;
         accrueCardCredit(c);
-        changed = c.currentBalance != before || c.movements.length != beforeMovements;
+        changed = c.currentBalance != before ||
+            c.movements.length != beforeMovements ||
+            c.closedStatements.length != beforeStatements;
       } else if (c is LoanCredit && !c.scheduleManuallyAdjusted) {
         // Skip the recompute once the loan's schedule has diverged from
         // what its base fields alone would reproduce — persisted via the
