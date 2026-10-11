@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/credit.dart';
-import '../../domain/card_calculator.dart';
+import '../../domain/card_statement_engine.dart';
 import '../../domain/date_utils.dart';
 import '../../domain/interest_rate.dart';
 import '../../utils/currency_input_formatter.dart';
@@ -293,11 +293,13 @@ class _EditCreditSheetState extends ConsumerState<EditCreditSheet> {
           double.tryParse(_interestCardCtrl.text.replaceAll(',', '.')) ?? 0;
       if (newCardRate != credit.interestRate ||
           _interestRateType != credit.interestRateType) {
-        // Close out interest already accrued under the OLD rate up to today
-        // BEFORE overwriting it, so the new rate never gets back-applied to
-        // cycles that already closed under the old one (see
-        // applyRateChangeAt's doc comment for the full rationale).
-        applyRateChangeAt(credit, DateTime.now());
+        // Close out any cycle whose cutoff already passed under the OLD
+        // rate BEFORE overwriting it, so the new rate never gets
+        // back-applied to cycles that already closed under the old one.
+        // Known limitation (unchanged from before): a cycle still open
+        // right now cannot be prorated mid-cycle — it will accrue in full
+        // under whichever rate is current when its cutoff is reached.
+        closeCurrentCycleIfDue(credit);
       }
       credit.interestRate = newCardRate;
       credit.interestRateType = _interestRateType;

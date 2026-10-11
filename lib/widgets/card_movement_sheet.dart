@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/models/card_movement.dart';
 import '../data/models/credit.dart';
 import '../domain/card_calculator.dart';
+import '../domain/card_statement_engine.dart';
 import '../providers/credits_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/credit_display_utils.dart';

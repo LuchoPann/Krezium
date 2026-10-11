@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/card_movement.dart';
+import '../../data/models/card_statement.dart';
 import '../../data/models/credit.dart';
-import '../../domain/card_calculator.dart';
 import '../../domain/date_utils.dart';
 import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
@@ -11,25 +11,27 @@ import '../card_movement_sheet.dart';
 import '../../utils/credit_display_utils.dart';
 import '../kredit_bottom_dialogs.dart';
 
-/// Groups [movements] by billing cycle (extracto). An installment movement
-/// (`statementCutoff != null`) groups by that field directly, since it was
-/// assigned to a specific future extracto when registered; every other
-/// movement groups by [cycleKeyFor] (date + cutoffDay) — the single,
-/// consistent day-of-corte criterion shared with `accrueCardCredit`.
-///
-/// Keys come back sorted by cutoff date, most-recent/furthest-out first —
-/// NOT in insertion order. Without this, a purchase in several cuotas
-/// (whose movements can land in any order inside `credit.movements`)
-/// produced extracto groups in an effectively random order on screen.
-Map<String, List<CardMovement>> groupMovementsByCycle(
-    List<CardMovement> movements, int cutoffDay) {
-  final unordered = <String, List<CardMovement>>{};
-  for (final m in movements) {
-    final key = m.statementCutoff ?? cycleKeyFor(m.date, cutoffDay);
-    unordered.putIfAbsent(key, () => []).add(m);
-  }
-  final sortedKeys = unordered.keys.toList()..sort((a, b) => b.compareTo(a));
-  return {for (final k in sortedKeys) k: unordered[k]!};
+/// Un extracto junto a los movimientos ligados a él.
+class StatementGroup {
+  final CardStatement statement;
+  final List<CardMovement> movements;
+  const StatementGroup(this.statement, this.movements);
+}
+
+/// Agrupa [movements] por el extracto (`statementId`) al que están
+/// ligados, en el mismo orden que [statements] (que ya viene ordenada
+/// cronológicamente — se crean en orden por closeCurrentCycleIfDue). Un
+/// extracto sin movimientos propios (ej. uno recién abierto) igual
+/// aparece, con lista vacía — nunca se oculta.
+List<StatementGroup> groupMovementsByStatement(
+    List<CardStatement> statements, List<CardMovement> movements) {
+  return [
+    for (final s in statements)
+      StatementGroup(
+        s,
+        movements.where((m) => m.statementId == s.id).toList(),
+      ),
+  ];
 }
 
 /// Movement history grouped by billing cycle (extracto) — each group shows
@@ -43,16 +45,16 @@ class MovementsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    final movements = credit.movements.reversed.toList();
+    final movements = credit.movements;
 
-    // Group by billing cycle (extracto closing date), most-recent-first.
-    final groups = groupMovementsByCycle(movements, credit.cutoffDay);
-    // Expand the extracto that's currently open/vigente by default — with
-    // cuotas creating future extracto groups ordered ahead of it, index 0
-    // is often a future cuota, not "now".
-    final currentCycleKey = cycleKeyFor(toDateStr(DateTime.now()), credit.cutoffDay);
-    final groupKeys = groups.keys.toList();
-    final defaultExpandedIndex = groupKeys.indexOf(currentCycleKey);
+    // Extractos más reciente/abierto primero — ya vienen en orden
+    // cronológico de creación, solo invertimos para mostrar lo más nuevo
+    // arriba.
+    final sortedStatements = credit.statements.toList()
+      ..sort((a, b) => b.cutoffDate.compareTo(a.cutoffDate));
+    final groups = groupMovementsByStatement(sortedStatements, movements);
+    final defaultExpandedIndex =
+        groups.indexWhere((g) => g.statement.status == CardStatementStatus.open);
 
     return Column(
       children: [
@@ -137,12 +139,12 @@ class MovementsTab extends ConsumerWidget {
               : ListView(
                   padding: const EdgeInsets.all(AppSpacing.card),
                   children: [
-                    for (var i = 0; i < groups.entries.length; i++)
+                    for (var i = 0; i < groups.length; i++)
                       _CycleGroup(
                         creditId: credit.id,
-                        cycleEndDate: groups.keys.elementAt(i),
+                        cycleEndDate: groups[i].statement.cutoffDate,
                         cutoffDay: credit.cutoffDay,
-                        movements: groups.values.elementAt(i),
+                        movements: groups[i].movements.reversed.toList(),
                         allMovements: credit.movements,
                         collapsible: groups.length > 1,
                         initiallyExpanded:

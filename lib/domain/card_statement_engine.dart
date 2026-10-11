@@ -316,6 +316,12 @@ void recomputeCardBalance(CardCredit credit) {
   credit.currentBalance = _round2(total);
 }
 
+/// Cupo disponible — descuenta currentBalance (ya incluye cuotas de
+/// compras a plazos aún no facturadas, vía recomputeCardBalance), igual
+/// que reservaría un banco real.
+double getCardAvailableLimit(CardCredit credit) =>
+    math.max(0.0, credit.creditLimit - credit.currentBalance);
+
 /// Lo que el usuario debe AHORA (extractos cerrados sin pagar por
 /// completo) vs. lo que ya está cargado pero aún no se le exige pagar
 /// (extracto abierto + cuotas de compras a plazos aún no facturadas).

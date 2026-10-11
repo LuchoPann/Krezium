@@ -6,6 +6,7 @@ import '../../data/models/credit.dart';
 import '../../providers/notification_settings_provider.dart';
 import '../../data/models/installment.dart';
 import '../../domain/card_calculator.dart';
+import '../../domain/card_statement_engine.dart';
 import '../../domain/date_utils.dart';
 import '../../domain/loan_calculator.dart';
 import '../../providers/credits_provider.dart';

@@ -7,7 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../data/models/commercial_quota.dart';
 import '../data/models/credit.dart';
 import '../domain/bank_detector.dart';
-import '../domain/card_calculator.dart';
+import '../domain/card_statement_engine.dart';
 import '../domain/commercial_quota_calculator.dart';
 import '../domain/credit_calculator.dart';
 import '../domain/date_utils.dart';

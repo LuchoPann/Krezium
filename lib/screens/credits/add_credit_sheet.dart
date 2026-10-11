@@ -3,13 +3,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/models/card_movement.dart';
 import '../../data/models/commercial_quota.dart';
 import '../../data/models/credit.dart';
 import '../../data/models/installment.dart';
 import '../../domain/bank_detector.dart';
 import '../../utils/currency_input_formatter.dart';
-import '../../domain/card_calculator.dart';
+import '../../domain/card_statement_engine.dart';
 import '../../domain/commercial_quota_calculator.dart';
 import '../../domain/date_utils.dart';
 import '../../domain/entity_templates.dart';
@@ -804,21 +803,25 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
         managementFeeFrequency: _managementFeeFrequency,
         quotaId: quotaId,
         cardDesign: _selectedCardDesign?.name,
-        movements: currentBalance > 0
-            ? [
-                CardMovement(
-                  date: toDateStr(_startDate ?? DateTime.now()),
-                  type: CardMovementType.charge,
-                  amount: currentBalance,
-                  note: 'Saldo inicial registrado',
-                  chargeInstallments: (int.tryParse(_cardInitInstCtrl.text.trim()) ?? 1) > 1
-                      ? int.tryParse(_cardInitInstCtrl.text.trim())
-                      : null,
-                ),
-              ]
-            : [],
       );
-      accrueCardCredit(cardCredit);
+      ensureOpenStatement(cardCredit, _startDate);
+      if (currentBalance > 0) {
+        final initInstallments = int.tryParse(_cardInitInstCtrl.text.trim()) ?? 1;
+        if (initInstallments > 1) {
+          registerInstallmentPurchase(
+            cardCredit, currentBalance, initInstallments,
+            note: 'Saldo inicial registrado',
+            refDate: _startDate,
+          );
+        } else {
+          registerCardCharge(
+            cardCredit, currentBalance,
+            note: 'Saldo inicial registrado',
+            refDate: _startDate,
+          );
+        }
+      }
+      recomputeCardBalance(cardCredit);
       credit = cardCredit;
     } else {
       final totalAmount =

@@ -18,6 +18,7 @@ import '../../widgets/credit_detail/quota_group_tabs.dart';
 import '../../widgets/credit_detail/schedule_tab.dart';
 import '../../widgets/credit_detail/summary_tab.dart';
 import '../../domain/card_calculator.dart';
+import '../../domain/card_statement_engine.dart';
 import '../../domain/credit_calculator.dart';
 import '../../domain/date_utils.dart';
 import '../../utils/credit_display_utils.dart';
