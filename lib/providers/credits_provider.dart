@@ -204,7 +204,17 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
     final credits = state.value ?? [];
     final credit = credits.whereType<CardCredit>().where((c) => c.id == creditId).firstOrNull;
     if (credit == null) return;
-    registerCardMovement(credit, type, amount, note: note, categoria: categoria, chargeInstallments: chargeInstallments);
+    if (type == CardMovementType.charge && (chargeInstallments ?? 1) > 1) {
+      registerCardCharge(
+        credit,
+        amount,
+        note: note,
+        categoria: categoria,
+        installments: chargeInstallments!,
+      );
+    } else {
+      registerCardMovement(credit, type, amount, note: note, categoria: categoria);
+    }
     await _db.upsertCredit(credit);
     _notifyInPlace();
   }
