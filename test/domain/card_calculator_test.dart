@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:krezium/data/models/card_movement.dart';
+import 'package:krezium/data/models/card_statement.dart';
 import 'package:krezium/data/models/credit.dart';
 import 'package:krezium/domain/card_calculator.dart';
 import 'package:krezium/domain/date_utils.dart';
@@ -388,5 +389,207 @@ void main() {
   test('toDateStr/parseDateStr round-trip', () {
     final d = DateTime(2026, 3, 1);
     expect(parseDateStr(toDateStr(d)), d);
+  });
+
+  group('cycleKeyFor', () {
+    test('a movement dated exactly on the cutoff day belongs to the cycle '
+        'that CLOSES that day (not the one that opens)', () {
+      // Regression test for the bug reported by the user: a charge made on
+      // the cutoff day was inconsistently assigned to next month's cycle in
+      // movements_tab.dart while card_calculator.dart's getCardCycleDates
+      // treated it as part of the cycle closing that same day.
+      expect(cycleKeyFor('2026-01-15', 15), '2026-01-15');
+    });
+
+    test('a movement dated the day before cutoff belongs to this month\'s '
+        'closing cycle', () {
+      expect(cycleKeyFor('2026-01-14', 15), '2026-01-15');
+    });
+
+    test('a movement dated the day after cutoff belongs to next month\'s '
+        'closing cycle', () {
+      expect(cycleKeyFor('2026-01-16', 15), '2026-02-15');
+    });
+  });
+
+  group('buildInstallmentMovements', () {
+    test('splits total amount into N installments, each on a consecutive '
+        'future statement', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final refDate = DateTime(2026, 1, 10); // antes del corte del 15
+
+      final movements = buildInstallmentMovements(
+        credit: credit,
+        totalAmount: 300000,
+        installments: 3,
+        note: 'Compra TV',
+        refDate: refDate,
+      );
+
+      expect(movements, hasLength(3));
+      expect(movements[0].installmentIndex, 1);
+      expect(movements[0].chargeInstallments, 3);
+      expect(movements[0].statementCutoff, '2026-01-15');
+      expect(movements[1].statementCutoff, '2026-02-15');
+      expect(movements[2].statementCutoff, '2026-03-15');
+      expect(movements[0].amount, 100000);
+      expect(movements[1].amount, 100000);
+      expect(movements[2].amount, 100000);
+    });
+
+    test('rounding remainder goes entirely on the last installment — sum '
+        'equals the exact original amount', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final movements = buildInstallmentMovements(
+        credit: credit,
+        totalAmount: 100.01,
+        installments: 3,
+        refDate: DateTime(2026, 1, 10),
+      );
+
+      final sum = movements.fold<double>(0, (s, m) => s + m.amount);
+      expect(sum, closeTo(100.01, 0.001));
+      expect(movements[0].amount, 33.34);
+      expect(movements[1].amount, 33.34);
+      expect(movements[2].amount, 33.33);
+    });
+  });
+
+  group('registerCardCharge', () {
+    test('1 installment registers a single movement with no statementCutoff '
+        '(same behavior as before)', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      registerCardCharge(credit, 50000, note: 'Café', installments: 1,
+          refDate: DateTime(2026, 1, 10));
+
+      expect(credit.movements, hasLength(1));
+      expect(credit.movements.first.statementCutoff, isNull);
+      expect(credit.movements.first.chargeInstallments, isNull);
+      expect(credit.currentBalance, 50000);
+    });
+
+    test('N installments registers N movements and adds the full amount to '
+        'currentBalance immediately', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      registerCardCharge(credit, 300000, note: 'TV', installments: 3,
+          refDate: DateTime(2026, 1, 10));
+
+      expect(credit.movements, hasLength(3));
+      expect(credit.currentBalance, 300000);
+    });
+  });
+
+  group('getPayableSummary', () {
+    test('exigible = sum of unpaid closed statements; pendienteFacturar = '
+        'currentBalance minus that', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        currentBalance: 180000,
+        closedStatements: const [
+          CardStatement(
+            id: 's1',
+            creditId: 'c1',
+            cutoffDate: '2026-01-15',
+            dueDate: '2026-02-05',
+            closingBalance: 100000,
+            paidAmount: 0,
+            status: 'closed',
+            createdAt: '2026-01-15',
+          ),
+        ],
+      );
+
+      final summary = getPayableSummary(credit);
+
+      expect(summary.exigible, 100000);
+      expect(summary.pendienteFacturar, 80000);
+      expect(summary.dueDate, parseDateStr('2026-02-05'));
+    });
+
+    test('a fully paid statement does not count toward exigible', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        currentBalance: 80000,
+        closedStatements: const [
+          CardStatement(
+            id: 's1',
+            creditId: 'c1',
+            cutoffDate: '2026-01-15',
+            dueDate: '2026-02-05',
+            closingBalance: 100000,
+            paidAmount: 100000,
+            status: 'paid',
+            createdAt: '2026-01-15',
+          ),
+        ],
+      );
+
+      final summary = getPayableSummary(credit);
+
+      expect(summary.exigible, 0);
+      expect(summary.dueDate, isNull);
+    });
+  });
+
+  group('accrueCardCredit creates CardStatements', () {
+    test('closing a cycle with a charge inside it creates one CardStatement '
+        'with the correct closingBalance and dueDate', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        cutoffDay: 15,
+        paymentDueOffsetDays: 20,
+        lastAccrualCutoff: '2026-01-15',
+      );
+      credit.movements.add(CardMovement(
+        date: '2026-01-20',
+        type: CardMovementType.charge,
+        amount: 50000,
+      ));
+
+      accrueCardCredit(credit, DateTime(2026, 2, 16));
+
+      expect(credit.closedStatements, hasLength(1));
+      final s = credit.closedStatements.first;
+      expect(s.cutoffDate, '2026-02-15');
+      expect(s.closingBalance, 50000);
+      expect(s.dueDate, '2026-03-07'); // 2026-02-15 + 20 días
+    });
+
+    test('calling accrueCardCredit twice without a new cycle elapsing does '
+        'not create duplicate CardStatements', () {
+      final credit = CardCredit(
+        id: 'c1',
+        name: 'Test',
+        lender: 'Bank',
+        cutoffDay: 15,
+        lastAccrualCutoff: '2026-01-15',
+      );
+      accrueCardCredit(credit, DateTime(2026, 2, 16));
+      final countAfterFirst = credit.closedStatements.length;
+      accrueCardCredit(credit, DateTime(2026, 2, 16));
+      expect(credit.closedStatements.length, countAfterFirst);
+    });
+  });
+
+  group('deleteCardMovement with installments', () {
+    test('deleting one installment movement leaves the other installments '
+        'of the same purchase untouched', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      registerCardCharge(credit, 300000, installments: 3, refDate: DateTime(2026, 1, 10));
+      expect(credit.movements, hasLength(3));
+
+      deleteCardMovement(credit, 1); // borra la cuota 2 de 3
+
+      expect(credit.movements, hasLength(2));
+      expect(credit.movements[0].installmentIndex, 1);
+      expect(credit.movements[1].installmentIndex, 3);
+      expect(credit.currentBalance, 200000); // 300000 - cuota eliminada (100000)
+    });
   });
 }

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../data/models/card_movement.dart';
+import '../data/models/card_statement.dart';
 import '../data/models/credit.dart';
 import 'date_utils.dart';
 import 'interest_rate.dart';
@@ -25,6 +26,31 @@ DateTime cutoffDateForMonth(int year, int month, int cutoffDay) {
   return DateTime(year, month, math.min(cutoffDay, lastDay));
 }
 
+/// Returns the closing cutoff date ("YYYY-MM-DD") of the billing cycle that
+/// contains [movementDate], given [cutoffDay]. The cutoff day belongs to
+/// the cycle that CLOSES that day (matches getCardCycleDates' documented
+/// semantics) — a movement dated exactly on the cutoff day is part of the
+/// statement generated that day, not the one that just opened.
+///
+/// Single source of truth for this grouping: movements_tab.dart and
+/// accrueCardCredit both use this instead of each keeping their own
+/// (previously inconsistent) copy.
+String cycleKeyFor(String movementDate, int cutoffDay) {
+  if (movementDate.length < 10) return movementDate;
+  final d = DateTime.tryParse(movementDate);
+  if (d == null) return movementDate;
+  final clampedCutoff = _clampCutoffDay(cutoffDay).clamp(1, 28);
+  DateTime cycleEnd;
+  if (d.day <= clampedCutoff) {
+    cycleEnd = DateTime(d.year, d.month, clampedCutoff);
+  } else {
+    final nextMonth = d.month == 12 ? 1 : d.month + 1;
+    final nextYear = d.month == 12 ? d.year + 1 : d.year;
+    cycleEnd = DateTime(nextYear, nextMonth, clampedCutoff);
+  }
+  return toDateStr(cycleEnd);
+}
+
 class CardCycleDates {
   final DateTime lastCutoff;
   final DateTime nextCutoff;
@@ -35,6 +61,27 @@ class CardCycleDates {
     required this.nextCutoff,
     required this.dueDate,
   });
+}
+
+/// Due date for a statement that closes on [cutoff], given how [credit]
+/// expresses its payment terms (`paymentDueDay` or the legacy
+/// `paymentDueOffsetDays` fallback). Factored out of [getCardCycleDates] so
+/// the cycle-closing logic in `accrueCardCredit` can compute the exact same
+/// due date for a specific (not necessarily "today") cutoff.
+DateTime _dueDateForCutoff(CardCredit credit, DateTime cutoff) {
+  if (credit.paymentDueDay > 0) {
+    // paymentDueDay es un día del mes: el vencimiento cae ese día en el mes
+    // siguiente al corte (ej: corte sep 15 → pago oct 5).
+    final dueMonth = DateTime(cutoff.year, cutoff.month + 1, 1);
+    final lastDayOfDueMonth = _lastDayOfMonth(dueMonth.year, dueMonth.month);
+    return DateTime(
+      dueMonth.year,
+      dueMonth.month,
+      math.min(credit.paymentDueDay, lastDayOfDueMonth),
+    );
+  }
+  // Fallback para registros no migrados: offset en días desde el corte.
+  return cutoff.add(Duration(days: credit.paymentDueOffsetDays));
 }
 
 /// Port of getCardCycleDates (app.js ~L678-697).
@@ -56,26 +103,10 @@ CardCycleDates getCardCycleDates(CardCredit credit, [DateTime? refDate]) {
   final nextCutoff =
       cutoffDateForMonth(nextMonthRef.year, nextMonthRef.month, cutoffDay);
 
-  final DateTime dueDate;
-  if (credit.paymentDueDay > 0) {
-    // paymentDueDay es un día del mes: el vencimiento cae ese día en el mes
-    // siguiente al último corte (ej: corte sep 15 → pago oct 5).
-    final dueMonth = DateTime(lastCutoff.year, lastCutoff.month + 1, 1);
-    final lastDayOfDueMonth = _lastDayOfMonth(dueMonth.year, dueMonth.month);
-    dueDate = DateTime(
-      dueMonth.year,
-      dueMonth.month,
-      math.min(credit.paymentDueDay, lastDayOfDueMonth),
-    );
-  } else {
-    // Fallback para registros no migrados: offset en días desde el último corte.
-    dueDate = lastCutoff.add(Duration(days: credit.paymentDueOffsetDays));
-  }
-
   return CardCycleDates(
     lastCutoff: lastCutoff,
     nextCutoff: nextCutoff,
-    dueDate: dueDate,
+    dueDate: _dueDateForCutoff(credit, lastCutoff),
   );
 }
 
@@ -154,7 +185,31 @@ void accrueCardCredit(CardCredit credit, [DateTime? now]) {
       }
     }
 
-    cursorStr = toDateStr(next);
+    final cycleEndStr = toDateStr(next);
+    final cycleMovements = credit.movements.where((m) {
+      if (m.statementCutoff != null) return m.statementCutoff == cycleEndStr;
+      return cycleKeyFor(m.date, cutoffDay) == cycleEndStr;
+    });
+    var netAmount = 0.0;
+    for (final m in cycleMovements) {
+      netAmount += m.type == CardMovementType.payment
+          ? -m.amount.abs()
+          : m.amount.abs();
+    }
+    final openingBalance = credit.closedStatements.isNotEmpty
+        ? (credit.closedStatements.last.closingBalance -
+            credit.closedStatements.last.paidAmount)
+        : 0.0;
+    credit.closedStatements.add(CardStatement(
+      id: '${credit.id}-$cycleEndStr',
+      creditId: credit.id,
+      cutoffDate: cycleEndStr,
+      dueDate: toDateStr(_dueDateForCutoff(credit, next)),
+      closingBalance: _round2(openingBalance + netAmount),
+      createdAt: toDateStr(todayMidnight),
+    ));
+
+    cursorStr = cycleEndStr;
     safety++;
   }
   credit.lastAccrualCutoff = cursorStr;
@@ -219,6 +274,81 @@ void registerCardMovement(
   ));
 }
 
+/// Splits a purchase of [totalAmount] into [installments] movements, one
+/// per consecutive future billing cycle starting from the currently open
+/// one. Each movement's `date` is the real purchase date (for display);
+/// `statementCutoff` is what determines which extracto it belongs to.
+/// Rounds to 2 decimals; the rounding remainder is absorbed entirely by the
+/// LAST installment so the sum always equals [totalAmount] exactly.
+List<CardMovement> buildInstallmentMovements({
+  required CardCredit credit,
+  required double totalAmount,
+  required int installments,
+  String note = '',
+  String? categoria,
+  DateTime? refDate,
+}) {
+  final perInstallment = _round2(totalAmount / installments);
+  final lastInstallment =
+      _round2(totalAmount - perInstallment * (installments - 1));
+  final purchaseDate = toDateStr(refDate ?? DateTime.now());
+
+  var cycle = getCardCycleDates(credit, refDate);
+  final movements = <CardMovement>[];
+  for (var i = 1; i <= installments; i++) {
+    movements.add(CardMovement(
+      date: purchaseDate,
+      type: CardMovementType.charge,
+      amount: i == installments ? lastInstallment : perInstallment,
+      note: note,
+      categoria: categoria,
+      chargeInstallments: installments,
+      installmentIndex: i,
+      statementCutoff: toDateStr(cycle.nextCutoff),
+    ));
+    cycle = getCardCycleDates(
+      credit,
+      cycle.nextCutoff.add(const Duration(days: 1)),
+    );
+  }
+  return movements;
+}
+
+/// Registers a card charge, splitting it across [installments] consecutive
+/// extractos when `installments > 1` (see [buildInstallmentMovements]).
+/// A single-installment charge behaves exactly like the old
+/// [registerCardMovement] (no `statementCutoff`, grouped by the normal
+/// date+cutoff criterion).
+void registerCardCharge(
+  CardCredit credit,
+  double totalAmount, {
+  String note = '',
+  String? categoria,
+  int installments = 1,
+  DateTime? refDate,
+}) {
+  if (installments <= 1) {
+    registerCardMovement(
+      credit,
+      CardMovementType.charge,
+      totalAmount,
+      note: note,
+      categoria: categoria,
+    );
+    return;
+  }
+  final movements = buildInstallmentMovements(
+    credit: credit,
+    totalAmount: totalAmount,
+    installments: installments,
+    note: note,
+    categoria: categoria,
+    refDate: refDate,
+  );
+  credit.currentBalance = _round2(credit.currentBalance + totalAmount.abs());
+  credit.movements.addAll(movements);
+}
+
 /// Removes a previously-registered movement (identified by its index within
 /// `credit.movements`, most-recent-first order not assumed — callers must
 /// pass the index into the underlying `credit.movements` list) and reverses
@@ -245,6 +375,39 @@ double getCardRemainingBalance(CardCredit credit) => credit.currentBalance;
 /// Available credit limit (renderCardDetailPanel, app.js ~L1469).
 double getCardAvailableLimit(CardCredit credit) =>
     math.max(0.0, credit.creditLimit - credit.currentBalance);
+
+/// What the user actually owes RIGHT NOW (closed, unpaid statements) vs.
+/// charges already made in the still-open cycle (not due yet). This is
+/// what fixes the bug where a brand-new charge, registered right after a
+/// cutoff, appeared lumped together with an imminent due date that
+/// actually belonged to the PREVIOUS (already-closed) statement.
+class PayableSummary {
+  final double exigible;
+  final double pendienteFacturar;
+  final DateTime? dueDate;
+
+  const PayableSummary({
+    required this.exigible,
+    required this.pendienteFacturar,
+    this.dueDate,
+  });
+}
+
+PayableSummary getPayableSummary(CardCredit credit) {
+  final unpaid = credit.closedStatements
+      .where((s) => s.status != CardStatementStatus.paid)
+      .toList()
+    ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+  final exigible =
+      unpaid.fold(0.0, (sum, s) => sum + (s.closingBalance - s.paidAmount));
+  final dueDate = unpaid.isEmpty ? null : parseDateStr(unpaid.first.dueDate);
+  final pendienteFacturar = _round2(credit.currentBalance - exigible);
+  return PayableSummary(
+    exigible: exigible,
+    pendienteFacturar: pendienteFacturar,
+    dueDate: dueDate,
+  );
+}
 
 // ─── French amortization helpers (shared with simulator) ─────────────────────
 
