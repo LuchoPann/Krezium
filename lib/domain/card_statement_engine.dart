@@ -315,3 +315,65 @@ void recomputeCardBalance(CardCredit credit) {
   }
   credit.currentBalance = _round2(total);
 }
+
+/// Lo que el usuario debe AHORA (extractos cerrados sin pagar por
+/// completo) vs. lo que ya está cargado pero aún no se le exige pagar
+/// (extracto abierto + cuotas de compras a plazos aún no facturadas).
+class PayableSummary {
+  final double exigible;
+  final double pendienteFacturar;
+  final DateTime? dueDate;
+
+  const PayableSummary({
+    required this.exigible,
+    required this.pendienteFacturar,
+    this.dueDate,
+  });
+}
+
+PayableSummary getPayableSummary(CardCredit credit) {
+  final unpaidClosed = credit.statements
+      .where((s) => s.status == CardStatementStatus.closed)
+      .toList()
+    ..sort((a, b) => a.cutoffDate.compareTo(b.cutoffDate));
+
+  final exigible = _round2(unpaidClosed.fold(
+      0.0,
+      (sum, s) =>
+          sum + (computeStatementTotal(s, credit.movements) - s.paidAmount)));
+  final dueDate = unpaidClosed.isEmpty ? null : parseDateStr(unpaidClosed.first.dueDate);
+
+  final openTotal = credit.statements
+      .where((s) => s.status == CardStatementStatus.open)
+      .fold(0.0, (sum, s) => sum + computeStatementTotal(s, credit.movements));
+  final unbilledCuotas = credit.installmentPurchases
+      .fold(0.0, (sum, p) => sum + p.remainingAmount);
+
+  return PayableSummary(
+    exigible: exigible,
+    pendienteFacturar: _round2(openTotal + unbilledCuotas),
+    dueDate: dueDate,
+  );
+}
+
+/// Elimina credit.movements[index] y, si era una cuota de una compra a
+/// plazos y era la MÁS RECIENTE facturada de esa compra, decrementa
+/// installmentsBilled para que se vuelva a facturar en el próximo cierre
+/// de ciclo en vez de perderse. No hay tracking manual de delta sobre
+/// currentBalance — el llamador debe invocar recomputeCardBalance después.
+void deleteCardMovement(CardCredit credit, int index) {
+  if (index < 0 || index >= credit.movements.length) return;
+  final removed = credit.movements[index];
+  credit.movements.removeAt(index);
+
+  final purchaseId = removed.installmentPurchaseId;
+  if (purchaseId != null) {
+    final purchase = credit.installmentPurchases
+        .where((p) => p.id == purchaseId)
+        .firstOrNull;
+    if (purchase != null &&
+        removed.installmentIndex == purchase.installmentsBilled) {
+      purchase.installmentsBilled -= 1;
+    }
+  }
+}

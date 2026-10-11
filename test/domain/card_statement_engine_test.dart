@@ -4,6 +4,7 @@ import 'package:krezium/data/models/card_statement.dart';
 import 'package:krezium/data/models/credit.dart';
 import 'package:krezium/data/models/installment_purchase.dart';
 import 'package:krezium/domain/card_statement_engine.dart';
+import 'package:krezium/domain/date_utils.dart';
 
 void main() {
   group('computeStatementTotal', () {
@@ -282,6 +283,69 @@ void main() {
       recomputeCardBalance(credit);
 
       expect(credit.currentBalance, 80000);
+    });
+  });
+
+  group('getPayableSummary v2', () {
+    test('exigible = suma de extractos cerrados sin pagar; dueDate = el '
+        'más antiguo de ellos (vence primero)', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-12', type: CardMovementType.charge, amount: 50000, statementId: open.id));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+      final open2 = credit.statements.firstWhere((s) => s.status == CardStatementStatus.open);
+      credit.movements.add(CardMovement(date: '2026-02-12', type: CardMovementType.charge, amount: 30000, statementId: open2.id));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 2, 16));
+
+      final summary = getPayableSummary(credit);
+
+      expect(summary.exigible, 80000);
+      expect(summary.dueDate, parseDateStr(credit.statements.firstWhere((s) => s.cutoffDate == '2026-01-15').dueDate));
+    });
+
+    test('pendienteFacturar = total del extracto abierto + cuotas sin '
+        'facturar', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-10', type: CardMovementType.charge, amount: 10000, statementId: open.id));
+      credit.installmentPurchases.add(InstallmentPurchase(
+        id: 'ip1', creditId: 'c1', purchaseDate: '2026-01-10',
+        totalAmount: 60000, installments: 2,
+        perInstallmentAmount: 30000, lastInstallmentAmount: 30000,
+        installmentsBilled: 1, createdAt: '2026-01-10',
+      ));
+
+      final summary = getPayableSummary(credit);
+
+      expect(summary.pendienteFacturar, 40000);
+    });
+  });
+
+  group('deleteCardMovement v2', () {
+    test('removing a charge recomputes the statement total — no manual '
+        'delta tracking needed', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      registerCardCharge(credit, 50000, refDate: DateTime(2026, 1, 10));
+      registerCardCharge(credit, 20000, refDate: DateTime(2026, 1, 11));
+      recomputeCardBalance(credit);
+      expect(credit.currentBalance, 70000);
+
+      deleteCardMovement(credit, 0);
+      recomputeCardBalance(credit);
+
+      expect(credit.movements, hasLength(1));
+      expect(credit.currentBalance, 20000);
+    });
+
+    test('deleting the most recently billed cuota of an InstallmentPurchase '
+        'decrements installmentsBilled so it can be re-billed next close', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final purchase = registerInstallmentPurchase(credit, 90000, 3, refDate: DateTime(2026, 1, 10));
+      expect(purchase.installmentsBilled, 1);
+
+      deleteCardMovement(credit, 0);
+
+      expect(purchase.installmentsBilled, 0);
     });
   });
 }
