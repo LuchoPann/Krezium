@@ -5,7 +5,7 @@ import '../data/models/commercial_quota.dart';
 import '../data/models/card_movement.dart';
 import '../data/models/credit.dart';
 import '../data/models/loan_abono.dart';
-import '../domain/card_calculator.dart';
+import '../domain/card_statement_engine.dart';
 import '../domain/credit_calculator.dart';
 import '../domain/loan_calculator.dart';
 import 'commercial_quotas_provider.dart';
@@ -75,16 +75,10 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
       if (c is CardCredit) {
         final before = c.currentBalance;
         final beforeMovements = c.movements.length;
-        // closedStatements.length catches a cycle that closed with zero
-        // interest/fee (0% rate, no management fee) — currentBalance and
-        // movements.length alone miss that case, leaving the new
-        // CardStatement and the advanced lastAccrualCutoff unpersisted.
-        // Deliberately NOT comparing lastAccrualCutoff directly: its very
-        // first null→anchor assignment (first app launch for this card)
-        // would count as "changed" too, forcing an extra persist+reload
-        // on every brand-new card for no real data change.
         final beforeStatements = c.statements.length;
-        accrueCardCredit(c);
+        migrateLegacyCardData(c);
+        closeCurrentCycleIfDue(c);
+        recomputeCardBalance(c);
         changed = c.currentBalance != before ||
             c.movements.length != beforeMovements ||
             c.statements.length != beforeStatements;
@@ -148,6 +142,9 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
 
   Future<void> addCredit(Credit credit) async {
     _clearInterestUnknownIfRateKnown(credit);
+    if (credit is CardCredit) {
+      ensureOpenStatement(credit);
+    }
     await _db.upsertCredit(credit);
     // Agrega el crédito nuevo al estado en memoria sin releer toda la DB.
     final current = List<Credit>.from(state.value ?? [])..add(credit);
@@ -215,17 +212,14 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
     final credits = state.value ?? [];
     final credit = credits.whereType<CardCredit>().where((c) => c.id == creditId).firstOrNull;
     if (credit == null) return;
-    if (type == CardMovementType.charge && (chargeInstallments ?? 1) > 1) {
-      registerCardCharge(
-        credit,
-        amount,
-        note: note,
-        categoria: categoria,
-        installments: chargeInstallments!,
-      );
+    if (type == CardMovementType.payment) {
+      registerCardPayment(credit, amount);
+    } else if ((chargeInstallments ?? 1) > 1) {
+      registerInstallmentPurchase(credit, amount, chargeInstallments!, note: note, categoria: categoria);
     } else {
-      registerCardMovement(credit, type, amount, note: note, categoria: categoria);
+      registerCardCharge(credit, amount, note: note, categoria: categoria);
     }
+    recomputeCardBalance(credit);
     await _db.upsertCredit(credit);
     _notifyInPlace();
   }
@@ -295,6 +289,7 @@ class CreditsNotifier extends AsyncNotifier<List<Credit>> {
     final credit = credits.whereType<CardCredit>().where((c) => c.id == creditId).firstOrNull;
     if (credit == null) return;
     deleteCardMovement(credit, movementIndex);
+    recomputeCardBalance(credit);
     await _db.upsertCredit(credit);
     _notifyInPlace();
   }
