@@ -422,22 +422,34 @@ class _CardCycleSummaryRow extends StatelessWidget {
     final dates = getCardCycleDates(credit);
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
-    final due = dates.dueDate;
-    final daysUntilDue = due.difference(todayDate).inDays;
+    // "Próximo vencimiento" debe reflejar deuda REAL exigible (extracto ya
+    // cerrado sin pagar) — no una proyección del ciclo abierto, que
+    // contradecía visualmente el "Sin pagos pendientes" de más arriba
+    // (basado en getPayableSummary) cuando no hay nada vencido todavía.
+    final summary = getPayableSummary(credit);
+    final due = summary.dueDate;
 
     String dueLabel;
     Color dueColor = kredit.textPrimary;
-    if (daysUntilDue < 0) {
-      dueLabel = 'Vencido';
-      dueColor = Colors.red.shade400;
-    } else if (daysUntilDue == 0) {
-      dueLabel = 'Hoy';
-      dueColor = Colors.orange.shade400;
-    } else if (daysUntilDue == 1) {
-      dueLabel = 'Mañana';
-      dueColor = Colors.orange.shade300;
+    String? dueCaption;
+    if (due == null) {
+      dueLabel = 'Sin pagos pendientes';
+      dueCaption = null;
     } else {
-      dueLabel = 'En $daysUntilDue días';
+      final daysUntilDue = due.difference(todayDate).inDays;
+      dueCaption = _humanDate(due);
+      if (daysUntilDue < 0) {
+        dueLabel = 'Vencido';
+        dueColor = Colors.red.shade400;
+      } else if (daysUntilDue == 0) {
+        dueLabel = 'Hoy';
+        dueColor = Colors.orange.shade400;
+      } else if (daysUntilDue == 1) {
+        dueLabel = 'Mañana';
+        dueColor = Colors.orange.shade300;
+      } else {
+        dueLabel = 'En $daysUntilDue días';
+      }
     }
 
     final cutoff = dates.nextCutoff;
@@ -463,7 +475,7 @@ class _CardCycleSummaryRow extends StatelessWidget {
               child: StatBox(
                 label: 'Próximo vencimiento',
                 value: dueLabel,
-                caption: _humanDate(due),
+                caption: dueCaption,
                 icon: Icons.timer_outlined,
                 valueColor: dueColor,
               ),
@@ -501,7 +513,7 @@ class _CardCycleSummaryRow extends StatelessWidget {
           todayDay: today.day,
           accent: accent,
           kredit: kredit,
-          isOverdue: daysUntilDue < 0,
+          isOverdue: due != null && due.isBefore(todayDate),
         ),
       ],
     );
