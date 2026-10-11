@@ -1,8 +1,12 @@
+import 'dart:math' as math;
+
 import '../data/models/card_movement.dart';
 import '../data/models/card_statement.dart';
 import '../data/models/credit.dart';
-import 'card_calculator.dart' show getCardCycleDates, dueDateForCutoff;
+import 'card_calculator.dart'
+    show cutoffDateForMonth, getCardCycleDates, dueDateForCutoff;
 import 'date_utils.dart';
+import 'interest_rate.dart';
 
 double _round2(double v) => (v * 100).round() / 100;
 
@@ -45,4 +49,118 @@ CardStatement ensureOpenStatement(CardCredit credit, [DateTime? refDate]) {
   );
   credit.statements.add(statement);
   return statement;
+}
+
+/// Cierra el extracto abierto de [credit] cada vez que su fecha de corte ya
+/// pasó por completo (el día de corte pertenece al ciclo hasta las 23:59;
+/// recién al día siguiente se cierra), aplicando interés/cuota de manejo,
+/// abriendo el siguiente extracto, y facturando automáticamente la próxima
+/// cuota pendiente de cada InstallmentPurchase en el extracto nuevo.
+/// Idempotente — seguro de llamar en cada arranque de la app. Capado a 36
+/// iteraciones como red de seguridad.
+void closeCurrentCycleIfDue(CardCredit credit, [DateTime? now]) {
+  final today = now ?? DateTime.now();
+  final todayMidnight = DateTime(today.year, today.month, today.day);
+  final cutoffDay = math.min(math.max(credit.cutoffDay, 1), 31);
+
+  var open = ensureOpenStatement(credit, todayMidnight);
+  var safety = 0;
+  while (safety < 36) {
+    final cutoff = parseDateStr(open.cutoffDate);
+    if (!cutoff.isBefore(todayMidnight)) break;
+
+    final dailyRate = dailyRateFrom(credit.interestRate, credit.interestRateType);
+    final balanceBeforeInterest = computeStatementTotal(open, credit.movements);
+    final openedAt = _openedAtFor(credit, open);
+    final daysInCycle = cutoff.difference(openedAt).inDays;
+    if (balanceBeforeInterest > 0 && dailyRate > 0) {
+      final interestAmt = _round2(balanceBeforeInterest * dailyRate * daysInCycle);
+      credit.movements.add(CardMovement(
+        date: open.cutoffDate,
+        type: CardMovementType.interest,
+        amount: interestAmt,
+        statementId: open.id,
+        note: 'Interés corriente (${daysInCycle}d × tasa diaria)',
+      ));
+    }
+
+    credit.cycleCount++;
+    final fee = credit.managementFee;
+    if (fee > 0) {
+      final chargeFee = credit.managementFeeFrequency == ManagementFeeFrequency.annual
+          ? (credit.cycleCount % 12 == 0)
+          : true;
+      if (chargeFee) {
+        credit.movements.add(CardMovement(
+          date: open.cutoffDate,
+          type: CardMovementType.fee,
+          amount: fee,
+          statementId: open.id,
+          note: 'Cuota de manejo',
+        ));
+      }
+    }
+
+    final closingTotal = computeStatementTotal(open, credit.movements);
+    final closedIndex = credit.statements.indexWhere((s) => s.id == open.id);
+    final closed = CardStatement(
+      id: open.id,
+      creditId: open.creditId,
+      cutoffDate: open.cutoffDate,
+      dueDate: open.dueDate,
+      closingBalance: closingTotal,
+      paidAmount: open.paidAmount,
+      status: closingTotal <= 0 ? CardStatementStatus.paid : CardStatementStatus.closed,
+      createdAt: open.createdAt,
+    );
+    credit.statements[closedIndex] = closed;
+
+    final nextCutoffRef = DateTime(cutoff.year, cutoff.month + 1, 1);
+    final nextCutoff = cutoffDateForMonth(nextCutoffRef.year, nextCutoffRef.month, cutoffDay);
+    final newOpen = CardStatement(
+      id: '${credit.id}-${nextCutoff.microsecondsSinceEpoch}',
+      creditId: credit.id,
+      cutoffDate: toDateStr(nextCutoff),
+      dueDate: toDateStr(dueDateForCutoff(credit, nextCutoff)),
+      closingBalance: 0,
+      openingBalance: closingTotal - closed.paidAmount,
+      status: CardStatementStatus.open,
+      createdAt: toDateStr(todayMidnight),
+    );
+    credit.statements.add(newOpen);
+
+    for (final purchase in credit.installmentPurchases) {
+      if (purchase.isFullyBilled) continue;
+      final nextIndex = purchase.installmentsBilled + 1;
+      final amount = nextIndex == purchase.installments
+          ? purchase.lastInstallmentAmount
+          : purchase.perInstallmentAmount;
+      credit.movements.add(CardMovement(
+        date: toDateStr(nextCutoff),
+        type: CardMovementType.charge,
+        amount: amount,
+        note: purchase.note,
+        categoria: purchase.categoria,
+        statementId: newOpen.id,
+        installmentPurchaseId: purchase.id,
+        chargeInstallments: purchase.installments,
+        installmentIndex: nextIndex,
+      ));
+      purchase.installmentsBilled = nextIndex;
+    }
+
+    open = newOpen;
+    safety++;
+  }
+}
+
+/// Fecha en que [statement] empezó a acumularse — el corte del extracto
+/// anterior + 1 día, o su propia `createdAt` si es el primero de la
+/// tarjeta (no hay anterior del cual partir).
+DateTime _openedAtFor(CardCredit credit, CardStatement statement) {
+  final sorted = credit.statements.toList()
+    ..sort((a, b) => a.cutoffDate.compareTo(b.cutoffDate));
+  final idx = sorted.indexWhere((s) => s.id == statement.id);
+  if (idx <= 0) return parseDateStr(statement.createdAt);
+  return parseDateStr(sorted[idx - 1].cutoffDate).add(const Duration(days: 1));
 }
