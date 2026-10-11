@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/card_movement.dart';
 import '../../data/models/credit.dart';
+import '../../domain/card_calculator.dart';
 import '../../domain/date_utils.dart';
 import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
@@ -10,31 +11,19 @@ import '../card_movement_sheet.dart';
 import '../../utils/credit_display_utils.dart';
 import '../kredit_bottom_dialogs.dart';
 
-
-/// Returns the closing cutoff date (YYYY-MM-DD) of the billing cycle that
-/// contains [movementDate], given [cutoffDay]. Used to group movements by
-/// extracto instead of calendar month.
-///
-/// Cutoff day opens the new period at 00:00, so a purchase on the cutoff day
-/// itself belongs to the NEW extracto (the one that just opened).
-/// If the movement falls strictly before [cutoffDay] of its month → the cycle
-/// closes on cutoffDay of that same month.
-/// If the movement falls on or after [cutoffDay] → the cycle closes on cutoffDay
-/// of the FOLLOWING month.
-String _cycleKeyFor(String movementDate, int cutoffDay) {
-  if (movementDate.length < 10) return movementDate;
-  final d = DateTime.tryParse(movementDate);
-  if (d == null) return movementDate;
-  final clampedCutoff = cutoffDay.clamp(1, 28);
-  DateTime cycleEnd;
-  if (d.day < clampedCutoff) {
-    cycleEnd = DateTime(d.year, d.month, clampedCutoff);
-  } else {
-    final nextMonth = d.month == 12 ? 1 : d.month + 1;
-    final nextYear = d.month == 12 ? d.year + 1 : d.year;
-    cycleEnd = DateTime(nextYear, nextMonth, clampedCutoff);
+/// Groups [movements] by billing cycle (extracto). An installment movement
+/// (`statementCutoff != null`) groups by that field directly, since it was
+/// assigned to a specific future extracto when registered; every other
+/// movement groups by [cycleKeyFor] (date + cutoffDay) — the single,
+/// consistent day-of-corte criterion shared with `accrueCardCredit`.
+Map<String, List<CardMovement>> groupMovementsByCycle(
+    List<CardMovement> movements, int cutoffDay) {
+  final groups = <String, List<CardMovement>>{};
+  for (final m in movements) {
+    final key = m.statementCutoff ?? cycleKeyFor(m.date, cutoffDay);
+    groups.putIfAbsent(key, () => []).add(m);
   }
-  return toDateStr(cycleEnd);
+  return groups;
 }
 
 /// Movement history grouped by billing cycle (extracto) — each group shows
@@ -51,11 +40,7 @@ class MovementsTab extends ConsumerWidget {
     final movements = credit.movements.reversed.toList();
 
     // Group by billing cycle (extracto closing date), most-recent-first.
-    final groups = <String, List<CardMovement>>{};
-    for (final m in movements) {
-      final key = _cycleKeyFor(m.date, credit.cutoffDay);
-      groups.putIfAbsent(key, () => []).add(m);
-    }
+    final groups = groupMovementsByCycle(movements, credit.cutoffDay);
 
     return Column(
       children: [
