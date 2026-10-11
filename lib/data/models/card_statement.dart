@@ -4,6 +4,7 @@
 /// Creado una sola vez por `accrueCardCredit` cuando detecta que un ciclo
 /// de facturación cruzó su fecha de corte.
 class CardStatementStatus {
+  static const open = 'open';
   static const closed = 'closed';
   static const paid = 'paid';
 }

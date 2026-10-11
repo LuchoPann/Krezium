@@ -19,6 +19,19 @@ void main() {
     expect(decoded.statementCutoff, '2026-02-15');
   });
 
+  test('toJson/fromJson round-trips statementId and installmentPurchaseId', () {
+    final mv = CardMovement(
+      date: '2026-01-10',
+      type: CardMovementType.charge,
+      amount: 50000,
+      statementId: 's1',
+      installmentPurchaseId: 'ip1',
+    );
+    final decoded = CardMovement.fromJson(mv.toJson());
+    expect(decoded.statementId, 's1');
+    expect(decoded.installmentPurchaseId, 'ip1');
+  });
+
   test('installmentIndex and statementCutoff default to null', () {
     final decoded = CardMovement.fromJson({
       'date': '2026-01-10',

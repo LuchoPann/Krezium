@@ -50,6 +50,17 @@ class CardMovement {
   /// intereses, cuotas de manejo y avances.
   final String? statementCutoff;
 
+  /// FK al CardStatement (abierto o cerrado) al que este movimiento está
+  /// ligado. NOT NULL para todo movimiento creado desde el motor de
+  /// extractos v2 en adelante — null solo en filas legadas no migradas aún
+  /// (ver migrateLegacyCardData en card_statement_engine.dart).
+  final String? statementId;
+
+  /// FK a InstallmentPurchase cuando este movimiento es una cuota de una
+  /// compra a plazos. Null para cargos de 1 sola exhibición, pagos,
+  /// intereses, cuotas de manejo y avances.
+  final String? installmentPurchaseId;
+
   CardMovement({
     required this.date,
     required this.type,
@@ -66,6 +77,8 @@ class CardMovement {
     this.chargeMonthlyRate,
     this.installmentIndex,
     this.statementCutoff,
+    this.statementId,
+    this.installmentPurchaseId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -84,6 +97,8 @@ class CardMovement {
         'chargeMonthlyRate': chargeMonthlyRate,
         'installmentIndex': installmentIndex,
         'statementCutoff': statementCutoff,
+        'statementId': statementId,
+        'installmentPurchaseId': installmentPurchaseId,
       };
 
   factory CardMovement.fromJson(Map<String, dynamic> json) => CardMovement(
@@ -102,5 +117,7 @@ class CardMovement {
         chargeMonthlyRate: (json['chargeMonthlyRate'] as num?)?.toDouble(),
         installmentIndex: json['installmentIndex'] as int?,
         statementCutoff: json['statementCutoff'] as String?,
+        statementId: json['statementId'] as String?,
+        installmentPurchaseId: json['installmentPurchaseId'] as String?,
       );
 }
