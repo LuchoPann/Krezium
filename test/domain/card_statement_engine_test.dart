@@ -72,7 +72,10 @@ void main() {
     });
 
     test('closes the open statement the day after its cutoff and opens the '
-        'next one, carrying the unpaid balance forward as openingBalance', () {
+        'next one with a clean openingBalance — no carry-forward, since '
+        'total unpaid debt is always the sum across ALL unpaid statements '
+        '(see recomputeCardBalance/getPayableSummary), never a number '
+        'duplicated between the closed statement and the next one', () {
       final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
       final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
       credit.movements.add(CardMovement(
@@ -85,8 +88,9 @@ void main() {
       expect(credit.statements, hasLength(2));
       final closed = credit.statements.firstWhere((s) => s.id == open.id);
       expect(closed.status, CardStatementStatus.closed);
+      expect(computeStatementTotal(closed, credit.movements), 50000);
       final newOpen = credit.statements.firstWhere((s) => s.status == CardStatementStatus.open);
-      expect(newOpen.openingBalance, 50000);
+      expect(newOpen.openingBalance, 0);
       expect(newOpen.cutoffDate, '2026-02-15');
     });
 
@@ -191,6 +195,93 @@ void main() {
       final open = credit.statements.single;
       expect(open.cutoffDate, '2026-01-15');
       expect(credit.movements.first.statementId, open.id);
+    });
+  });
+
+  group('registerCardPayment', () {
+    CardCredit cardWithOneClosedStatement(double closingTotal) {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(
+        date: '2026-01-12', type: CardMovementType.charge, amount: closingTotal,
+        statementId: open.id,
+      ));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+      return credit;
+    }
+
+    test('a payment that exactly covers the oldest closed statement marks '
+        'it paid', () {
+      final credit = cardWithOneClosedStatement(100000);
+      registerCardPayment(credit, 100000, refDate: DateTime(2026, 1, 20));
+
+      final closed = credit.statements.firstWhere((s) => s.status != CardStatementStatus.open);
+      expect(closed.paidAmount, 100000);
+      expect(closed.status, CardStatementStatus.paid);
+    });
+
+    test('an overpayment carries the remainder into the open statement as '
+        'an advance payment, not lost', () {
+      final credit = cardWithOneClosedStatement(100000);
+      registerCardPayment(credit, 150000, refDate: DateTime(2026, 1, 20));
+
+      final closed = credit.statements.firstWhere((s) => s.status != CardStatementStatus.open);
+      expect(closed.paidAmount, 100000);
+      final open = credit.statements.firstWhere((s) => s.status == CardStatementStatus.open);
+      expect(computeStatementTotal(open, credit.movements), -50000);
+    });
+
+    test('a partial payment reduces the oldest closed statement without '
+        'marking it paid', () {
+      final credit = cardWithOneClosedStatement(100000);
+      registerCardPayment(credit, 40000, refDate: DateTime(2026, 1, 20));
+
+      final closed = credit.statements.firstWhere((s) => s.status != CardStatementStatus.open);
+      expect(closed.paidAmount, 40000);
+      expect(closed.status, CardStatementStatus.closed);
+    });
+  });
+
+  group('recomputeCardBalance', () {
+    test('two unpaid closed statements sum correctly without '
+        'double-counting — regression for the v1 bug where carrying a '
+        'balance forward via openingBalance duplicated debt once a later '
+        'payment settled the older statement directly', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open1 = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(date: '2026-01-12', type: CardMovementType.charge, amount: 100000, statementId: open1.id));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+      final open2 = credit.statements.firstWhere((s) => s.status == CardStatementStatus.open);
+      credit.movements.add(CardMovement(date: '2026-02-12', type: CardMovementType.charge, amount: 50000, statementId: open2.id));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 2, 16));
+
+      recomputeCardBalance(credit);
+      expect(credit.currentBalance, 150000);
+
+      registerCardPayment(credit, 100000, refDate: DateTime(2026, 2, 20));
+      recomputeCardBalance(credit);
+      expect(credit.currentBalance, 50000);
+    });
+
+    test('currentBalance = sum of unpaid statements + remaining unbilled '
+        'cuotas of installment purchases', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(
+        date: '2026-01-10', type: CardMovementType.charge, amount: 20000,
+        statementId: open.id,
+      ));
+      credit.installmentPurchases.add(InstallmentPurchase(
+        id: 'ip1', creditId: 'c1', purchaseDate: '2026-01-10',
+        totalAmount: 90000, installments: 3,
+        perInstallmentAmount: 30000, lastInstallmentAmount: 30000,
+        installmentsBilled: 1,
+        createdAt: '2026-01-10',
+      ));
+
+      recomputeCardBalance(credit);
+
+      expect(credit.currentBalance, 80000);
     });
   });
 }
