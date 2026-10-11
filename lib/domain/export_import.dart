@@ -22,7 +22,7 @@ import '../data/models/credit.dart';
 ///
 /// Bump this whenever the backup shape changes, and extend [_migrateBackup]
 /// with a case that upgrades the *previous* version into the new one.
-const int kBackupFormatVersion = 3;
+const int kBackupFormatVersion = 4;
 
 /// The `format` marker identifying versioned (v2+) backups. Legacy (v1)
 /// backups predate this field entirely — they are just `{"credits": [...]}`
@@ -99,6 +99,16 @@ Map<String, dynamic> _migrateBackup(Map<String, dynamic> decoded) {
       // any quota-linked credits to begin with).
       decoded['commercialQuotas'] ??= <dynamic>[];
       version = 3;
+      continue;
+    }
+    if (version == 3) {
+      // v3 -> v4 added CardCredit.closedStatements and
+      // CardMovement.installmentIndex/statementCutoff — all absent in v3
+      // backups. CardCredit.fromJson and CardMovement.fromJson already
+      // default them to [] / null respectively, so nothing needs to
+      // change in the decoded payload itself; this branch exists purely
+      // to document the version bump and advance the loop.
+      version = 4;
       continue;
     }
     // Should be unreachable given the version check above, but avoid an

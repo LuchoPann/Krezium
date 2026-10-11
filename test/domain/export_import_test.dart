@@ -116,5 +116,36 @@ void main() {
       expect(imported.quotas, isEmpty);
       expect(imported.credits, hasLength(1));
     });
+
+    test('kBackupFormatVersion is 4', () {
+      expect(kBackupFormatVersion, 4);
+    });
+
+    test('imports a v3 backup (no closedStatements field) without error, '
+        'card credit ends up with empty closedStatements', () {
+      final v3Json = jsonEncode({
+        'format': kBackupFormatMarker,
+        'version': 3,
+        'exportedAt': '2026-01-01T00:00:00.000Z',
+        'credits': [
+          {
+            'id': 'c1',
+            'type': 'card',
+            'name': 'Visa',
+            'lender': 'Bank',
+            'currentBalance': 100000.0,
+            'cutoffDay': 15,
+            'movements': [],
+          }
+        ],
+        'commercialQuotas': [],
+      });
+
+      final result = importStateFromJson(v3Json);
+
+      expect(result.credits, hasLength(1));
+      final card = result.credits.first as CardCredit;
+      expect(card.closedStatements, isEmpty);
+    });
   });
 }
