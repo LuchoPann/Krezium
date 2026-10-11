@@ -3,8 +3,9 @@ import 'dart:math' as math;
 import '../data/models/card_movement.dart';
 import '../data/models/card_statement.dart';
 import '../data/models/credit.dart';
+import '../data/models/installment_purchase.dart';
 import 'card_calculator.dart'
-    show cutoffDateForMonth, getCardCycleDates, dueDateForCutoff;
+    show cutoffDateForMonth, dueDateForCutoff, cycleKeyFor;
 import 'date_utils.dart';
 import 'interest_rate.dart';
 
@@ -28,24 +29,29 @@ double computeStatementTotal(
 /// Garantiza que [credit] tenga un extracto abierto, creándolo si hace
 /// falta (tarjeta recién creada, o justo después de cerrar el anterior).
 /// El extracto abierto representa el ciclo que se está acumulando AHORA —
-/// cierra en la próxima fecha de corte (`getCardCycleDates(...).nextCutoff`).
+/// cierra en el corte que `cycleKeyFor` asigna a hoy.
 CardStatement ensureOpenStatement(CardCredit credit, [DateTime? refDate]) {
   final existing = credit.statements
       .where((s) => s.status == CardStatementStatus.open)
       .toList();
   if (existing.isNotEmpty) return existing.first;
 
-  final dates = getCardCycleDates(credit, refDate);
-  final cutoffDate = toDateStr(dates.nextCutoff);
+  final today = refDate ?? DateTime.now();
+  // Usa cycleKeyFor — el mismo criterio que asigna un cargo normal a su
+  // extracto — para que el PRIMER extracto de una tarjeta nueva sea
+  // consistente con una compra a plazos hecha el mismo día (Task 7's
+  // regression test): ambos deben coincidir exactamente en qué ciclo
+  // "hoy" pertenece, incluyendo el caso límite día == día de corte.
+  final cutoff = parseDateStr(cycleKeyFor(toDateStr(today), credit.cutoffDay));
   final statement = CardStatement(
     id: '${credit.id}-${DateTime.now().microsecondsSinceEpoch}',
     creditId: credit.id,
-    cutoffDate: cutoffDate,
-    dueDate: toDateStr(dueDateForCutoff(credit, dates.nextCutoff)),
+    cutoffDate: toDateStr(cutoff),
+    dueDate: toDateStr(dueDateForCutoff(credit, cutoff)),
     closingBalance: 0,
     openingBalance: 0,
     status: CardStatementStatus.open,
-    createdAt: toDateStr(refDate ?? DateTime.now()),
+    createdAt: toDateStr(today),
   );
   credit.statements.add(statement);
   return statement;
@@ -163,4 +169,69 @@ DateTime _openedAtFor(CardCredit credit, CardStatement statement) {
   final idx = sorted.indexWhere((s) => s.id == statement.id);
   if (idx <= 0) return parseDateStr(statement.createdAt);
   return parseDateStr(sorted[idx - 1].cutoffDate).add(const Duration(days: 1));
+}
+
+/// Registra un cargo de 1 sola exhibición, ligado al extracto abierto.
+void registerCardCharge(
+  CardCredit credit,
+  double amount, {
+  String note = '',
+  String? categoria,
+  DateTime? refDate,
+}) {
+  final open = ensureOpenStatement(credit, refDate);
+  credit.movements.add(CardMovement(
+    date: toDateStr(refDate ?? DateTime.now()),
+    type: CardMovementType.charge,
+    amount: amount.abs(),
+    note: note,
+    categoria: categoria,
+    statementId: open.id,
+  ));
+}
+
+/// Registra una compra a [installments] cuotas: crea la InstallmentPurchase
+/// y factura la cuota 1 de inmediato en el extracto abierto. Las cuotas
+/// 2..N se facturan solas cuando sus ciclos abran (closeCurrentCycleIfDue).
+InstallmentPurchase registerInstallmentPurchase(
+  CardCredit credit,
+  double totalAmount,
+  int installments, {
+  String note = '',
+  String? categoria,
+  DateTime? refDate,
+}) {
+  final open = ensureOpenStatement(credit, refDate);
+  final perInstallment = _round2(totalAmount / installments);
+  final lastInstallment = _round2(totalAmount - perInstallment * (installments - 1));
+  final purchaseDate = toDateStr(refDate ?? DateTime.now());
+
+  final purchase = InstallmentPurchase(
+    id: '${credit.id}-ip-${DateTime.now().microsecondsSinceEpoch}',
+    creditId: credit.id,
+    purchaseDate: purchaseDate,
+    totalAmount: totalAmount,
+    installments: installments,
+    perInstallmentAmount: perInstallment,
+    lastInstallmentAmount: lastInstallment,
+    note: note,
+    categoria: categoria,
+    installmentsBilled: 1,
+    createdAt: purchaseDate,
+  );
+  credit.installmentPurchases.add(purchase);
+
+  credit.movements.add(CardMovement(
+    date: purchaseDate,
+    type: CardMovementType.charge,
+    amount: installments == 1 ? totalAmount : perInstallment,
+    note: note,
+    categoria: categoria,
+    statementId: open.id,
+    installmentPurchaseId: purchase.id,
+    chargeInstallments: installments,
+    installmentIndex: 1,
+  ));
+
+  return purchase;
 }

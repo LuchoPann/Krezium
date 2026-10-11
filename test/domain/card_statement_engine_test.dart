@@ -145,4 +145,52 @@ void main() {
       expect(credit.movements, isEmpty);
     });
   });
+
+  group('registerCardCharge', () {
+    test('creates a single charge linked to the open statement', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      registerCardCharge(credit, 50000, note: 'Café', refDate: DateTime(2026, 1, 10));
+
+      expect(credit.movements, hasLength(1));
+      final open = credit.statements.single;
+      expect(credit.movements.first.statementId, open.id);
+      expect(computeStatementTotal(open, credit.movements), 50000);
+    });
+  });
+
+  group('registerInstallmentPurchase', () {
+    test('creates the purchase and bills cuota 1 immediately into the open '
+        'statement', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final purchase = registerInstallmentPurchase(
+        credit, 90000, 3, note: 'TV', refDate: DateTime(2026, 1, 10),
+      );
+
+      expect(credit.installmentPurchases, hasLength(1));
+      expect(purchase.installmentsBilled, 1);
+      expect(credit.movements, hasLength(1));
+      expect(credit.movements.first.installmentIndex, 1);
+      expect(credit.movements.first.installmentPurchaseId, purchase.id);
+      final open = credit.statements.single;
+      expect(computeStatementTotal(open, credit.movements), 30000);
+    });
+
+    test('rounding remainder goes on lastInstallmentAmount, sum equals the '
+        'exact total', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final purchase = registerInstallmentPurchase(credit, 100.01, 3, refDate: DateTime(2026, 1, 10));
+      final sum = purchase.perInstallmentAmount * 2 + purchase.lastInstallmentAmount;
+      expect(sum, closeTo(100.01, 0.001));
+    });
+
+    test('a purchase made exactly on the cutoff day bills cuota 1 into the '
+        'statement that closes THAT day — same as a single-cuota charge '
+        'would (both use ensureOpenStatement/getCardCycleDates consistently)', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final purchase = registerInstallmentPurchase(credit, 90000, 3, refDate: DateTime(2026, 1, 15));
+      final open = credit.statements.single;
+      expect(open.cutoffDate, '2026-01-15');
+      expect(credit.movements.first.statementId, open.id);
+    });
+  });
 }
