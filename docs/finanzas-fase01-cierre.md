@@ -1,7 +1,7 @@
 # Cierre de Fase 01 — Integridad financiera y cálculos
 
 Fecha de cierre: 2026-10-13
-Commits de esta fase: de `0ad4033` (primer commit de la fase, Task 1) a `8a256aa` (último commit de Task 7) — 10 commits de implementación (Tasks 1-7), verificado con `git log --oneline 0ad4033^..8a256aa`. A ese rango se suma el commit de este cierre (Task 8, `b07b6af` y su fix posterior), que no modifica código de producción salvo el ítem puntual descrito en la sección 7.3.
+Commits de esta fase: `0ad4033` es el commit base de la fase (rename/contraste previo, no pertenece a Task 1) y `8a256aa` es el último commit de Task 7 — 10 commits de implementación (Tasks 1-7) en el rango exclusivo, verificado con `git log --oneline 0ad4033..8a256aa --no-merges | wc -l`. A ese rango se suma el commit de este cierre (Task 8, `b07b6af` y su fix posterior), que no modifica código de producción salvo el ítem puntual descrito en la sección 7.3.
 
 ## 1. Resumen
 
