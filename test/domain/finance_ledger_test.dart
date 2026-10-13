@@ -46,6 +46,11 @@ void main() {
       expect(signedEffectForLibro(t, 'B'), 0);
     });
 
+    test('autotransferencia (origen == destino) no tiene efecto', () {
+      final t = _tx(accountId: 'A', tipo: 'transferencia', monto: 75, transferToAccountId: 'A');
+      expect(signedEffectForLibro(t, 'A'), 0);
+    });
+
     test('transacción de otro libro no afecta', () {
       final t = _tx(accountId: 'A', tipo: 'ingreso', monto: 100);
       expect(signedEffectForLibro(t, 'Z'), 0);

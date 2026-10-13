@@ -7,6 +7,7 @@ import 'package:krezium/data/models/finance_models.dart';
 /// para el mismo [libroId], y nunca se cuenta como ingreso/gasto.
 double signedEffectForLibro(FinanceTransaction t, String libroId) {
   if (t.tipo == 'transferencia') {
+    if (t.accountId == t.transferToAccountId) return 0;
     if (t.accountId == libroId) return -t.monto;
     if (t.transferToAccountId == libroId) return t.monto;
     return 0;
