@@ -60,5 +60,5 @@ double totalReservado(List<FinanceReservationRow> reservas) =>
   required double reservado,
 }) {
   final disponible = saldo - reservado;
-  return (disponibleEstimado: disponible, reservasExcedenSaldo: reservado > saldo);
+  return (disponibleEstimado: disponible, reservasExcedenSaldo: reservado > 0 && reservado > saldo);
 }

@@ -97,5 +97,17 @@ void main() {
       expect(r.disponibleEstimado, -200);
       expect(r.reservasExcedenSaldo, true);
     });
+
+    test('saldo negativo sin reservas no se marca como reservas excedidas', () {
+      final r = calcularDisponibleEstimado(saldo: -50, reservado: 0);
+      expect(r.disponibleEstimado, -50);
+      expect(r.reservasExcedenSaldo, false);
+    });
+
+    test('reservado igual al saldo: disponible en cero y no se marca como excedido', () {
+      final r = calcularDisponibleEstimado(saldo: 200, reservado: 200);
+      expect(r.disponibleEstimado, 0);
+      expect(r.reservasExcedenSaldo, false);
+    });
   });
 }
