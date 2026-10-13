@@ -113,6 +113,61 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
     );
   }
 
+  Future<void> _archivarLibro(FinanceAccount libro) async {
+    final db = ref.read(databaseProvider);
+    await db.archiveFinanceAccount(libro.id);
+    ref.invalidate(financeAccountsProvider);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Registro archivado')),
+      );
+    }
+  }
+
+  Future<void> _eliminarLibro(BuildContext context, FinanceAccount libro) async {
+    final db = ref.read(databaseProvider);
+    final count = await db.countTransactionsForAccount(libro.id);
+    if (count == 0) {
+      await db.deleteFinanceAccountSafely(libro.id);
+      ref.invalidate(financeAccountsProvider);
+      return;
+    }
+    if (!context.mounted) return;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar definitivamente'),
+        content: Text(
+          'Este registro tiene $count movimiento(s). Eliminarlo borrará también '
+          'todo su historial de forma irreversible. Si solo quieres dejar de '
+          'verlo pero conservar los datos, usa "Archivar" en su lugar.\n\n'
+          '¿Seguro que quieres eliminarlo y perder su historial para siempre?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar y perder historial')),
+        ],
+      ),
+    );
+    if (confirmado == true) {
+      await db.deleteFinanceAccountAndHistory(libro.id);
+      if (context.mounted) ref.invalidate(financeAccountsProvider);
+    }
+  }
+
+  void _mostrarArchivadosSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
+      ),
+      builder: (_) => _ArchivadosSheet(
+        onReactivado: () => ref.invalidate(financeAccountsProvider),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final asyncLibros = ref.watch(financeAccountsProvider);
@@ -139,6 +194,7 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
               _GlobalHeader(
                 libros: libros,
                 accentColor: accentColor,
+                onVerArchivados: _mostrarArchivadosSheet,
               ),
               if (libros.length > 1)
                 SliverToBoxAdapter(
@@ -168,6 +224,8 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
                               ),
                               onFavorito: () => _marcarFavorito(libro),
                               onEditar: () => _mostrarEditarRegistroSheet(libro),
+                              onArchivar: () => _archivarLibro(libro),
+                              onEliminar: () => _eliminarLibro(context, libro),
                             );
                           },
                           childCount: filtered.length,
@@ -226,10 +284,12 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
 class _GlobalHeader extends ConsumerWidget {
   final List<FinanceAccount> libros;
   final Color accentColor;
+  final VoidCallback onVerArchivados;
 
   const _GlobalHeader({
     required this.libros,
     required this.accentColor,
+    required this.onVerArchivados,
   });
 
   @override
@@ -386,13 +446,34 @@ class _GlobalHeader extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.section),
-            Text(
-              '${libros.length} ${libros.length == 1 ? 'registro' : 'registros'}',
-              style: TextStyle(
-                fontSize: AppTextSize.body,
-                fontWeight: FontWeight.w600,
-                color: colors.textSecondary,
-              ),
+            Row(
+              children: [
+                Text(
+                  '${libros.length} ${libros.length == 1 ? 'registro' : 'registros'}',
+                  style: TextStyle(
+                    fontSize: AppTextSize.body,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textSecondary,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: onVerArchivados,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      'Archivados',
+                      style: TextStyle(
+                        fontSize: AppTextSize.caption,
+                        fontWeight: FontWeight.w600,
+                        color: colors.textTertiary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -590,12 +671,16 @@ class _LibroCard extends ConsumerWidget {
   final VoidCallback onTap;
   final VoidCallback onFavorito;
   final VoidCallback onEditar;
+  final VoidCallback onArchivar;
+  final VoidCallback onEliminar;
 
   const _LibroCard({
     required this.libro,
     required this.onTap,
     required this.onFavorito,
     required this.onEditar,
+    required this.onArchivar,
+    required this.onEliminar,
   });
 
   @override
@@ -699,13 +784,45 @@ class _LibroCard extends ConsumerWidget {
                               ),
                             ],
                             const SizedBox(width: 4),
-                            GestureDetector(
-                              onTap: onEditar,
-                              behavior: HitTestBehavior.opaque,
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(Icons.edit_outlined, size: AppIconSize.small, color: colors.textTertiary),
-                              ),
+                            PopupMenuButton<String>(
+                              padding: EdgeInsets.zero,
+                              icon: Icon(Icons.more_vert_rounded, size: AppIconSize.small, color: colors.textTertiary),
+                              onSelected: (value) {
+                                switch (value) {
+                                  case 'editar':
+                                    onEditar();
+                                    break;
+                                  case 'archivar':
+                                    onArchivar();
+                                    break;
+                                  case 'eliminar':
+                                    onEliminar();
+                                    break;
+                                }
+                              },
+                              itemBuilder: (context) => const [
+                                PopupMenuItem(
+                                  value: 'editar',
+                                  child: ListTile(
+                                    leading: Icon(Icons.edit_outlined),
+                                    title: Text('Editar'),
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'archivar',
+                                  child: ListTile(
+                                    leading: Icon(Icons.archive_outlined),
+                                    title: Text('Archivar'),
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'eliminar',
+                                  child: ListTile(
+                                    leading: Icon(Icons.delete_outline),
+                                    title: Text('Eliminar'),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(width: 4),
                             Icon(Icons.arrow_forward_rounded, size: AppIconSize.small, color: colors.textTertiary),
@@ -828,6 +945,108 @@ class _StatColumn extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Sheet de registros archivados ────────────────────────────────────────────
+class _ArchivadosSheet extends ConsumerStatefulWidget {
+  final VoidCallback onReactivado;
+  const _ArchivadosSheet({required this.onReactivado});
+
+  @override
+  ConsumerState<_ArchivadosSheet> createState() => _ArchivadosSheetState();
+}
+
+class _ArchivadosSheetState extends ConsumerState<_ArchivadosSheet> {
+  late Future<List<FinanceAccountRow>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _cargar();
+  }
+
+  Future<List<FinanceAccountRow>> _cargar() async {
+    final db = ref.read(databaseProvider);
+    final rows = await db.getFinanceAccounts(incluirArchivadas: true);
+    return rows.where((r) => !r.activa).toList();
+  }
+
+  Future<void> _reactivar(String id) async {
+    final db = ref.read(databaseProvider);
+    await db.reactivateFinanceAccount(id);
+    widget.onReactivado();
+    setState(() => _future = _cargar());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final kredit = Theme.of(context).extension<AppThemeColors>()!;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: kredit.borderCard,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Registros archivados',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            FutureBuilder<List<FinanceAccountRow>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final archivados = snapshot.data!;
+                if (archivados.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'No hay registros archivados.',
+                      style: TextStyle(color: kredit.textSecondary),
+                    ),
+                  );
+                }
+                return Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: archivados.length,
+                    separatorBuilder: (context, index) => Divider(height: 1, color: kredit.borderCard),
+                    itemBuilder: (context, index) {
+                      final row = archivados[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(row.nombre),
+                        trailing: TextButton(
+                          onPressed: () => _reactivar(row.id),
+                          child: const Text('Reactivar'),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
