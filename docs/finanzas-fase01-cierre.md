@@ -1,7 +1,7 @@
 # Cierre de Fase 01 — Integridad financiera y cálculos
 
 Fecha de cierre: 2026-10-13
-Rango de commits de la fase: `0ad4033063f1304d07c7d8b6a65b3758b4e84bc3..8a256aa` (10 commits, tip de `master` previo a la rama `finanzas-fase01-integridad` como punto de partida)
+Commits de esta fase: de `0ad4033` (primer commit de la fase, Task 1) a `8a256aa` (último commit de Task 7) — 10 commits de implementación (Tasks 1-7), verificado con `git log --oneline 0ad4033^..8a256aa`. A ese rango se suma el commit de este cierre (Task 8, `b07b6af` y su fix posterior), que no modifica código de producción salvo el ítem puntual descrito en la sección 7.3.
 
 ## 1. Resumen
 
@@ -34,11 +34,11 @@ Fase 01 implementó, de punta a punta, la corrección de los bugs de integridad 
 
 - Nueva tabla `FinanceReservations`: `id` (pk), `accountId` (FK restrict → `FinanceAccounts`), `nombre`, `monto`, `creadaEn`.
 - Nueva columna `revisionNota` (nullable, text) en `FinanceTransactions`, usada para marcar transferencias históricas dudosas sin alterar monto/fecha/cuentas.
-- Migración `onUpgrade` con guard `if (from < 19)`, usando el mismo patrón hot-restart-safe (`tableExists`/`colsOf`) que las migraciones previas (`from < 17`). Confirmado por `test/db/finance_tables_migration_test.dart`.
+- Migración `onUpgrade` con guard `if (from < 19)`, usando el mismo patrón hot-restart-safe (`tableExists`/`colsOf`) que las migraciones previas (`from < 17`). `test/db/finance_tables_migration_test.dart` confirma que, en una base de datos creada desde cero (`onCreate`), la tabla `FinanceReservations` existe y `revisionNota` es consultable — **no ejercita la ruta real de upgrade desde v18** (mismo hueco de cobertura que `from < 17`, documentado como hallazgo diferido de Task 1 en la sección 7).
 
 ## 4. Reglas contables implementadas
 
-Ver `docs/finanzas-reglas-contables.md` para el detalle normativo completo. Resumen operativo:
+Ver [`docs/finanzas-reglas-contables.md`](./finanzas-reglas-contables.md) para el detalle normativo completo. Resumen operativo:
 - El saldo de un registro suma transferencias entrantes y resta transferencias salientes (antes: inertes, invisibles en el destino).
 - `financeAccountBalanceProvider` es ahora la única fuente de verdad de saldo/ingresos/gastos/disponible estimado para las 3 pantallas que antes lo calculaban por separado.
 - `reservasExcedenSaldo` exige `reservado > 0 && reservado > saldo` (corregido en Task 2 para evitar falso positivo con saldo negativo y cero reservas).
@@ -79,7 +79,7 @@ Recopilado íntegro del ledger (`progress.md`), sin omitir ninguno:
 
 **Task 5:**
 - El guard de `esTransferenciaValida` retorna en silencio sin feedback al usuario (mismo patrón que el guard preexistente `_libroId==null`).
-- **Parked**: `onLibroChanged` no limpia `_libroDestinoId` al cambiar origen; si el nuevo origen coincide con el destino ya elegido, el dropdown de destino puede quedar con un `value` fuera de su lista de items (mismo patrón de crash de dropdown ya corregido antes en otra pantalla). Ruling registrado: pre-existente, fuera del diff de Task 5, no bloquea la fase. Costo si no se corrige: crash de UI poco frecuente (requiere elegir destino primero y luego cambiar origen al mismo id); no hay pérdida de datos. **Pendiente de evaluar un fix de una línea en una sesión futura.**
+- **Parked, evaluado y resuelto en Task 8**: `onLibroChanged` no limpiaba `_libroDestinoId` al cambiar origen; si el nuevo origen coincidía con el destino ya elegido, el dropdown de destino podía quedar con un `value` fuera de su lista de items (mismo patrón de crash de dropdown ya corregido antes en otra pantalla). En el fix round de esta Task 8 se evaluó el riesgo/costo y se decidió corregirlo: `onLibroChanged` en `lib/screens/finanzas/nueva_transaccion_sheet.dart` ahora limpia `_libroDestinoId` a `null` en el mismo `setState` cuando el nuevo origen coincide con el destino ya seleccionado. Verificado con `dart analyze` (sin issues en el archivo) y `flutter test` completo (285/285 verde) — sin arnés de widget test para este screen, consistente con el resto de la fase.
 
 **Task 6:**
 - Race entre `countTransactionsForAccount` y `deleteFinanceAccountSafely` en la rama de 0 transacciones — `AccountHasTransactionsException` no se captura ahí.
@@ -98,8 +98,7 @@ Ninguno de estos hallazgos bloqueó la aprobación de su task correspondiente (t
 - **Presupuestos (UI)** sigue sin ruta de navegación — `FinanzasPresupuestoScreen` permanece huérfana, tal como se documentó en la Fase 00. Esto es explícitamente Fase 02/04 y no se tocó en esta fase.
 - **Navegación y estructura de vistas** (Fase 02) no se tocó.
 - El conteo real de transferencias históricas reconstruibles/dudosas/no-reconstruibles del usuario no pudo obtenerse en este entorno (ver sección 6) — requiere ejecutar `auditarTransferenciasHistoricas` contra la base de datos real del dispositivo.
-- El dropdown de destino en `nueva_transaccion_sheet.dart` tiene el bug "parked" de Task 5 (ver sección 7), sin corregir.
 
 ## 9. Confirmación explícita: Fase 02 no ha iniciado
 
-Esta Task 8 es puramente de verificación y documentación — no se modificó código de producción. No se ha iniciado ningún trabajo de Fase 02 ("Navegación y estructura de vistas"). Se requiere autorización explícita del usuario antes de comenzar la Fase 02.
+Esta Task 8 es de verificación y documentación. La única excepción de código de producción es el fix de una línea descrito en la sección 7 (Task 5, `nueva_transaccion_sheet.dart`), aplicado tras revisión explícita de un hallazgo ya identificado y diferido durante la fase — no es trabajo nuevo de alcance. No se ha iniciado ningún trabajo de Fase 02 ("Navegación y estructura de vistas"). Se requiere autorización explícita del usuario antes de comenzar la Fase 02.

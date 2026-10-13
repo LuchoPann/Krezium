@@ -319,7 +319,12 @@ class _NuevaTransaccionSheetState
                         libros: libros,
                         scrollCtrl: scrollCtrl,
                         onTipoChanged: (v) => setState(() => _tipo = v),
-                        onLibroChanged: (v) => setState(() => _libroId = v),
+                        onLibroChanged: (v) => setState(() {
+                          _libroId = v;
+                          if (v != null && v == _libroDestinoId) {
+                            _libroDestinoId = null;
+                          }
+                        }),
                         onLibroDestinoChanged: (v) =>
                             setState(() => _libroDestinoId = v),
                         onContinuar: () {
