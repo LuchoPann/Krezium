@@ -741,17 +741,24 @@ class AppDatabase extends _$AppDatabase {
   Future<void> deleteFinanceAccountSafely(String id) async {
     final count = await countTransactionsForAccount(id);
     if (count > 0) throw AccountHasTransactionsException(count);
+    final reservations = await getFinanceReservations(id);
+    if (reservations.isNotEmpty) {
+      throw AccountHasTransactionsException(reservations.length);
+    }
     await deleteFinanceAccount(id);
   }
 
   /// Borrado físico definitivo: elimina las transacciones donde esta cuenta
-  /// es el origen y luego la cuenta. Las transacciones donde esta cuenta
-  /// era el destino de una transferencia (transferToAccountId) quedan con
-  /// ese campo en null por el FK onDelete: setNull — se conservan como
-  /// ingreso/gasto normal del otro lado, pero pierden la referencia de
-  /// destino. Solo se invoca tras confirmación explícita del usuario.
+  /// es el origen, las reservas asociadas (FK onDelete: restrict haría
+  /// fallar el borrado de la cuenta si quedaran reservas) y luego la cuenta.
+  /// Las transacciones donde esta cuenta era el destino de una transferencia
+  /// (transferToAccountId) quedan con ese campo en null por el FK
+  /// onDelete: setNull — se conservan como ingreso/gasto normal del otro
+  /// lado, pero pierden la referencia de destino. Solo se invoca tras
+  /// confirmación explícita del usuario.
   Future<void> deleteFinanceAccountAndHistory(String id) => transaction(() async {
         await (delete(financeTransactions)..where((t) => t.accountId.equals(id))).go();
+        await (delete(financeReservations)..where((r) => r.accountId.equals(id))).go();
         await deleteFinanceAccount(id);
       });
 
@@ -843,12 +850,14 @@ class AppDatabase extends _$AppDatabase {
   Future<List<FinanceTransactionRow>> getFinanceTransactionsInvolvingLibro({
     required String libroId,
     String? mes,
+    String? tipo, // 'ingreso'|'gasto'|null
     bool ascending = false,
   }) {
     final q = select(financeTransactions)
       ..where((t) =>
           t.accountId.equals(libroId) | t.transferToAccountId.equals(libroId));
     if (mes != null) q.where((t) => t.fecha.like('$mes%'));
+    if (tipo != null) q.where((t) => t.tipo.equals(tipo));
     q.orderBy([(t) => ascending
         ? OrderingTerm.asc(t.fecha)
         : OrderingTerm.desc(t.fecha)]);
