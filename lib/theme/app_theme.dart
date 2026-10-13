@@ -437,6 +437,15 @@ ThemeData buildAppTheme({
       surfaceContainerHighest: bgCard,
       primary: effectiveAccent,
       secondary: effectiveAccent,
+      // Sin esto, cualquier widget que use el foreground por defecto de
+      // Material3 (FilledButton sin `style` propio, por ejemplo) quedaba
+      // con el onPrimary genérico del tema base — correcto por casualidad
+      // para algunos acentos, ilegible para otros. Con esto el texto se
+      // recalcula según el acento real que el usuario eligió, en vez de
+      // depender de que cada botón lo haga a mano con
+      // `legibleForegroundOn` (que es justo lo que se les olvidó a varios).
+      onPrimary: legibleForegroundOn(effectiveAccent),
+      onSecondary: legibleForegroundOn(effectiveAccent),
       error: Colors.redAccent,
       surfaceTint: Colors.transparent,
     ),

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/credit.dart';
-import '../../domain/card_calculator.dart';
+import '../../domain/card_statement_engine.dart';
 import '../../domain/date_utils.dart';
 import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
@@ -187,14 +187,14 @@ class _MonthlySummaryScreenState extends ConsumerState<MonthlySummaryScreen> {
     final rows = <_CardRow>[];
     for (final c in credits) {
       if (c is! CardCredit) continue;
-      if (c.currentBalance <= 0) continue;
-      final dates = getCardCycleDates(c);
-      final due = dates.dueDate;
+      final summary = getPayableSummary(c);
+      final due = summary.dueDate;
+      if (due == null) continue;
       if (due.year == _year && due.month == _month) {
         final usage = c.creditLimit > 0 ? (c.currentBalance / c.creditLimit).clamp(0.0, 1.0) : 0.0;
         rows.add(_CardRow(
           creditName: c.name,
-          amount: c.currentBalance,
+          amount: summary.exigible,
           dueDate: due,
           usagePct: usage,
           creditLimit: c.creditLimit,

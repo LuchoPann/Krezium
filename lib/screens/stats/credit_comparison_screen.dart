@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/credit.dart';
-import '../../domain/card_calculator.dart';
+import '../../domain/card_statement_engine.dart';
 import '../../domain/credit_calculator.dart';
 import '../../domain/date_utils.dart';
 import '../../domain/interest_rate.dart';
@@ -152,8 +152,8 @@ String? _nextDueDate(Credit c) {
     return unpaid.first.dueDate;
   }
   if (c is CardCredit) {
-    final dates = getCardCycleDates(c);
-    return toDateStr(dates.dueDate);
+    final due = getPayableSummary(c).dueDate;
+    return due == null ? null : toDateStr(due);
   }
   return null;
 }

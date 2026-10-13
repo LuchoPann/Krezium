@@ -11,6 +11,7 @@ class FinanceAccounts extends Table {
   BoolColumn get activa => boolean().withDefault(const Constant(true))();
   TextColumn get orden => text().withDefault(const Constant('0'))();
   BoolColumn get esFavorito => boolean().withDefault(const Constant(false))();
+  TextColumn get descripcion => text().withDefault(const Constant(''))();
 
   @override
   Set<Column> get primaryKey => {id};

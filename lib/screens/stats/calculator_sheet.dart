@@ -52,7 +52,11 @@ class _CalculatorSheetState extends State<CalculatorSheet> {
     final accent = Theme.of(context).colorScheme.primary;
     final hasAmount = _amount > 0;
 
-    return DraggableScrollableSheet(
+    // Padding(bottom: viewInsets): un DraggableScrollableSheet no se
+    // reacomoda solo con el teclado.
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
       initialChildSize: 0.92,
       minChildSize: 0.5,
       maxChildSize: 0.95,
@@ -321,6 +325,7 @@ class _CalculatorSheetState extends State<CalculatorSheet> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

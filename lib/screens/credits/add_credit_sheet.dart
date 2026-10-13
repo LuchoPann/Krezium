@@ -21,7 +21,7 @@ import '../../utils/credit_display_utils.dart';
 import '../../widgets/account/voucher_pattern_picker.dart';
 import '../../widgets/card_design_painter.dart';
 import '../../widgets/interest_rate_type_field.dart';
-import '../../widgets/kredit_section_card.dart';
+import '../../widgets/krezium_section_card.dart';
 import '../../widgets/voucher_pattern.dart';
 import '../../widgets/wallet_card.dart';
 
@@ -103,6 +103,7 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
   DateTime? _startDate;
   final _cardInitInstCtrl = TextEditingController();
   final _cardPaidInstCtrl = TextEditingController();
+  final _cardInitNameCtrl = TextEditingController();
 
   String? _selectedLenderPreset = 'Bancolombia';
 
@@ -119,7 +120,7 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
   final _newEntityLimitCtrl = TextEditingController();
 
   // Tasa opcional: el usuario puede no conocerla, y Kredit nunca debe
-  // sintetizar una tasa falsa en su lugar (ver ROADMAP_KREDIT.md).
+  // sintetizar una tasa falsa en su lugar (ver ROADMAP_KREZIUM.md).
   bool _interestUnknown = false;
   bool _earlyPaymentWaivesInterest = false;
 
@@ -207,6 +208,7 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
       _newEntityLimitCtrl,
       _cardInitInstCtrl,
       _cardPaidInstCtrl,
+      _cardInitNameCtrl,
     ]) {
       c.dispose();
     }
@@ -395,7 +397,10 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.danger,
+                      foregroundColor: legibleForegroundOn(AppColors.danger),
+                    ),
                     onPressed: () => Navigator.of(ctx).pop(true),
                     child: const Text('Descartar'),
                   ),
@@ -807,16 +812,19 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
       ensureOpenStatement(cardCredit, _startDate);
       if (currentBalance > 0) {
         final initInstallments = int.tryParse(_cardInitInstCtrl.text.trim()) ?? 1;
+        final initName = _cardInitNameCtrl.text.trim().isNotEmpty
+            ? _cardInitNameCtrl.text.trim()
+            : 'Saldo inicial registrado';
         if (initInstallments > 1) {
           registerInstallmentPurchase(
             cardCredit, currentBalance, initInstallments,
-            note: 'Saldo inicial registrado',
+            note: initName,
             refDate: _startDate,
           );
         } else {
           registerCardCharge(
             cardCredit, currentBalance,
-            note: 'Saldo inicial registrado',
+            note: initName,
             refDate: _startDate,
           );
         }
@@ -2419,77 +2427,86 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
       const SizedBox(height: 16),
 
       // ── Hero: aparece solo cuando hay datos ───────────────────────────────
-      if (hasLimit || balanceVal > 0) ...[
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: accent.withValues(alpha: 0.07),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: accent.withValues(alpha: 0.18)),
-          ),
-          child: hasLimit && balanceVal > 0
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+      // Slot fijo (nunca cambia la longitud de la lista con un spread
+      // condicional): si se insertara/quitara un widget aquí, el índice de
+      // los TextFormField de más abajo cambiaría y Flutter destruiría su
+      // Element al reconciliar, cerrando el teclado tras el primer dígito.
+      Builder(builder: (ctx) {
+        if (!(hasLimit || balanceVal > 0)) return const SizedBox.shrink();
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: accent.withValues(alpha: 0.18)),
+              ),
+              child: hasLimit && balanceVal > 0
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('DISPONIBLE',
-                                  style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w600,
-                                      letterSpacing: 1.1, color: accent.withValues(alpha: 0.7))),
-                              const SizedBox(height: 2),
-                              Text(formatCOP(available),
-                                  style: TextStyle(fontSize: AppTextSize.hero, fontWeight: FontWeight.w800,
-                                      color: heroColor, height: 1.0),
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
-                            ],
-                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('DISPONIBLE',
+                                      style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w600,
+                                          letterSpacing: 1.1, color: accent.withValues(alpha: 0.7))),
+                                  const SizedBox(height: 2),
+                                  Text(formatCOP(available),
+                                      style: TextStyle(fontSize: AppTextSize.hero, fontWeight: FontWeight.w800,
+                                          color: heroColor, height: 1.0),
+                                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                                ],
+                              ),
+                            ),
+                            Text('${((availPct ?? 0) * 100).toStringAsFixed(0)}% libre',
+                                style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w700, color: heroColor)),
+                          ],
                         ),
-                        Text('${((availPct ?? 0) * 100).toStringAsFixed(0)}% libre',
-                            style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w700, color: heroColor)),
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Stack(children: [
+                            Container(height: 5, color: kredit.borderCard),
+                            FractionallySizedBox(
+                              widthFactor: (availPct ?? 0.0).clamp(0.0, 1.0),
+                              child: Container(height: 5, color: heroColor),
+                            ),
+                          ]),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            _heroStatCol(kredit, 'DEUDA', formatCOP(balanceVal),
+                                isOverLimit ? Colors.red.shade400 : kredit.textSecondary),
+                            VerticalDivider(color: kredit.borderCard, width: 20),
+                            _heroStatCol(kredit, 'CUPO TOTAL', formatCOP(limitVal), kredit.textSecondary),
+                          ],
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Icon(hasLimit ? Icons.credit_score_outlined : Icons.warning_amber_rounded,
+                            size: AppIconSize.small,
+                            color: hasLimit ? accent : Colors.orange.shade400),
+                        const SizedBox(width: 8),
+                        Text(
+                          hasLimit ? 'Cupo: ${formatCOP(limitVal)} — sin deuda registrada' : 'Deuda: ${formatCOP(balanceVal)} — cupo no especificado',
+                          style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary, fontWeight: FontWeight.w500),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: Stack(children: [
-                        Container(height: 5, color: kredit.borderCard),
-                        FractionallySizedBox(
-                          widthFactor: (availPct ?? 0.0).clamp(0.0, 1.0),
-                          child: Container(height: 5, color: heroColor),
-                        ),
-                      ]),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        _heroStatCol(kredit, 'DEUDA', formatCOP(balanceVal),
-                            isOverLimit ? Colors.red.shade400 : kredit.textSecondary),
-                        VerticalDivider(color: kredit.borderCard, width: 20),
-                        _heroStatCol(kredit, 'CUPO TOTAL', formatCOP(limitVal), kredit.textSecondary),
-                      ],
-                    ),
-                  ],
-                )
-              : Row(
-                  children: [
-                    Icon(hasLimit ? Icons.credit_score_outlined : Icons.warning_amber_rounded,
-                        size: AppIconSize.small,
-                        color: hasLimit ? accent : Colors.orange.shade400),
-                    const SizedBox(width: 8),
-                    Text(
-                      hasLimit ? 'Cupo: ${formatCOP(limitVal)} — sin deuda registrada' : 'Deuda: ${formatCOP(balanceVal)} — cupo no especificado',
-                      style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary, fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
-        ),
-        const SizedBox(height: 16),
-      ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        );
+      }),
 
       // ── Campos cupo y deuda (sin card wrapper) ────────────────────────────
       AppSectionCard(
@@ -2529,6 +2546,14 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
             Text('Detalle de la deuda inicial',
                 style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w600, color: kredit.textSecondary)),
             const SizedBox(height: 10),
+            TextFormField(
+              controller: _cardInitNameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Nombre de la compra (opcional)',
+                hintText: 'Ej. Nevera, Viaje, Deuda anterior...',
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(

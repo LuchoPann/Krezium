@@ -13,7 +13,7 @@ import '../loan_abono_sheet.dart';
 import '../../utils/credit_display_utils.dart';
 import '../../utils/currency_input_formatter.dart';
 import 'status_badge.dart';
-import '../kredit_bottom_dialogs.dart';
+import '../krezium_bottom_dialogs.dart';
 
 /// Cronograma de cuotas, grouped by urgency instead of a flat chronological
 /// list — with many installments a plain list becomes a monotonous scroll

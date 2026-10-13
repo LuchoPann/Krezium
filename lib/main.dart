@@ -15,7 +15,7 @@ import 'screens/credits/credits_list_screen.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/stats/stats_screen.dart';
 import 'widgets/backup_restore_sheet.dart';
-import 'widgets/kredit_logo.dart';
+import 'widgets/krezium_logo.dart';
 import 'widgets/whats_new_sheet.dart';
 import 'providers/app_lock_provider.dart';
 import 'data/models/credit.dart';
@@ -169,29 +169,38 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
       Future.delayed(const Duration(milliseconds: 1800), () {
         if (mounted) showBackupRestoreSheet(context, ref, onlyIfEmpty: true);
       });
-      // Listeners registered once here instead of inside build() — avoids
-      // re-registering on every rebuild (Riverpod still deduplicates but
-      // registering in initState is zero-cost on subsequent builds).
-      ref.listen(navigationIndexProvider, (_, next) {
-        // Legacy listener kept for external navigation calls
-      });
       _loadPreferredEntorno();
-      // Single creditsProvider listener: syncs both notifications AND the
-      // home-screen widget so there is no double-subscription.
-      ref.listen(creditsProvider, (_, next) {
-        final credits = next.value;
-        if (credits == null) return;
-        _rescheduleNotifications(credits);
-        _syncHomeWidget(credits);
-      });
-      ref.listen(notificationSettingsProvider, (_, _) {
-        final credits = ref.read(creditsProvider).value;
-        if (credits == null) return;
-        _rescheduleNotifications(credits);
-      });
-      ref.listen(widgetPrivacyProvider, (_, _) => _syncHomeWidget());
-      ref.listen(themePreferencesProvider, (_, _) => _syncHomeWidget());
     });
+  }
+
+  // ref.listen solo es válido durante build() — ConsumerStatefulElement lo
+  // exige (ver assert debugDoingBuild). Antes se llamaba dentro de un
+  // addPostFrameCallback en initState, lo que funcionaba por accidente en
+  // cold start pero rompía en hot restart ("ref.listen can only be used
+  // within the build method"). _listenersRegistered evita re-suscribirse
+  // en cada rebuild.
+  bool _listenersRegistered = false;
+  void _registerListenersOnce() {
+    if (_listenersRegistered) return;
+    _listenersRegistered = true;
+    ref.listen(navigationIndexProvider, (_, next) {
+      // Legacy listener kept for external navigation calls
+    });
+    // Single creditsProvider listener: syncs both notifications AND the
+    // home-screen widget so there is no double-subscription.
+    ref.listen(creditsProvider, (_, next) {
+      final credits = next.value;
+      if (credits == null) return;
+      _rescheduleNotifications(credits);
+      _syncHomeWidget(credits);
+    });
+    ref.listen(notificationSettingsProvider, (_, _) {
+      final credits = ref.read(creditsProvider).value;
+      if (credits == null) return;
+      _rescheduleNotifications(credits);
+    });
+    ref.listen(widgetPrivacyProvider, (_, _) => _syncHomeWidget());
+    ref.listen(themePreferencesProvider, (_, _) => _syncHomeWidget());
   }
 
   Future<void> _checkAndRunAutoBackup() async {
@@ -297,6 +306,7 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    _registerListenersOnce();
     final entorno = ref.watch(entornoProvider);
     final creditosTab = ref.watch(creditosTabProvider);
     final finanzasTab = ref.watch(finanzasTabProvider);
@@ -373,14 +383,19 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
     final switchIconData = isCreditos
         ? Icons.account_balance_wallet_outlined  // en créditos → ir a finanzas
         : Icons.credit_card_outlined;            // en finanzas → ir a créditos
+    // `cs.primary`/`cs.onPrimary` (no `primaryContainer`/`onPrimaryContainer`,
+    // que buildAppTheme nunca sobreescribe con el acento del usuario y se
+    // quedaban en el tono fijo que trae ThemeData.dark()/light() por
+    // defecto) — así el botón central sí sigue el color personalizado, y el
+    // ícono adentro usa el contraste ya calculado para ese acento.
     final switchIcon = Container(
       width: 44,
       height: 44,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: cs.primaryContainer,
+        color: cs.primary,
       ),
-      child: Icon(switchIconData, color: cs.onPrimaryContainer, size: 22),
+      child: Icon(switchIconData, color: cs.onPrimary, size: 22),
     );
 
     return NavigationBarTheme(

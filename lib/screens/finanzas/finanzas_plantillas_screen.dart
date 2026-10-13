@@ -8,6 +8,8 @@ import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/editar_plantilla_sheet.dart';
 import 'package:krezium/screens/finanzas/nueva_transaccion_sheet.dart';
+import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/utils/credit_display_utils.dart';
 
 class FinanzasPlantillasScreen extends ConsumerStatefulWidget {
   const FinanzasPlantillasScreen({super.key});
@@ -41,13 +43,20 @@ class _FinanzasPlantillasScreenState
             _PlantillasTab(tipo: null),
           ],
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            HapticFeedback.lightImpact();
-            showEditarPlantillaSheet(context, ref: ref);
-          },
-          child: const Icon(Icons.add),
-        ),
+        // Color de acento explícito (igual que Créditos) — sin esto caía al
+        // tono por defecto de Material3, ajeno al color elegido.
+        floatingActionButton: Builder(builder: (context) {
+          final accentColor = Theme.of(context).colorScheme.primary;
+          return FloatingActionButton(
+            backgroundColor: accentColor,
+            foregroundColor: legibleForegroundOn(accentColor),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              showEditarPlantillaSheet(context, ref: ref);
+            },
+            child: const Icon(Icons.add),
+          );
+        }),
       ),
     );
   }
@@ -148,7 +157,7 @@ class _PlantillaTile extends ConsumerWidget {
     final nombreCat = _nombreCategoria(template.categoryId);
     final iconoKey = _iconoKeyCategoria(template.categoryId);
     final montoStr = template.monto != null
-        ? '\$${template.monto!.toStringAsFixed(2)}'
+        ? formatCOP(template.monto!)
         : 'Sin monto fijo';
     final subtitleStr =
         nombreCat != null ? '$montoStr · $nombreCat' : montoStr;
@@ -204,7 +213,7 @@ class _PlantillaTile extends ConsumerWidget {
           subtitleStr,
           style: TextStyle(
             color: Theme.of(context).colorScheme.outline,
-            fontSize: 12,
+            fontSize: AppTextSize.caption,
           ),
         ),
         trailing: Row(

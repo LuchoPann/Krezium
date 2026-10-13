@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/backup_service.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/kredit_section_card.dart';
+import '../../widgets/krezium_section_card.dart';
 
 const _kBackupEnabled = 'backup_enabled';
 const _kBackupFrequency = 'backup_frequency';

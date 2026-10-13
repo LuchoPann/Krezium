@@ -471,4 +471,95 @@ void main() {
       expect(purchase.installmentsBilled, 0);
     });
   });
+
+  group('projectInstallmentSchedule', () {
+    test('returns one entry per cuota: billed ones use the past, pending '
+        'ones project forward one statement cycle apart', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final purchase = registerInstallmentPurchase(
+          credit, 90000, 3, refDate: DateTime(2026, 1, 10));
+      // registerInstallmentPurchase abre el extracto vía ensureOpenStatement
+      // con corte 2026-01-15 (el próximo corte ≥ la fecha de compra).
+
+      final schedule = projectInstallmentSchedule(purchase, credit);
+
+      expect(schedule, hasLength(3));
+      expect(schedule[0].number, 1);
+      expect(schedule[0].billed, isTrue);
+      expect(schedule[0].amount, 30000);
+      expect(schedule[0].statementCutoff, DateTime(2026, 1, 15));
+
+      expect(schedule[1].number, 2);
+      expect(schedule[1].billed, isFalse);
+      expect(schedule[1].amount, 30000);
+      expect(schedule[1].statementCutoff, DateTime(2026, 2, 15));
+
+      expect(schedule[2].number, 3);
+      expect(schedule[2].billed, isFalse);
+      // La última cuota absorbe el remanente de redondeo.
+      expect(schedule[2].amount, purchase.lastInstallmentAmount);
+      expect(schedule[2].statementCutoff, DateTime(2026, 3, 15));
+    });
+
+    test('after the next cycle closes and bills cuota 2, cuota 1 still '
+        'projects to its own past statement and cuota 3 keeps advancing', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final purchase = registerInstallmentPurchase(
+          credit, 90000, 3, refDate: DateTime(2026, 1, 10));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+
+      final schedule = projectInstallmentSchedule(purchase, credit);
+
+      expect(purchase.installmentsBilled, 2);
+      expect(schedule[0].billed, isTrue);
+      expect(schedule[0].statementCutoff, DateTime(2026, 1, 15));
+      expect(schedule[1].billed, isTrue);
+      expect(schedule[1].statementCutoff, DateTime(2026, 2, 15));
+      expect(schedule[2].billed, isFalse);
+      expect(schedule[2].statementCutoff, DateTime(2026, 3, 15));
+    });
+  });
+
+  group('projectFutureStatements', () {
+    test('groups every pending cuota (across all purchases) by projected '
+        'cutoff date into one virtual future statement per cycle', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      registerInstallmentPurchase(credit, 90000, 3, refDate: DateTime(2026, 1, 10));
+
+      final future = projectFutureStatements(credit);
+
+      // Cuota 1 ya facturada (en el extracto real de corte 2026-01-15);
+      // quedan cuota 2 (corte 2026-02-15) y cuota 3 (corte 2026-03-15).
+      expect(future, hasLength(2));
+      expect(future[0].cutoffDate, DateTime(2026, 2, 15));
+      expect(future[0].lines, hasLength(1));
+      expect(future[0].lines.single.amount, 30000);
+      expect(future[0].totalAmount, 30000);
+      expect(future[1].cutoffDate, DateTime(2026, 3, 15));
+      expect(future[1].totalAmount, future[1].lines.single.amount);
+    });
+
+    test('two purchases whose next pending cuota lands on the same cutoff '
+        'are merged into a single virtual statement', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      registerInstallmentPurchase(credit, 60000, 2, refDate: DateTime(2026, 1, 10));
+      registerInstallmentPurchase(credit, 40000, 2, refDate: DateTime(2026, 1, 11));
+
+      final future = projectFutureStatements(credit);
+
+      expect(future, hasLength(1));
+      expect(future[0].cutoffDate, DateTime(2026, 2, 15));
+      expect(future[0].lines, hasLength(2));
+      expect(future[0].totalAmount, 50000);
+    });
+
+    test('a fully billed purchase contributes nothing', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      registerCardCharge(credit, 10000, refDate: DateTime(2026, 1, 10));
+
+      final future = projectFutureStatements(credit);
+
+      expect(future, isEmpty);
+    });
+  });
 }

@@ -8,7 +8,7 @@ import '../../providers/credits_provider.dart';
 import '../../providers/stats_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/credit_display_utils.dart';
-import '../../widgets/kredit_section_card.dart';
+import '../../widgets/krezium_section_card.dart';
 import '../../widgets/progress_ring.dart';
 
 /// "Estadísticas avanzadas" screen: month-by-month debt projection, debt

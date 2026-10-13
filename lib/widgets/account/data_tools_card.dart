@@ -13,7 +13,7 @@ import '../../providers/commercial_quotas_provider.dart';
 import '../../providers/credits_provider.dart';
 import '../../providers/last_backup_provider.dart';
 import '../../services/backup_service.dart';
-import '../kredit_bottom_dialogs.dart';
+import '../krezium_bottom_dialogs.dart';
 import '../../theme/app_theme.dart';
 
 class DataToolsCard extends ConsumerStatefulWidget {

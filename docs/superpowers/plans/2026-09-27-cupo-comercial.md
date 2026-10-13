@@ -27,7 +27,7 @@ a grouping card on the Créditos screen and one conditional step in the wizard.
   is always a manual per-purchase flag, default `false`.
 - Deleting a `CommercialQuota` with active (unpaid) purchases must fail loudly, never cascade-delete
   real `LoanCredit` data.
-- `ROADMAP_KREDIT.md` must be updated with what was built once this plan finishes (per the user's
+- `ROADMAP_KREZIUM.md` must be updated with what was built once this plan finishes (per the user's
   standing instruction to log everything there — see the "Como funciona Kredit hoy" section, which
   must also be updated to describe cupo comercial once it exists).
 
@@ -1149,10 +1149,10 @@ git commit -m "feat: wizard permite asociar una compra a un cupo comercial o cre
 
 ---
 
-## Task 8: Update `ROADMAP_KREDIT.md`
+## Task 8: Update `ROADMAP_KREZIUM.md`
 
 **Files:**
-- Modify: `ROADMAP_KREDIT.md`
+- Modify: `ROADMAP_KREZIUM.md`
 
 **Interfaces:**
 - Consumes: nothing code-level — this is documentation only.
@@ -1175,8 +1175,8 @@ step, per that section's own self-maintenance rule.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add ROADMAP_KREDIT.md
-git commit -m "docs: registra cupo comercial en ROADMAP_KREDIT.md"
+git add ROADMAP_KREZIUM.md
+git commit -m "docs: registra cupo comercial en ROADMAP_KREZIUM.md"
 ```
 
 ---

@@ -67,6 +67,7 @@ Future<bool> showAppConfirmSheet(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: FilledButton.styleFrom(
                   backgroundColor: actionColor,
+                  foregroundColor: legibleForegroundOn(actionColor),
                   minimumSize: const Size(double.infinity, 50),
                 ),
                 child: Text(confirmLabel),

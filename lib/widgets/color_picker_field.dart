@@ -95,7 +95,7 @@ class ColorPickerField extends StatelessWidget {
                     : null,
               ),
               child: selected
-                  ? const Icon(Icons.check, color: Colors.white, size: 18)
+                  ? Icon(Icons.check, color: legibleForegroundOn(c), size: 18)
                   : null,
             ),
           );

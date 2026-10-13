@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/providers/finance_provider.dart';
+import 'package:krezium/theme/app_theme.dart';
 
 final _presupuestoMesProvider = StateProvider<DateTime>((ref) => DateTime.now());
 
@@ -131,7 +132,7 @@ class _BudgetItem extends StatelessWidget {
                 Expanded(child: Text(cat.nombre)),
                 Text(
                   '${fmt.format(gasto)} / ${fmt.format(limite)}',
-                  style: TextStyle(color: overLimit ? Colors.red : null, fontSize: 12),
+                  style: TextStyle(color: overLimit ? Colors.red : null, fontSize: AppTextSize.caption),
                 ),
               ],
             ),

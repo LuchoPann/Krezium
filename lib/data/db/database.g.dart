@@ -6541,6 +6541,18 @@ class $FinanceAccountsTable extends FinanceAccounts
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _descripcionMeta = const VerificationMeta(
+    'descripcion',
+  );
+  @override
+  late final GeneratedColumn<String> descripcion = GeneratedColumn<String>(
+    'descripcion',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -6552,6 +6564,7 @@ class $FinanceAccountsTable extends FinanceAccounts
     activa,
     orden,
     esFavorito,
+    descripcion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -6629,6 +6642,15 @@ class $FinanceAccountsTable extends FinanceAccounts
         esFavorito.isAcceptableOrUnknown(data['es_favorito']!, _esFavoritoMeta),
       );
     }
+    if (data.containsKey('descripcion')) {
+      context.handle(
+        _descripcionMeta,
+        descripcion.isAcceptableOrUnknown(
+          data['descripcion']!,
+          _descripcionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -6674,6 +6696,10 @@ class $FinanceAccountsTable extends FinanceAccounts
         DriftSqlType.bool,
         data['${effectivePrefix}es_favorito'],
       )!,
+      descripcion: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}descripcion'],
+      )!,
     );
   }
 
@@ -6694,6 +6720,7 @@ class FinanceAccountRow extends DataClass
   final bool activa;
   final String orden;
   final bool esFavorito;
+  final String descripcion;
   const FinanceAccountRow({
     required this.id,
     required this.nombre,
@@ -6704,6 +6731,7 @@ class FinanceAccountRow extends DataClass
     required this.activa,
     required this.orden,
     required this.esFavorito,
+    required this.descripcion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -6717,6 +6745,7 @@ class FinanceAccountRow extends DataClass
     map['activa'] = Variable<bool>(activa);
     map['orden'] = Variable<String>(orden);
     map['es_favorito'] = Variable<bool>(esFavorito);
+    map['descripcion'] = Variable<String>(descripcion);
     return map;
   }
 
@@ -6731,6 +6760,7 @@ class FinanceAccountRow extends DataClass
       activa: Value(activa),
       orden: Value(orden),
       esFavorito: Value(esFavorito),
+      descripcion: Value(descripcion),
     );
   }
 
@@ -6749,6 +6779,7 @@ class FinanceAccountRow extends DataClass
       activa: serializer.fromJson<bool>(json['activa']),
       orden: serializer.fromJson<String>(json['orden']),
       esFavorito: serializer.fromJson<bool>(json['esFavorito']),
+      descripcion: serializer.fromJson<String>(json['descripcion']),
     );
   }
   @override
@@ -6764,6 +6795,7 @@ class FinanceAccountRow extends DataClass
       'activa': serializer.toJson<bool>(activa),
       'orden': serializer.toJson<String>(orden),
       'esFavorito': serializer.toJson<bool>(esFavorito),
+      'descripcion': serializer.toJson<String>(descripcion),
     };
   }
 
@@ -6777,6 +6809,7 @@ class FinanceAccountRow extends DataClass
     bool? activa,
     String? orden,
     bool? esFavorito,
+    String? descripcion,
   }) => FinanceAccountRow(
     id: id ?? this.id,
     nombre: nombre ?? this.nombre,
@@ -6787,6 +6820,7 @@ class FinanceAccountRow extends DataClass
     activa: activa ?? this.activa,
     orden: orden ?? this.orden,
     esFavorito: esFavorito ?? this.esFavorito,
+    descripcion: descripcion ?? this.descripcion,
   );
   FinanceAccountRow copyWithCompanion(FinanceAccountsCompanion data) {
     return FinanceAccountRow(
@@ -6803,6 +6837,9 @@ class FinanceAccountRow extends DataClass
       esFavorito: data.esFavorito.present
           ? data.esFavorito.value
           : this.esFavorito,
+      descripcion: data.descripcion.present
+          ? data.descripcion.value
+          : this.descripcion,
     );
   }
 
@@ -6817,7 +6854,8 @@ class FinanceAccountRow extends DataClass
           ..write('saldoInicial: $saldoInicial, ')
           ..write('activa: $activa, ')
           ..write('orden: $orden, ')
-          ..write('esFavorito: $esFavorito')
+          ..write('esFavorito: $esFavorito, ')
+          ..write('descripcion: $descripcion')
           ..write(')'))
         .toString();
   }
@@ -6833,6 +6871,7 @@ class FinanceAccountRow extends DataClass
     activa,
     orden,
     esFavorito,
+    descripcion,
   );
   @override
   bool operator ==(Object other) =>
@@ -6846,7 +6885,8 @@ class FinanceAccountRow extends DataClass
           other.saldoInicial == this.saldoInicial &&
           other.activa == this.activa &&
           other.orden == this.orden &&
-          other.esFavorito == this.esFavorito);
+          other.esFavorito == this.esFavorito &&
+          other.descripcion == this.descripcion);
 }
 
 class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
@@ -6859,6 +6899,7 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
   final Value<bool> activa;
   final Value<String> orden;
   final Value<bool> esFavorito;
+  final Value<String> descripcion;
   final Value<int> rowid;
   const FinanceAccountsCompanion({
     this.id = const Value.absent(),
@@ -6870,6 +6911,7 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
     this.activa = const Value.absent(),
     this.orden = const Value.absent(),
     this.esFavorito = const Value.absent(),
+    this.descripcion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FinanceAccountsCompanion.insert({
@@ -6882,6 +6924,7 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
     this.activa = const Value.absent(),
     this.orden = const Value.absent(),
     this.esFavorito = const Value.absent(),
+    this.descripcion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        nombre = Value(nombre),
@@ -6898,6 +6941,7 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
     Expression<bool>? activa,
     Expression<String>? orden,
     Expression<bool>? esFavorito,
+    Expression<String>? descripcion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -6910,6 +6954,7 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
       if (activa != null) 'activa': activa,
       if (orden != null) 'orden': orden,
       if (esFavorito != null) 'es_favorito': esFavorito,
+      if (descripcion != null) 'descripcion': descripcion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -6924,6 +6969,7 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
     Value<bool>? activa,
     Value<String>? orden,
     Value<bool>? esFavorito,
+    Value<String>? descripcion,
     Value<int>? rowid,
   }) {
     return FinanceAccountsCompanion(
@@ -6936,6 +6982,7 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
       activa: activa ?? this.activa,
       orden: orden ?? this.orden,
       esFavorito: esFavorito ?? this.esFavorito,
+      descripcion: descripcion ?? this.descripcion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -6970,6 +7017,9 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
     if (esFavorito.present) {
       map['es_favorito'] = Variable<bool>(esFavorito.value);
     }
+    if (descripcion.present) {
+      map['descripcion'] = Variable<String>(descripcion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -6988,6 +7038,7 @@ class FinanceAccountsCompanion extends UpdateCompanion<FinanceAccountRow> {
           ..write('activa: $activa, ')
           ..write('orden: $orden, ')
           ..write('esFavorito: $esFavorito, ')
+          ..write('descripcion: $descripcion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -13879,6 +13930,7 @@ typedef $$FinanceAccountsTableCreateCompanionBuilder =
       Value<bool> activa,
       Value<String> orden,
       Value<bool> esFavorito,
+      Value<String> descripcion,
       Value<int> rowid,
     });
 typedef $$FinanceAccountsTableUpdateCompanionBuilder =
@@ -13892,6 +13944,7 @@ typedef $$FinanceAccountsTableUpdateCompanionBuilder =
       Value<bool> activa,
       Value<String> orden,
       Value<bool> esFavorito,
+      Value<String> descripcion,
       Value<int> rowid,
     });
 
@@ -14035,6 +14088,11 @@ class $$FinanceAccountsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get descripcion => $composableBuilder(
+    column: $table.descripcion,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> financeTransactionsRefs(
     Expression<bool> Function($$FinanceTransactionsTableFilterComposer f) f,
   ) {
@@ -14164,6 +14222,11 @@ class $$FinanceAccountsTableOrderingComposer
     column: $table.esFavorito,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get descripcion => $composableBuilder(
+    column: $table.descripcion,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FinanceAccountsTableAnnotationComposer
@@ -14203,6 +14266,11 @@ class $$FinanceAccountsTableAnnotationComposer
 
   GeneratedColumn<bool> get esFavorito => $composableBuilder(
     column: $table.esFavorito,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get descripcion => $composableBuilder(
+    column: $table.descripcion,
     builder: (column) => column,
   );
 
@@ -14327,6 +14395,7 @@ class $$FinanceAccountsTableTableManager
                 Value<bool> activa = const Value.absent(),
                 Value<String> orden = const Value.absent(),
                 Value<bool> esFavorito = const Value.absent(),
+                Value<String> descripcion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FinanceAccountsCompanion(
                 id: id,
@@ -14338,6 +14407,7 @@ class $$FinanceAccountsTableTableManager
                 activa: activa,
                 orden: orden,
                 esFavorito: esFavorito,
+                descripcion: descripcion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -14351,6 +14421,7 @@ class $$FinanceAccountsTableTableManager
                 Value<bool> activa = const Value.absent(),
                 Value<String> orden = const Value.absent(),
                 Value<bool> esFavorito = const Value.absent(),
+                Value<String> descripcion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FinanceAccountsCompanion.insert(
                 id: id,
@@ -14362,6 +14433,7 @@ class $$FinanceAccountsTableTableManager
                 activa: activa,
                 orden: orden,
                 esFavorito: esFavorito,
+                descripcion: descripcion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

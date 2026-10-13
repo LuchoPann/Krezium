@@ -25,7 +25,7 @@ import '../../utils/credit_display_utils.dart';
 import '../../widgets/credit_detail/stat_box.dart';
 import '../../widgets/demo_badge.dart';
 import 'edit_credit_sheet.dart';
-import '../../widgets/kredit_bottom_dialogs.dart';
+import '../../widgets/krezium_bottom_dialogs.dart';
 
 /// Detail screen for a single credit, with 2 tabs mirroring
 /// #view-credit-detail in legacy_pwa/index.html (~L340-489): Resumen (which

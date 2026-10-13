@@ -23,10 +23,22 @@ final financeBudgetsProvider =
 });
 
 final allFinanceCategoriesProvider =
-    FutureProvider<List<dynamic>>((ref) async {
+    FutureProvider<List<CatalogoCategoria>>((ref) async {
   final db = ref.watch(databaseProvider);
   final custom = await db.getFinanceCategories();
-  return [...todoCatalogo, ...custom];
+  return [
+    ...todoCatalogo,
+    for (final row in custom)
+      if (!row.archivada)
+        CatalogoCategoria.fromCustomRow(
+          id: row.id,
+          nombre: row.nombre,
+          iconoKey: row.icono,
+          colorHex: row.color,
+          tipo: row.tipo,
+          parentId: row.parentId,
+        ),
+  ];
 });
 
 // Lugares (autocomplete de lugar en transacción)

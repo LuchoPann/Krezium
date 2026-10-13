@@ -492,6 +492,125 @@ void migrateLegacyCardData(CardCredit credit, [DateTime? refDate]) {
   }
 }
 
+/// Una cuota proyectada de una [InstallmentPurchase] — facturada (ya tiene
+/// un CardMovement real en algún extracto pasado) o pendiente (todavía no
+/// se ha facturado; el extracto donde caerá ni existe aún). Puramente
+/// informativo, para que el usuario vea el cronograma completo de la
+/// compra en Movimientos — nunca se usa para calcular saldos reales.
+class InstallmentScheduleEntry {
+  final int number;
+  final double amount;
+  final bool billed;
+  final DateTime statementCutoff;
+
+  const InstallmentScheduleEntry({
+    required this.number,
+    required this.amount,
+    required this.billed,
+    required this.statementCutoff,
+  });
+}
+
+/// Proyecta las N cuotas de [purchase]: las ya facturadas se ubican hacia
+/// atrás y las pendientes hacia adelante, una por cada corte de ciclo,
+/// tomando como ancla el extracto más reciente del crédito (donde cayó la
+/// última cuota facturada).
+List<InstallmentScheduleEntry> projectInstallmentSchedule(
+    InstallmentPurchase purchase, CardCredit credit) {
+  final sortedStatements = credit.statements.toList()
+    ..sort((a, b) => a.cutoffDate.compareTo(b.cutoffDate));
+  final anchor = sortedStatements.isNotEmpty
+      ? parseDateStr(sortedStatements.last.cutoffDate)
+      : parseDateStr(purchase.purchaseDate);
+
+  DateTime cutoffMonthsFromAnchor(int delta) {
+    final total = anchor.year * 12 + (anchor.month - 1) + delta;
+    final year = total ~/ 12;
+    final month = total % 12 + 1;
+    return cutoffDateForMonth(year, month, credit.cutoffDay);
+  }
+
+  return [
+    for (var i = 1; i <= purchase.installments; i++)
+      InstallmentScheduleEntry(
+        number: i,
+        amount: i == purchase.installments
+            ? purchase.lastInstallmentAmount
+            : purchase.perInstallmentAmount,
+        billed: i <= purchase.installmentsBilled,
+        statementCutoff: cutoffMonthsFromAnchor(i - purchase.installmentsBilled),
+      ),
+  ];
+}
+
+/// Una cuota pendiente dentro de un [ProjectedStatement] — de qué compra
+/// viene y cuánto aporta a ese extracto futuro.
+class ProjectedStatementLine {
+  final String purchaseId;
+  final String purchaseNote;
+  final int installmentNumber;
+  final int totalInstallments;
+  final double amount;
+
+  const ProjectedStatementLine({
+    required this.purchaseId,
+    required this.purchaseNote,
+    required this.installmentNumber,
+    required this.totalInstallments,
+    required this.amount,
+  });
+}
+
+/// Un extracto futuro que AÚN NO EXISTE — proyección informativa de lo que
+/// se facturará cuando ese ciclo realmente cierre. Nunca se persiste ni se
+/// usa para calcular saldos; solo para que el usuario vea el calendario
+/// completo en Movimientos.
+class ProjectedStatement {
+  final DateTime cutoffDate;
+  final DateTime dueDate;
+  final List<ProjectedStatementLine> lines;
+
+  double get totalAmount => lines.fold(0.0, (sum, l) => sum + l.amount);
+
+  const ProjectedStatement({
+    required this.cutoffDate,
+    required this.dueDate,
+    required this.lines,
+  });
+}
+
+/// Proyecta todos los extractos futuros implícitos en las cuotas aún sin
+/// facturar de [credit.installmentPurchases], agrupando por fecha de corte
+/// proyectada: si dos compras tienen su próxima cuota pendiente en el mismo
+/// ciclo, caen en el mismo [ProjectedStatement]. Ordenado cronológicamente.
+List<ProjectedStatement> projectFutureStatements(CardCredit credit) {
+  final byCutoff = <DateTime, List<ProjectedStatementLine>>{};
+  for (final purchase in credit.installmentPurchases) {
+    final schedule = projectInstallmentSchedule(purchase, credit);
+    for (final entry in schedule) {
+      if (entry.billed) continue;
+      byCutoff.putIfAbsent(entry.statementCutoff, () => []).add(
+            ProjectedStatementLine(
+              purchaseId: purchase.id,
+              purchaseNote: purchase.note,
+              installmentNumber: entry.number,
+              totalInstallments: purchase.installments,
+              amount: entry.amount,
+            ),
+          );
+    }
+  }
+  final cutoffs = byCutoff.keys.toList()..sort();
+  return [
+    for (final cutoff in cutoffs)
+      ProjectedStatement(
+        cutoffDate: cutoff,
+        dueDate: dueDateForCutoff(credit, cutoff),
+        lines: byCutoff[cutoff]!,
+      ),
+  ];
+}
+
 CardStatement _createLegacyStatement(CardCredit credit, String cutoffDate) {
   final cutoff = parseDateStr(cutoffDate);
   final dueDate = toDateStr(dueDateForCutoff(credit, cutoff));

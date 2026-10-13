@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../data/models/credit.dart';
-import '../domain/card_calculator.dart';
 import '../domain/card_statement_engine.dart';
 import '../domain/credit_calculator.dart';
 import '../domain/date_utils.dart';
@@ -117,10 +116,12 @@ double getDueSoonTotal(List<Credit> credits, {int withinDays = 7}) {
         final due = parseDateStr(inst.dueDate);
         if (!due.isAfter(horizon)) total += inst.amount;
       }
-    } else if (c is CardCredit && c.currentBalance > 0) {
-      final due = getCardCycleDates(c).dueDate;
+    } else if (c is CardCredit) {
+      final summary = getPayableSummary(c);
+      final due = summary.dueDate;
+      if (due == null) continue;
       final dueDay = DateTime(due.year, due.month, due.day);
-      if (!dueDay.isAfter(horizon)) total += c.currentBalance;
+      if (!dueDay.isAfter(horizon)) total += summary.exigible;
     }
   }
   return total;

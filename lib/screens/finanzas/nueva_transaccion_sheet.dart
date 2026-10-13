@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/models/finance_models.dart';
@@ -9,6 +10,7 @@ import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/categoria_selector_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/widgets/krezium_section_card.dart';
 import 'package:uuid/uuid.dart';
 
 // ─── Color tokens por tipo ────────────────────────────────────────────────────
@@ -28,6 +30,7 @@ Future<void> showNuevaTransaccionSheet(
   String? libroId,
   CatalogoCategoria? categoriaInicial,
   FinanceTemplate? template,
+  FinanceTransaction? editar,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -37,6 +40,7 @@ Future<void> showNuevaTransaccionSheet(
       libroIdInicial: libroId,
       categoriaInicial: categoriaInicial,
       template: template,
+      editar: editar,
     ),
   );
 }
@@ -46,11 +50,13 @@ class _NuevaTransaccionSheet extends ConsumerStatefulWidget {
   final String? libroIdInicial;
   final CatalogoCategoria? categoriaInicial;
   final FinanceTemplate? template;
+  final FinanceTransaction? editar;
 
   const _NuevaTransaccionSheet({
     this.libroIdInicial,
     this.categoriaInicial,
     this.template,
+    this.editar,
   });
 
   @override
@@ -93,9 +99,7 @@ class _NuevaTransaccionSheetState
       _ordenanteCtrl.text = t.personaSitio ?? '';
       _notaCtrl.text = t.nota ?? '';
       if (t.monto != null) {
-        _montoCtrl.text = t.monto! % 1 == 0
-            ? t.monto!.toStringAsFixed(0)
-            : t.monto!.toStringAsFixed(2);
+        _montoCtrl.text = '\$ ${agruparMiles(t.monto!.round())}';
       }
       // Buscar categoría del template en el catálogo
       try {
@@ -106,10 +110,28 @@ class _NuevaTransaccionSheetState
       // Ir directo al paso 2 si hay template
       _paso = 2;
     }
+
+    final e = widget.editar;
+    if (e != null) {
+      _tipo = e.tipo;
+      _libroId = e.accountId;
+      _libroDestinoId = e.transferToAccountId;
+      _ordenanteCtrl.text = e.personaSitio ?? '';
+      _notaCtrl.text = e.nota;
+      _montoCtrl.text = '\$ ${agruparMiles(e.monto.round())}';
+      final fParts = e.fecha.split('-');
+      _fecha = DateTime(int.parse(fParts[0]), int.parse(fParts[1]), int.parse(fParts[2]));
+      final hParts = (e.hora ?? '00:00').split(':');
+      _hora = TimeOfDay(hour: int.parse(hParts[0]), minute: int.parse(hParts[1]));
+      try {
+        _categoriaSeleccionada = catalogoFinanzas.firstWhere((c) => c.id == e.categoryId);
+      } catch (_) {}
+      _paso = 2;
+    }
   }
 
   void _onMontoChanged() {
-    final v = double.tryParse(_montoCtrl.text.replaceAll(',', '.'));
+    final v = double.tryParse(_montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
     final valid = v != null && v > 0;
     if (valid != _montoValido) setState(() => _montoValido = valid);
   }
@@ -149,15 +171,18 @@ class _NuevaTransaccionSheetState
     if (picked != null) setState(() => _hora = picked);
   }
 
-  Future<void> _seleccionarCategoria() async {
-    final tipo = _tipo == 'transferencia' ? 'gasto' : _tipo;
-    final cat = await showCategoriaSelectorSheet(context, tipo);
-    if (cat != null) setState(() => _categoriaSeleccionada = cat);
-  }
+  // La categoría se elige como un paso más de este mismo sheet (_paso = 3)
+  // en vez de abrir un segundo sheet encima — evita el sheet-sobre-sheet.
+  void _seleccionarCategoria() => setState(() => _paso = 3);
+
+  // Selección directa desde los chips rápidos del Paso 2 (sin pasar por el
+  // paso de categoría completo).
+  void _elegirCategoriaChip(CatalogoCategoria cat) =>
+      setState(() => _categoriaSeleccionada = cat);
 
   Future<void> _guardar(List<FinanceAccount> libros) async {
     if (_guardando) return;
-    final monto = double.tryParse(_montoCtrl.text.replaceAll(',', '.'));
+    final monto = double.tryParse(_montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
     if (monto == null || monto <= 0) return;
     if (_libroId == null) return;
     if (_categoriaSeleccionada == null && _tipo != 'transferencia') return;
@@ -165,7 +190,7 @@ class _NuevaTransaccionSheetState
     setState(() => _guardando = true);
     try {
       final db = ref.read(databaseProvider);
-      final id = const Uuid().v4();
+      final id = widget.editar?.id ?? const Uuid().v4();
       final fechaStr =
           '${_fecha.year}-${_fecha.month.toString().padLeft(2, '0')}-${_fecha.day.toString().padLeft(2, '0')}';
       final horaStr = _formatHora(_hora);
@@ -205,6 +230,25 @@ class _NuevaTransaccionSheetState
         transferToAccountId: Value(_tipo == 'transferencia' ? _libroDestinoId : null),
       ));
 
+      // finanzasLibroTxProvider/financeAccountSummaryProvider son
+      // FutureProvider: no son reactivos a escrituras en la DB, solo
+      // vuelven a correr si algo que watchean cambia o si se invalidan a
+      // mano — sin esto, la lista y los totales quedaban desactualizados
+      // hasta un pull-to-refresh manual.
+      ref.invalidate(finanzasLibroTxProvider(_libroId!));
+      ref.invalidate(financeAccountSummaryProvider(_libroId!));
+      if (_tipo == 'transferencia' && _libroDestinoId != null) {
+        ref.invalidate(finanzasLibroTxProvider(_libroDestinoId!));
+        ref.invalidate(financeAccountSummaryProvider(_libroDestinoId!));
+      }
+      // Al editar, si se cambió de libro, el de origen también queda con
+      // una lista/totales desactualizados.
+      if (widget.editar != null && widget.editar!.accountId != _libroId) {
+        ref.invalidate(finanzasLibroTxProvider(widget.editar!.accountId));
+        ref.invalidate(financeAccountSummaryProvider(widget.editar!.accountId));
+      }
+      if (ordenante.isNotEmpty) ref.invalidate(financePlacesProvider);
+
       await HapticFeedback.mediumImpact();
       if (mounted) Navigator.of(context).pop();
     } finally {
@@ -219,7 +263,13 @@ class _NuevaTransaccionSheetState
     final librosAsync = ref.watch(financeAccountsProvider);
     final libros = librosAsync.valueOrNull?.map(FinanceAccount.fromRow).toList() ?? [];
 
-    return DraggableScrollableSheet(
+    // Padding(bottom: viewInsets): un DraggableScrollableSheet no se
+    // reacomoda solo con el teclado (a diferencia de un Scaffold con
+    // resizeToAvoidBottomInset) — sin esto, el teclado tapaba los campos
+    // de más abajo (categoría, notas, guardar).
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
       initialChildSize: 0.7,
       minChildSize: 0.4,
       maxChildSize: 0.95,
@@ -255,8 +305,8 @@ class _NuevaTransaccionSheetState
                     child: child,
                   );
                 },
-                child: _paso == 1
-                    ? _Paso1(
+                child: switch (_paso) {
+                  1 => _Paso1(
                         key: const ValueKey(1),
                         tipo: _tipo,
                         libroId: _libroId,
@@ -276,10 +326,32 @@ class _NuevaTransaccionSheetState
                             );
                           }
                         },
-                      )
-                    : _Paso2(
+                      ),
+                  3 => _Paso3Categoria(
+                      key: const ValueKey(3),
+                      tipo: _tipo == 'transferencia' ? 'gasto' : _tipo,
+                      scrollCtrl: scrollCtrl,
+                      onVolver: () => setState(() => _paso = 2),
+                      onSeleccionar: (cat) => setState(() {
+                        _categoriaSeleccionada = cat;
+                        _paso = 2;
+                      }),
+                    ),
+                  _ => _Paso2(
                         key: const ValueKey(2),
                         tipo: _tipo,
+                        isEditing: widget.editar != null,
+                        // Cambiar entre ingreso/gasto desde el paso 2 — antes
+                        // solo era posible en el paso 1, que se salta cuando
+                        // el sheet se abre con un libro ya preseleccionado
+                        // (el caso normal, desde el FAB de la pantalla del
+                        // libro), dejando el tipo fijo en 'gasto' para
+                        // siempre. La categoría se limpia al cambiar porque
+                        // el catálogo de categorías depende del tipo.
+                        onTipoChanged: (v) => setState(() {
+                          _tipo = v;
+                          _categoriaSeleccionada = null;
+                        }),
                         categoriaSeleccionada: _categoriaSeleccionada,
                         fecha: _fecha,
                         hora: _hora,
@@ -291,22 +363,9 @@ class _NuevaTransaccionSheetState
                         montoValido: _montoValido,
                         scrollCtrl: scrollCtrl,
                         onSeleccionarCategoria: _seleccionarCategoria,
+                        onCategoriaChip: _elegirCategoriaChip,
                         onPickFecha: _pickFecha,
                         onPickHora: _pickHora,
-                        onFechaAnterior: () =>
-                            setState(() => _fecha = _fecha.subtract(const Duration(days: 1))),
-                        onFechaSiguiente: () =>
-                            setState(() => _fecha = _fecha.add(const Duration(days: 1))),
-                        onHoraAnterior: () {
-                          final mins = _hora.hour * 60 + _hora.minute - 60;
-                          final total = ((mins % 1440) + 1440) % 1440;
-                          setState(() => _hora = TimeOfDay(hour: total ~/ 60, minute: total % 60));
-                        },
-                        onHoraSiguiente: () {
-                          final mins = _hora.hour * 60 + _hora.minute + 60;
-                          final total = mins % 1440;
-                          setState(() => _hora = TimeOfDay(hour: total ~/ 60, minute: total % 60));
-                        },
                         onVolver: widget.libroIdInicial != null
                             ? () => Navigator.of(context).pop()
                             : () => setState(() => _paso = 1),
@@ -314,10 +373,12 @@ class _NuevaTransaccionSheetState
                         formatFecha: _formatFecha,
                         formatHora: _formatHora,
                       ),
+                },
               ),
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -390,9 +451,8 @@ class _Paso1 extends StatelessWidget {
         const SizedBox(height: 24),
 
         // Libro origen
-        Text('Libro', style: _labelStyle(tc)),
-        const SizedBox(height: 8),
         _LibroSelector(
+          label: 'Libro',
           libros: libros,
           libroId: libroId,
           onChanged: onLibroChanged,
@@ -402,9 +462,8 @@ class _Paso1 extends StatelessWidget {
         // Libro destino (transferencia)
         if (tipo == 'transferencia') ...[
           const SizedBox(height: 16),
-          Text('Destino', style: _labelStyle(tc)),
-          const SizedBox(height: 8),
           _LibroSelector(
+            label: 'Destino',
             libros: libros,
             libroId: libroDestinoId,
             onChanged: onLibroDestinoChanged,
@@ -421,7 +480,7 @@ class _Paso1 extends StatelessWidget {
           height: 52,
           child: FilledButton(
             onPressed: libroId != null ? onContinuar : null,
-            style: FilledButton.styleFrom(backgroundColor: color),
+            style: FilledButton.styleFrom(backgroundColor: color, foregroundColor: legibleForegroundOn(color)),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -454,6 +513,7 @@ class _Paso1 extends StatelessWidget {
 
 // ─── Selector de libro ────────────────────────────────────────────────────────
 class _LibroSelector extends StatelessWidget {
+  final String label;
   final List<FinanceAccount> libros;
   final String? libroId;
   final ValueChanged<String?> onChanged;
@@ -461,6 +521,7 @@ class _LibroSelector extends StatelessWidget {
   final String? excludeId;
 
   const _LibroSelector({
+    required this.label,
     required this.libros,
     required this.libroId,
     required this.onChanged,
@@ -475,57 +536,22 @@ class _LibroSelector extends StatelessWidget {
         : libros;
 
     if (available.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: tc.bgSecondary,
-          borderRadius: BorderRadius.circular(AppRadius.tile),
-          border: Border.all(color: tc.borderCard),
-        ),
-        child: Text(
-          'No hay libros disponibles',
-          style: TextStyle(color: tc.textSecondary, fontSize: AppTextSize.body),
-        ),
+      return Text(
+        'No hay libros disponibles',
+        style: TextStyle(color: tc.textSecondary, fontSize: AppTextSize.body),
       );
     }
 
-    final selected = available.where((l) => l.id == libroId).firstOrNull;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: tc.bgSecondary,
-        borderRadius: BorderRadius.circular(AppRadius.tile),
-        border: Border.all(color: tc.borderCard),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: libroId,
-          hint: Text('Seleccionar libro', style: TextStyle(color: tc.textTertiary)),
-          isExpanded: true,
-          dropdownColor: tc.bgCard,
-          items: available.map((l) => DropdownMenuItem(
-            value: l.id,
-            child: Row(
-              children: [
-                Icon(Icons.book_outlined, size: AppIconSize.small, color: tc.textSecondary),
-                const SizedBox(width: 8),
-                Text(l.nombre, style: TextStyle(color: tc.textPrimary, fontSize: AppTextSize.body)),
-              ],
-            ),
-          )).toList(),
-          onChanged: onChanged,
-          selectedItemBuilder: selected != null
-              ? (_) => available.map((_) => Row(
-                    children: [
-                      Icon(Icons.book_outlined, size: AppIconSize.small, color: tc.textSecondary),
-                      const SizedBox(width: 8),
-                      Text(selected.nombre, style: TextStyle(color: tc.textPrimary, fontSize: AppTextSize.body)),
-                    ],
-                  )).toList()
-              : null,
-        ),
-      ),
+    // DropdownButtonFormField estándar — mismo patrón que "Frecuencia de
+    // cobro" en add_credit_sheet.dart, sin contenedor/borde propio.
+    return DropdownButtonFormField<String>(
+      initialValue: libroId,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label),
+      items: available
+          .map((l) => DropdownMenuItem(value: l.id, child: Text(l.nombre)))
+          .toList(),
+      onChanged: onChanged,
     );
   }
 }
@@ -533,6 +559,8 @@ class _LibroSelector extends StatelessWidget {
 // ─── Paso 2: detalle ──────────────────────────────────────────────────────────
 class _Paso2 extends ConsumerWidget {
   final String tipo;
+  final bool isEditing;
+  final ValueChanged<String> onTipoChanged;
   final CatalogoCategoria? categoriaSeleccionada;
   final DateTime fecha;
   final TimeOfDay hora;
@@ -544,12 +572,9 @@ class _Paso2 extends ConsumerWidget {
   final bool montoValido;
   final ScrollController scrollCtrl;
   final VoidCallback onSeleccionarCategoria;
-  final VoidCallback onPickFecha;
-  final VoidCallback onPickHora;
-  final VoidCallback onFechaAnterior;
-  final VoidCallback onFechaSiguiente;
-  final VoidCallback onHoraAnterior;
-  final VoidCallback onHoraSiguiente;
+  final ValueChanged<CatalogoCategoria> onCategoriaChip;
+  final Future<void> Function() onPickFecha;
+  final Future<void> Function() onPickHora;
   final VoidCallback onVolver;
   final VoidCallback onGuardar;
   final String Function(DateTime) formatFecha;
@@ -558,6 +583,8 @@ class _Paso2 extends ConsumerWidget {
   const _Paso2({
     super.key,
     required this.tipo,
+    required this.isEditing,
+    required this.onTipoChanged,
     required this.categoriaSeleccionada,
     required this.fecha,
     required this.hora,
@@ -569,17 +596,20 @@ class _Paso2 extends ConsumerWidget {
     required this.montoValido,
     required this.scrollCtrl,
     required this.onSeleccionarCategoria,
+    required this.onCategoriaChip,
     required this.onPickFecha,
     required this.onPickHora,
-    required this.onFechaAnterior,
-    required this.onFechaSiguiente,
-    required this.onHoraAnterior,
-    required this.onHoraSiguiente,
     required this.onVolver,
     required this.onGuardar,
     required this.formatFecha,
     required this.formatHora,
   });
+
+  String _fechaCorta() {
+    final now = DateTime.now();
+    final hoy = fecha.year == now.year && fecha.month == now.month && fecha.day == now.day;
+    return hoy ? 'Hoy' : formatFecha(fecha);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -589,6 +619,12 @@ class _Paso2 extends ConsumerWidget {
     final places = placesAsync.valueOrNull ?? [];
     // Sort by usados DESC
     final placesSorted = [...places]..sort((a, b) => b.usados.compareTo(a.usados));
+    final asyncCats = ref.watch(allFinanceCategoriesProvider);
+    final tipoCat = tipo == 'transferencia' ? 'gasto' : tipo;
+    final categoriasRapidas = (asyncCats.valueOrNull ?? [])
+        .where((c) => c.parentId != null && (c.tipo == tipoCat || c.tipo == 'ambos'))
+        .take(4)
+        .toList();
 
     return ListView(
       controller: scrollCtrl,
@@ -605,11 +641,13 @@ class _Paso2 extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              switch (tipo) {
-                'ingreso' => 'Nuevo Ingreso',
-                'gasto' => 'Nuevo Gasto',
-                _ => 'Transferencia',
-              },
+              isEditing
+                  ? 'Editar transacción'
+                  : switch (tipo) {
+                      'ingreso' => 'Nuevo Ingreso',
+                      'gasto' => 'Nuevo Gasto',
+                      _ => 'Transferencia',
+                    },
               style: TextStyle(
                 fontFamily: 'SpaceGrotesk',
                 fontSize: AppTextSize.heading,
@@ -619,155 +657,164 @@ class _Paso2 extends ConsumerWidget {
             ),
           ],
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 8),
 
-        // Campo Importe
-        TextField(
+        // Ingreso/Gasto siempre editable acá — antes solo se podía elegir en
+        // el paso 1, que se salta cuando el libro ya viene preseleccionado
+        // (el flujo normal desde el FAB), dejando el tipo fijo en 'gasto'.
+        // Transferencia no entra acá: necesita el libro destino del paso 1.
+        // Píldora compacta en vez de SegmentedButton grande — más cerca del
+        // mockup aprobado.
+        if (tipo != 'transferencia') ...[
+          _TipoPill(tipo: tipo, onChanged: onTipoChanged, tc: tc),
+          const SizedBox(height: 8),
+        ],
+
+        // Monto como protagonista: hero centrado, coloreado por tipo. Lleva
+        // un subrayado visible (en vez de border: none) — sin eso no había
+        // ninguna pista de que ahí se podía escribir.
+        TextFormField(
           controller: montoCtrl,
           focusNode: montoFocus,
+          textAlign: TextAlign.center,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [_MontoFormatter()],
           style: TextStyle(
-            fontFamily: 'SpaceGrotesk',
-            fontSize: 28,
+            fontSize: AppTextSize.hero,
             fontWeight: FontWeight.w800,
             color: color,
           ),
           decoration: InputDecoration(
-            hintText: '0',
-            hintStyle: TextStyle(
-              fontFamily: 'SpaceGrotesk',
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              color: color.withValues(alpha: 0.35),
-            ),
-            prefixText: '\$  ',
-            prefixStyle: TextStyle(
-              fontFamily: 'SpaceGrotesk',
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              color: color.withValues(alpha: 0.6),
-            ),
-            filled: true,
-            fillColor: color.withValues(alpha: 0.08),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: color.withValues(alpha: 0.3)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: color.withValues(alpha: 0.3)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: color, width: 2),
-            ),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: tc.borderCard, width: 2)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: color, width: 2)),
+            // El "$" va DENTRO del texto editable (lo agrega el formatter),
+            // no como prefixText — un prefixText ocupa espacio fijo a la
+            // izquierda y el número termina centrado en el resto del
+            // ancho, no en el campo completo.
+            hintText: '\$ 0',
           ),
-        ),
-        const SizedBox(height: 20),
-
-        // Fecha
-        _SectionLabel('Fecha', tc),
-        const SizedBox(height: 6),
-        _DateTimeRow(
-          label: formatFecha(fecha),
-          onPrev: onFechaAnterior,
-          onNext: onFechaSiguiente,
-          onTap: onPickFecha,
-          tc: tc,
         ),
         const SizedBox(height: 16),
 
-        // Hora
-        _SectionLabel('Hora', tc),
-        const SizedBox(height: 6),
-        _DateTimeRow(
-          label: formatHora(hora),
-          onPrev: onHoraAnterior,
-          onNext: onHoraSiguiente,
-          onTap: onPickHora,
-          tc: tc,
-        ),
-        const SizedBox(height: 20),
-
-        // Ordenante / Lugar
-        _SectionLabel('Lugar / Ordenante', tc),
-        const SizedBox(height: 6),
-        _OrdenanteField(
-          ordenanteCtrl: ordenanteCtrl,
-          placesSorted: placesSorted,
-          tc: tc,
-        ),
-        const SizedBox(height: 20),
-
-        // Categoría
-        _SectionLabel('Categoría', tc),
-        const SizedBox(height: 6),
-        OutlinedButton(
-          onPressed: tipo != 'transferencia' ? onSeleccionarCategoria : null,
-          style: OutlinedButton.styleFrom(
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            side: BorderSide(color: tc.borderCard),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-            ),
-          ),
-          child: categoriaSeleccionada != null
-              ? Row(
+        // ── Categoría: chips rápidos en vez de un botón plano que esconde
+        // todo detrás de un tap — el paso completo con buscador sigue
+        // disponible tras el chip "Más".
+        if (tipo != 'transferencia') ...[
+          _SectionLabel('Categoría', tc),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 74,
+            // Center + SingleChildScrollView (no ListView): con pocos chips
+            // quedan centrados visualmente; si no caben, igual se puede
+            // deslizar — un ListView siempre arranca pegado a la izquierda.
+            child: Center(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircleAvatar(
-                      radius: 8,
-                      backgroundColor: categoriaSeleccionada!.color,
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(categoriaSeleccionada!.icono, size: AppIconSize.small, color: categoriaSeleccionada!.color),
-                    const SizedBox(width: 8),
-                    Text(
-                      categoriaSeleccionada!.nombre,
-                      style: TextStyle(color: tc.textPrimary, fontSize: AppTextSize.body),
-                    ),
-                  ],
-                )
-              : Row(
-                  children: [
-                    Icon(Icons.label_outline, size: AppIconSize.small, color: tc.textTertiary),
-                    const SizedBox(width: 8),
-                    Text(
-                      tipo == 'transferencia' ? 'Sin categoría (transferencia)' : 'Seleccionar categoría',
-                      style: TextStyle(color: tc.textTertiary, fontSize: AppTextSize.body),
-                    ),
+                    for (final cat in categoriasRapidas) ...[
+                      _CategoriaChip(
+                        categoria: cat,
+                        seleccionada: categoriaSeleccionada?.id == cat.id,
+                        onTap: () => onCategoriaChip(cat),
+                        tc: tc,
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    // Si lo elegido no está entre los rápidos (vino del paso
+                    // completo), se agrega para que quede visible/resaltado.
+                    if (categoriaSeleccionada != null &&
+                        !categoriasRapidas.any((c) => c.id == categoriaSeleccionada!.id)) ...[
+                      _CategoriaChip(
+                        categoria: categoriaSeleccionada!,
+                        seleccionada: true,
+                        onTap: () {},
+                        tc: tc,
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    _CategoriaMasChip(onTap: onSeleccionarCategoria, tc: tc),
                   ],
                 ),
-        ),
-        const SizedBox(height: 20),
-
-        // Notas
-        _SectionLabel('Notas (opcional)', tc),
-        const SizedBox(height: 6),
-        TextField(
-          controller: notaCtrl,
-          maxLines: 2,
-          decoration: InputDecoration(
-            hintText: 'Descripción adicional…',
-            hintStyle: TextStyle(color: tc.textTertiary, fontSize: AppTextSize.body),
-            filled: true,
-            fillColor: tc.bgSecondary,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: tc.borderCard),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: tc.borderCard),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: tc.textSecondary),
+              ),
             ),
           ),
+          const SizedBox(height: 16),
+        ],
+
+        // ── Detalle: fecha y hora independientes (cada una abre su propio
+        // selector), lugar y nota — agrupados en una sola tarjeta neutra.
+        AppSectionCard(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _FechaHoraTap(
+                    icono: Icons.event_outlined,
+                    texto: _fechaCorta(),
+                    onTap: onPickFecha,
+                    tc: tc,
+                  ),
+                ),
+                Container(width: 1, height: 32, color: tc.borderCard),
+                Expanded(
+                  child: _FechaHoraTap(
+                    icono: Icons.schedule_outlined,
+                    texto: formatHora(hora),
+                    onTap: onPickHora,
+                    tc: tc,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            // Sin caption propia arriba: el labelText del campo ya hace de
+            // título flotante al enfocarlo — ponerle un texto fijo encima
+            // además del label repetía la misma palabra dos veces.
+            Row(
+              children: [
+                // Un solo ícono para "lugar o persona" (ni solo mapa ni
+                // solo gente) — un comercio cubre ambos sentidos mejor que
+                // un pin de ubicación.
+                Icon(Icons.storefront_outlined, size: AppIconSize.small, color: tc.textSecondary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _OrdenanteField(
+                    ordenanteCtrl: ordenanteCtrl,
+                    placesSorted: placesSorted,
+                    tc: tc,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            // Nota: sin maxLines fijo — crece hacia abajo si el usuario
+            // escribe más de una línea, en vez de recortar el texto.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Icon(Icons.edit_note_outlined, size: AppIconSize.small, color: tc.textSecondary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: notaCtrl,
+                    minLines: 1,
+                    maxLines: null,
+                    decoration: const InputDecoration(
+                      labelText: 'Nota (opcional)',
+                      hintText: 'Descripción adicional…',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 20),
 
         // Botón Guardar
         SizedBox(
@@ -775,21 +822,21 @@ class _Paso2 extends ConsumerWidget {
           height: 52,
           child: FilledButton(
             onPressed: guardando || !montoValido ? null : onGuardar,
-            style: FilledButton.styleFrom(backgroundColor: color),
+            style: FilledButton.styleFrom(backgroundColor: color, foregroundColor: legibleForegroundOn(color)),
             child: guardando
-                ? const SizedBox(
+                ? SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: legibleForegroundOn(color)),
                   )
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(Icons.check, size: AppIconSize.small),
                       const SizedBox(width: 8),
-                      const Text(
-                        'Guardar',
-                        style: TextStyle(
+                      Text(
+                        isEditing ? 'Guardar cambios' : 'Guardar',
+                        style: const TextStyle(
                           fontFamily: 'SpaceGrotesk',
                           fontWeight: FontWeight.w700,
                           fontSize: AppTextSize.body,
@@ -805,6 +852,186 @@ class _Paso2 extends ConsumerWidget {
 }
 
 // ─── Widgets auxiliares ───────────────────────────────────────────────────────
+// ─── Selector Ingreso/Gasto en píldora ────────────────────────────────────────
+class _TipoPill extends StatelessWidget {
+  final String tipo;
+  final ValueChanged<String> onChanged;
+  final AppThemeColors tc;
+
+  const _TipoPill({required this.tipo, required this.onChanged, required this.tc});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: tc.bgCard,
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: tc.borderCard),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _tipoSegmento('ingreso', 'Ingreso')),
+          Expanded(child: _tipoSegmento('gasto', 'Gasto')),
+        ],
+      ),
+    );
+  }
+
+  Widget _tipoSegmento(String valor, String label) {
+    final selected = tipo == valor;
+    final color = _tipoColor(valor);
+    return GestureDetector(
+      onTap: () => onChanged(valor),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.16) : Colors.transparent,
+          borderRadius: BorderRadius.circular(100),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: AppTextSize.body,
+              fontWeight: FontWeight.w700,
+              color: selected ? color : tc.textTertiary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Chip de categoría rápida ─────────────────────────────────────────────────
+class _CategoriaChip extends StatelessWidget {
+  final CatalogoCategoria categoria;
+  final bool seleccionada;
+  final VoidCallback onTap;
+  final AppThemeColors tc;
+
+  const _CategoriaChip({
+    required this.categoria,
+    required this.seleccionada,
+    required this.onTap,
+    required this.tc,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 58,
+        child: Column(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: _tipoColor(categoria.tipo).withValues(alpha: seleccionada ? 0.18 : 0.1),
+                borderRadius: BorderRadius.circular(15),
+                border: seleccionada ? Border.all(color: _tipoColor(categoria.tipo), width: 2) : null,
+              ),
+              child: Icon(categoria.icono, size: AppIconSize.medium, color: _tipoColor(categoria.tipo)),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              categoria.nombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: AppTextSize.caption,
+                fontWeight: seleccionada ? FontWeight.w700 : FontWeight.w500,
+                color: seleccionada ? tc.textPrimary : tc.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoriaMasChip extends StatelessWidget {
+  final VoidCallback onTap;
+  final AppThemeColors tc;
+
+  const _CategoriaMasChip({required this.onTap, required this.tc});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 58,
+        child: Column(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: tc.borderCard, style: BorderStyle.solid),
+              ),
+              child: Icon(Icons.add, size: AppIconSize.small, color: tc.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            Text('Más', style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Fecha u hora, cada una tocable por separado ──────────────────────────────
+// Antes una sola fila abría los dos diálogos en secuencia (fecha, luego
+// hora); el usuario pidió volver a poder elegir cuál de los dos cambiar sin
+// tener que pasar por el otro.
+class _FechaHoraTap extends StatelessWidget {
+  final IconData icono;
+  final String texto;
+  final Future<void> Function() onTap;
+  final AppThemeColors tc;
+
+  const _FechaHoraTap({
+    required this.icono,
+    required this.texto,
+    required this.onTap,
+    required this.tc,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.tile),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icono, size: AppIconSize.small, color: tc.textSecondary),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                texto,
+                style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w600, color: tc.textPrimary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionLabel extends StatelessWidget {
   final String text;
   final AppThemeColors tc;
@@ -855,28 +1082,15 @@ class _OrdenanteField extends StatelessWidget {
           focusNode: focusNode,
           onEditingComplete: onSubmit,
           onChanged: (val) => ordenanteCtrl.text = val,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
+            labelText: 'Lugar / Ordenante',
             hintText: 'Tienda, persona, lugar…',
-            hintStyle: TextStyle(color: tc.textTertiary, fontSize: AppTextSize.body),
-            prefixIcon: Icon(Icons.place_outlined, size: AppIconSize.small, color: tc.textTertiary),
-            filled: true,
-            fillColor: tc.bgSecondary,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: tc.borderCard),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: tc.borderCard),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.tile),
-              borderSide: BorderSide(color: tc.textSecondary),
-            ),
           ),
         );
       },
       onSelected: (p) => ordenanteCtrl.text = p.nombre,
+      // Solo el nombre — el conteo de usos no le aporta nada al usuario
+      // viendo su propia lista de lugares/personas, solo ruido.
       optionsViewBuilder: (ctx, onSelected, options) => Align(
         alignment: Alignment.topLeft,
         child: Material(
@@ -892,9 +1106,7 @@ class _OrdenanteField extends StatelessWidget {
                 final p = options.elementAt(i);
                 return ListTile(
                   dense: true,
-                  leading: Icon(Icons.place_outlined, size: AppIconSize.small, color: tc.textSecondary),
                   title: Text(p.nombre, style: TextStyle(color: tc.textPrimary, fontSize: AppTextSize.body)),
-                  subtitle: Text('${p.usados}x', style: TextStyle(color: tc.textTertiary, fontSize: AppTextSize.caption)),
                   onTap: () => onSelected(p),
                 );
               },
@@ -906,80 +1118,265 @@ class _OrdenanteField extends StatelessWidget {
   }
 }
 
-class _DateTimeRow extends StatelessWidget {
-  final String label;
-  final VoidCallback onPrev;
-  final VoidCallback onNext;
-  final VoidCallback onTap;
-  final AppThemeColors tc;
+// Mismo NumberFormat (es_CO, sin decimales) que usa `formatCOP` en todo el
+// proyecto para mostrar montos ya guardados.
+final _milesFormat = NumberFormat.decimalPattern('es_CO');
 
-  const _DateTimeRow({
-    required this.label,
-    required this.onPrev,
-    required this.onNext,
-    required this.onTap,
-    required this.tc,
-  });
+// Agrupa un entero en miles con '.' — "45000" → "45.000" — para que lo que
+// el usuario digita se vea igual a como luego aparece en el histórico.
+String agruparMiles(int value) => _milesFormat.format(value);
 
-  @override
-  Widget build(BuildContext context) => Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            onPressed: onPrev,
-            color: tc.textSecondary,
-          ),
-          TextButton(
-            onPressed: onTap,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'SpaceGrotesk',
-                fontSize: AppTextSize.body,
-                fontWeight: FontWeight.w600,
-                color: tc.textPrimary,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            onPressed: onNext,
-            color: tc.textSecondary,
-          ),
-        ],
-      );
-}
-
-// ─── Formatter: sobreescribir "0" al escribir el primer dígito ────────────────
+// ─── Formatter: separa miles con "." mientras se digita (estilo peso
+// colombiano) y antepone "$ " al propio texto editable — así, con
+// textAlign.center, el "$" y el monto quedan centrados como un solo bloque
+// en vez de que el monto se centre solo en el espacio que deja un
+// prefixText fijo a la izquierda.
 class _MontoFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    final newText = newValue.text;
-    final oldText = oldValue.text;
-
-    // Si el campo tenía exactamente "0" y se agregó un dígito al final, quitar el 0
-    if (oldText == '0' && newText.length == 2 && newText.startsWith('0')) {
-      final digit = newText[1];
-      return TextEditingValue(
-        text: digit,
-        selection: TextSelection.collapsed(offset: 1),
-      );
+    final soloDigitos = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (soloDigitos.isEmpty) {
+      return const TextEditingValue(text: '');
     }
+    final formatted = '\$ ${agruparMiles(int.parse(soloDigitos))}';
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
-    // Evitar múltiples ceros al inicio (ej: "00")
-    if (newText.length > 1 && newText.startsWith('0') && newText[1] != '.') {
-      final trimmed = newText.replaceFirst(RegExp(r'^0+'), '');
-      final text = trimmed.isEmpty ? '0' : trimmed;
-      return TextEditingValue(
-        text: text,
-        selection: TextSelection.collapsed(offset: text.length),
-      );
+// ─── Paso 3: categoría — embebido en el mismo sheet (no un segundo sheet
+// encima) con buscador, porque el catálogo es grande y bajar por un
+// acordeón completo cada vez no escala. ────────────────────────────────────
+class _Paso3Categoria extends ConsumerStatefulWidget {
+  final String tipo;
+  final ScrollController scrollCtrl;
+  final VoidCallback onVolver;
+  final ValueChanged<CatalogoCategoria> onSeleccionar;
+
+  const _Paso3Categoria({
+    super.key,
+    required this.tipo,
+    required this.scrollCtrl,
+    required this.onVolver,
+    required this.onSeleccionar,
+  });
+
+  @override
+  ConsumerState<_Paso3Categoria> createState() => _Paso3CategoriaState();
+}
+
+class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
+  final _buscarCtrl = TextEditingController();
+  final Set<String> _expandidos = {};
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _buscarCtrl.addListener(
+      () => setState(() => _query = _buscarCtrl.text.trim().toLowerCase()),
+    );
+  }
+
+  @override
+  void dispose() {
+    _buscarCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _crearCategoria() async {
+    final result = await showNuevaCategoriaSheet(context, widget.tipo);
+    if (result != null) {
+      ref.invalidate(allFinanceCategoriesProvider);
+      widget.onSeleccionar(result);
     }
+  }
 
-    return newValue;
+  @override
+  Widget build(BuildContext context) {
+    final tc = Theme.of(context).extension<AppThemeColors>()!;
+    final asyncCats = ref.watch(allFinanceCategoriesProvider);
+
+    return Column(
+      children: [
+        // Encabezado con flecha "volver" — deja claro que es un paso del
+        // mismo flujo, no una ventana nueva.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: widget.onVolver,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Categoría',
+                style: TextStyle(
+                  fontFamily: 'SpaceGrotesk',
+                  fontSize: AppTextSize.heading,
+                  fontWeight: FontWeight.w700,
+                  color: tc.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: TextField(
+            controller: _buscarCtrl,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search, size: AppIconSize.small),
+              hintText: 'Buscar categoría…',
+            ),
+          ),
+        ),
+        Expanded(
+          child: asyncCats.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Error: $e')),
+            data: (all) {
+              final delTipo =
+                  all.where((c) => c.tipo == widget.tipo || c.tipo == 'ambos').toList();
+
+              if (_query.isNotEmpty) {
+                final resultados = delTipo
+                    .where((c) => c.nombre.toLowerCase().contains(_query))
+                    .toList();
+                if (resultados.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'Sin resultados para "$_query"',
+                      style: TextStyle(color: tc.textSecondary, fontSize: AppTextSize.body),
+                    ),
+                  );
+                }
+                final padresPorId = {for (final p in delTipo) p.id: p};
+                return ListView.builder(
+                  controller: widget.scrollCtrl,
+                  padding: const EdgeInsets.only(bottom: 24),
+                  itemCount: resultados.length,
+                  itemBuilder: (context, i) {
+                    final c = resultados[i];
+                    final padre = c.parentId != null ? padresPorId[c.parentId] : null;
+                    return ListTile(
+                      leading: Icon(c.icono, size: AppIconSize.medium, color: _tipoColor(c.tipo)),
+                      title: Text(c.nombre),
+                      subtitle: padre != null ? Text(padre.nombre) : null,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        widget.onSeleccionar(c);
+                      },
+                    );
+                  },
+                );
+              }
+
+              final padres = delTipo.where((c) => c.parentId == null).toList();
+              return ListView.builder(
+                controller: widget.scrollCtrl,
+                padding: const EdgeInsets.only(bottom: 24),
+                itemCount: padres.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == padres.length) {
+                    return ListTile(
+                      leading: Container(
+                        width: AppIconSize.medium,
+                        height: AppIconSize.medium,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: tc.borderCard),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(Icons.add, size: AppIconSize.small, color: tc.textSecondary),
+                      ),
+                      title: Text(
+                        'Crear categoría nueva',
+                        style: TextStyle(color: tc.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                      onTap: _crearCategoria,
+                    );
+                  }
+
+                  final padre = padres[index];
+                  final hijos = delTipo.where((c) => c.parentId == padre.id).toList();
+                  final isExpanded = _expandidos.contains(padre.id);
+
+                  return Column(
+                    children: [
+                      ListTile(
+                        leading: Icon(padre.icono, size: AppIconSize.medium, color: _tipoColor(padre.tipo)),
+                        title: Text(padre.nombre, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        // "+" para agregar una subcategoría dentro de este
+                        // grupo — antes no había forma de crear una
+                        // categoría anidada, solo categorías sueltas.
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.add, size: AppIconSize.small, color: tc.textTertiary),
+                              tooltip: 'Agregar subcategoría',
+                              onPressed: () async {
+                                final result = await showNuevaCategoriaSheet(
+                                  context,
+                                  widget.tipo,
+                                  parentIdInicial: padre.id,
+                                );
+                                if (result != null) {
+                                  ref.invalidate(allFinanceCategoriesProvider);
+                                  widget.onSeleccionar(result);
+                                }
+                              },
+                            ),
+                            if (hijos.isNotEmpty)
+                              Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                          ],
+                        ),
+                        onTap: () => setState(() {
+                          if (isExpanded) {
+                            _expandidos.remove(padre.id);
+                          } else {
+                            _expandidos.add(padre.id);
+                          }
+                        }),
+                      ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeInOut,
+                        child: isExpanded
+                            ? Column(
+                                children: hijos.map((hijo) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(left: 32),
+                                    child: ListTile(
+                                      leading: Icon(hijo.icono, size: AppIconSize.medium, color: _tipoColor(hijo.tipo)),
+                                      title: Text(hijo.nombre),
+                                      onTap: () {
+                                        HapticFeedback.lightImpact();
+                                        widget.onSeleccionar(hijo);
+                                      },
+                                    ),
+                                  );
+                                }).toList(),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 }

@@ -7,7 +7,7 @@ import '../providers/credits_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/credit_display_utils.dart';
 import '../utils/currency_input_formatter.dart';
-import 'kredit_section_card.dart';
+import 'krezium_section_card.dart';
 
 /// Bottom sheet for registering a cash advance (avance) on a card credit.
 class CardAdvanceSheet extends ConsumerStatefulWidget {

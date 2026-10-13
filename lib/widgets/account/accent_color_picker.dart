@@ -73,10 +73,7 @@ class AccentColorPicker extends ConsumerWidget {
                 prefs.bgTone,
                 isDarkMode,
               );
-              final checkColor =
-                  ThemeData.estimateBrightnessForColor(displayColor) == Brightness.dark
-                      ? Colors.white
-                      : Colors.black;
+              final checkColor = legibleForegroundOn(displayColor);
               return GestureDetector(
                 onTap: () => ref
                     .read(themePreferencesProvider.notifier)
@@ -131,9 +128,7 @@ class AccentColorPicker extends ConsumerWidget {
                     ? Icon(
                         Icons.check,
                         size: AppIconSize.small,
-                        color: ThemeData.estimateBrightnessForColor(selected) == Brightness.dark
-                            ? Colors.white
-                            : Colors.black,
+                        color: legibleForegroundOn(selected),
                       )
                     : const Icon(Icons.colorize, size: 16, color: Colors.white),
               ),

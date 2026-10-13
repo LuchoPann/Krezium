@@ -12,8 +12,8 @@ import '../../domain/loan_calculator.dart';
 import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/interest_rate_type_field.dart';
-import '../../widgets/kredit_section_card.dart';
-import '../../widgets/kredit_bottom_dialogs.dart';
+import '../../widgets/krezium_section_card.dart';
+import '../../widgets/krezium_bottom_dialogs.dart';
 import '../../widgets/wallet_card.dart';
 
 const List<String> _presetLenders = [
@@ -525,10 +525,10 @@ class _EditCreditSheetState extends ConsumerState<EditCreditSheet> {
   Widget _buildSaveButton() => FilledButton.icon(
         onPressed: (_hasChanges && !_saving) ? _save : null,
         icon: _saving
-            ? const SizedBox(
+            ? SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary),
               )
             : const Icon(Icons.check_circle_outline_rounded),
         label: Text(_saving

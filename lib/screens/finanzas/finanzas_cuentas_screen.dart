@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -12,8 +11,9 @@ import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/providers/theme_provider.dart';
 import 'package:krezium/screens/finanzas/finanzas_libro_transacciones_screen.dart';
 import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/utils/credit_display_utils.dart';
 import 'package:krezium/widgets/color_picker_field.dart';
-import 'package:krezium/widgets/kredit_logo.dart';
+import 'package:krezium/widgets/krezium_logo.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -25,178 +25,6 @@ Color _colorFromHex(String hex) {
 
 String _fmt(double v) =>
     v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
-
-// ─── Patrones de card (estilo voucher) ────────────────────────────────────────
-enum _CardPattern {
-  topographic,
-  circuit,
-  wave,
-  dots,
-  diagonal,
-  hexagonal,
-  diamond,
-  organic,
-}
-
-_CardPattern _patternForId(String id) =>
-    _CardPattern.values[id.hashCode.abs() % _CardPattern.values.length];
-
-class _PatternPainter extends CustomPainter {
-  final _CardPattern pattern;
-  final Color color;
-
-  _PatternPainter(this.pattern, this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.12)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-
-    switch (pattern) {
-      case _CardPattern.topographic:
-        _drawTopographic(canvas, size, paint);
-      case _CardPattern.circuit:
-        _drawCircuit(canvas, size, paint);
-      case _CardPattern.wave:
-        _drawWave(canvas, size, paint);
-      case _CardPattern.dots:
-        _drawDots(canvas, size, paint..style = PaintingStyle.fill);
-      case _CardPattern.diagonal:
-        _drawDiagonal(canvas, size, paint);
-      case _CardPattern.hexagonal:
-        _drawHexagonal(canvas, size, paint);
-      case _CardPattern.diamond:
-        _drawDiamond(canvas, size, paint);
-      case _CardPattern.organic:
-        _drawOrganic(canvas, size, paint);
-    }
-  }
-
-  void _drawTopographic(Canvas canvas, Size size, Paint paint) {
-    for (int i = 0; i < 5; i++) {
-      final y = size.height * (0.2 + i * 0.18);
-      final path = Path();
-      path.moveTo(0, y);
-      for (double x = 0; x <= size.width; x += 4) {
-        final dy = math.sin((x / size.width) * math.pi * 3 + i) * 10;
-        path.lineTo(x, y + dy);
-      }
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  void _drawCircuit(Canvas canvas, Size size, Paint paint) {
-    final points = <Offset>[
-      Offset(size.width * 0.1, size.height * 0.2),
-      Offset(size.width * 0.4, size.height * 0.2),
-      Offset(size.width * 0.4, size.height * 0.5),
-      Offset(size.width * 0.7, size.height * 0.5),
-      Offset(size.width * 0.7, size.height * 0.8),
-      Offset(size.width * 0.9, size.height * 0.8),
-      Offset(size.width * 0.2, size.height * 0.7),
-      Offset(size.width * 0.2, size.height * 0.4),
-      Offset(size.width * 0.6, size.height * 0.4),
-    ];
-    for (int i = 0; i < points.length - 1; i += 2) {
-      canvas.drawLine(points[i], points[i + 1], paint);
-      canvas.drawCircle(points[i], 3, paint..style = PaintingStyle.fill);
-    }
-    paint.style = PaintingStyle.stroke;
-  }
-
-  void _drawWave(Canvas canvas, Size size, Paint paint) {
-    for (int i = 0; i < 7; i++) {
-      final path = Path();
-      final y = size.height * (i / 7);
-      path.moveTo(0, y);
-      for (double x = 0; x <= size.width; x += 2) {
-        path.lineTo(x, y + math.sin(x / 20 + i) * 6);
-      }
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  void _drawDots(Canvas canvas, Size size, Paint paint) {
-    const spacing = 14.0;
-    for (double x = spacing / 2; x < size.width; x += spacing) {
-      for (double y = spacing / 2; y < size.height; y += spacing) {
-        canvas.drawCircle(Offset(x, y), 1.5, paint);
-      }
-    }
-  }
-
-  void _drawDiagonal(Canvas canvas, Size size, Paint paint) {
-    const step = 14.0;
-    for (double offset = -size.height; offset < size.width + size.height; offset += step) {
-      canvas.drawLine(
-        Offset(offset, 0),
-        Offset(offset + size.height, size.height),
-        paint,
-      );
-    }
-  }
-
-  void _drawHexagonal(Canvas canvas, Size size, Paint paint) {
-    const r = 14.0;
-    const w = r * 1.732;
-    const h = r * 2;
-    int row = 0;
-    for (double y = 0; y < size.height + h; y += h * 0.75) {
-      final xOffset = (row % 2 == 0) ? 0.0 : w / 2;
-      for (double x = xOffset; x < size.width + w; x += w) {
-        _drawHex(canvas, Offset(x, y), r, paint);
-      }
-      row++;
-    }
-  }
-
-  void _drawHex(Canvas canvas, Offset center, double r, Paint paint) {
-    final path = Path();
-    for (int i = 0; i < 6; i++) {
-      final angle = math.pi / 3 * i - math.pi / 6;
-      final x = center.dx + r * math.cos(angle);
-      final y = center.dy + r * math.sin(angle);
-      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
-    }
-    path.close();
-    canvas.drawPath(path, paint);
-  }
-
-  void _drawDiamond(Canvas canvas, Size size, Paint paint) {
-    const step = 18.0;
-    for (double x = 0; x < size.width + step; x += step) {
-      for (double y = 0; y < size.height + step; y += step) {
-        final path = Path()
-          ..moveTo(x, y - step / 2)
-          ..lineTo(x + step / 2, y)
-          ..lineTo(x, y + step / 2)
-          ..lineTo(x - step / 2, y)
-          ..close();
-        canvas.drawPath(path, paint);
-      }
-    }
-  }
-
-  void _drawOrganic(Canvas canvas, Size size, Paint paint) {
-    final centers = [
-      Offset(size.width * 0.2, size.height * 0.3),
-      Offset(size.width * 0.7, size.height * 0.2),
-      Offset(size.width * 0.5, size.height * 0.7),
-      Offset(size.width * 0.85, size.height * 0.65),
-    ];
-    for (final c in centers) {
-      for (double r = 8; r <= 32; r += 8) {
-        canvas.drawCircle(c, r, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_PatternPainter old) =>
-      old.pattern != pattern || old.color != color;
-}
 
 // ─── Saludo por hora del día ──────────────────────────────────────────────────
 final _greeting = () {
@@ -217,10 +45,13 @@ class FinanzasCuentasScreen extends ConsumerStatefulWidget {
 
 class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
   bool _autoPushDone = false;
+  final _searchCtrl = TextEditingController();
+  String _query = '';
 
   @override
   void initState() {
     super.initState();
+    _searchCtrl.addListener(() => setState(() => _query = _searchCtrl.text.trim().toLowerCase()));
     ref.listenManual<AsyncValue<List<FinanceAccountRow>>>(
       financeAccountsProvider,
       (prev, next) {
@@ -230,6 +61,12 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
       },
       fireImmediately: true,
     );
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _checkAndAutoPush(List<FinanceAccountRow> rows) async {
@@ -262,6 +99,20 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
     );
   }
 
+  void _mostrarEditarRegistroSheet(FinanceAccount libro) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
+      ),
+      builder: (_) => _NuevoRegistroSheet(
+        editar: libro,
+        onCreado: () => ref.invalidate(financeAccountsProvider),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final asyncLibros = ref.watch(financeAccountsProvider);
@@ -280,44 +131,64 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
             );
           }
           final libros = rows.map(FinanceAccount.fromRow).toList();
+          final filtered = _query.isEmpty
+              ? libros
+              : libros.where((l) => l.nombre.toLowerCase().contains(_query)).toList();
           return CustomScrollView(
             slivers: [
               _GlobalHeader(
                 libros: libros,
                 accentColor: accentColor,
               ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final libro = libros[index];
-                      return _LibroCard(
-                        libro: libro,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                FinanzasLibroTransaccionesScreen(libro: libro),
-                          ),
-                        ),
-                        onFavorito: () => _marcarFavorito(libro),
-                      );
-                    },
-                    childCount: libros.length,
+              if (libros.length > 1)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: _SearchField(controller: _searchCtrl, query: _query),
                   ),
                 ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                sliver: filtered.isEmpty
+                    ? SliverToBoxAdapter(
+                        child: _NoResultsState(query: _query),
+                      )
+                    : SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final libro = filtered[index];
+                            return _LibroCard(
+                              libro: libro,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      FinanzasLibroTransaccionesScreen(libro: libro),
+                                ),
+                              ),
+                              onFavorito: () => _marcarFavorito(libro),
+                              onEditar: () => _mostrarEditarRegistroSheet(libro),
+                            );
+                          },
+                          childCount: filtered.length,
+                        ),
+                      ),
               ),
             ],
           );
         },
       ),
       floatingActionButton: asyncLibros.hasValue && asyncLibros.value!.isNotEmpty
-          ? FloatingActionButton.extended(
-              onPressed: _mostrarNuevoRegistroSheet,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Nuevo registro'),
-            )
+          ? Builder(builder: (context) {
+              final accentColor = Theme.of(context).colorScheme.primary;
+              return FloatingActionButton.extended(
+                backgroundColor: accentColor,
+                foregroundColor: legibleForegroundOn(accentColor),
+                onPressed: _mostrarNuevoRegistroSheet,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Nuevo registro'),
+              );
+            })
           : null,
     );
   }
@@ -412,7 +283,7 @@ class _GlobalHeader extends ConsumerWidget {
                       ? Text(
                           profileName.isNotEmpty ? profileName[0].toUpperCase() : '?',
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: AppTextSize.heading,
                             fontWeight: FontWeight.w800,
                             color: accentColor,
                           ),
@@ -448,104 +319,79 @@ class _GlobalHeader extends ConsumerWidget {
                 const AppLogo(height: 26),
               ],
             ),
-            const SizedBox(height: AppSpacing.section),
-            // ── Título ──────────────────────────────────────────────────
-            Column(
+            const SizedBox(height: 28),
+            // ── Balance: misma tipografía desnuda que "DEUDA TOTAL" en el
+            // dashboard de Créditos — sin card/borde propio, la jerarquía
+            // viene del contraste de tamaño, no de una caja.
+            Text(
+              'BALANCE TOTAL',
+              style: TextStyle(
+                fontSize: AppTextSize.body,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.4,
+                color: colors.textTertiary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            loading
+                ? SizedBox(
+                    height: AppTextSize.hero,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(
+                          color: accentColor, strokeWidth: 2,
+                        ),
+                      ),
+                    ),
+                  )
+                : Text(
+                    formatCOP(balance),
+                    style: const TextStyle(
+                      fontSize: AppTextSize.hero,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -1.2,
+                      height: 1.0,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+            const SizedBox(height: 22),
+            // ── Fila de stats secundarios (Ingresos | Gastos) + contador de
+            // registros debajo — mismo patrón que "Por pagar · Créditos
+            // activos" del dashboard.
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'MIS REGISTROS',
-                  style: TextStyle(
-                    fontSize: AppTextSize.caption,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.4,
-                    color: colors.textTertiary,
+                Expanded(
+                  child: _SecondaryStat(
+                    label: 'Ingresos',
+                    value: formatCOP(totalIngresos),
+                    valueColor: colors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${libros.length} ${libros.length == 1 ? 'registro' : 'registros'}',
-                  style: TextStyle(
-                    fontSize: AppTextSize.body,
-                    fontWeight: FontWeight.w600,
-                    color: colors.textSecondary,
+                Container(
+                  width: 1,
+                  height: 34,
+                  margin: const EdgeInsets.symmetric(horizontal: 18),
+                  color: colors.borderCard,
+                ),
+                Expanded(
+                  child: _SecondaryStat(
+                    label: 'Gastos',
+                    value: formatCOP(totalGastos),
+                    valueColor: colors.textPrimary,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: AppSpacing.section),
-            // ── Card de balance ──────────────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.card),
-              decoration: BoxDecoration(
-                color: colors.bgCard,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-                border: Border.all(color: colors.borderCard),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'BALANCE TOTAL',
-                    style: TextStyle(
-                      fontSize: AppTextSize.caption,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.4,
-                      color: colors.textTertiary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  loading
-                      ? SizedBox(
-                          height: AppTextSize.hero,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: SizedBox(
-                              width: 20, height: 20,
-                              child: CircularProgressIndicator(
-                                color: accentColor, strokeWidth: 2,
-                              ),
-                            ),
-                          ),
-                        )
-                      : Text(
-                          '\$${_fmt(balance)}',
-                          style: TextStyle(
-                            fontSize: AppTextSize.hero,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -1.2,
-                            height: 1.0,
-                            color: colors.textPrimary,
-                          ),
-                        ),
-                  if (!loading) ...[
-                    const SizedBox(height: AppSpacing.card),
-                    // Separador
-                    Divider(color: colors.borderCard, height: 1),
-                    const SizedBox(height: AppSpacing.card),
-                    // Fila ingresos / gastos
-                    Row(
-                      children: [
-                        _BalanceStat(
-                          label: 'Ingresos',
-                          value: '\$${_fmt(totalIngresos)}',
-                          icon: Icons.arrow_downward_rounded,
-                          iconColor: const Color(0xFF22C55E),
-                          colors: colors,
-                        ),
-                        const SizedBox(width: AppSpacing.section),
-                        _BalanceStat(
-                          label: 'Gastos',
-                          value: '\$${_fmt(totalGastos)}',
-                          icon: Icons.arrow_upward_rounded,
-                          iconColor: const Color(0xFFEF4444),
-                          colors: colors,
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
+            Text(
+              '${libros.length} ${libros.length == 1 ? 'registro' : 'registros'}',
+              style: TextStyle(
+                fontSize: AppTextSize.body,
+                fontWeight: FontWeight.w600,
+                color: colors.textSecondary,
               ),
             ),
           ],
@@ -555,57 +401,119 @@ class _GlobalHeader extends ConsumerWidget {
   }
 }
 
-class _BalanceStat extends StatelessWidget {
+/// Mismo patrón que `_SecondaryStat` del dashboard de Créditos: valor arriba
+/// (tipografía, sin ícono ni caja propia) y etiqueta en mayúsculas debajo.
+/// [valueColor] queda neutro para Ingresos/Gastos — el verde/rojo se
+/// reservó solo para el balance y los montos individuales, no para cada
+/// cifra agregada (el usuario reportó que tanto color en el resumen
+/// saturaba la vista).
+class _SecondaryStat extends StatelessWidget {
   final String label;
   final String value;
-  final IconData icon;
-  final Color iconColor;
-  final AppThemeColors colors;
+  final Color valueColor;
 
-  const _BalanceStat({
+  const _SecondaryStat({
     required this.label,
     required this.value,
-    required this.icon,
-    required this.iconColor,
-    required this.colors,
+    required this.valueColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final kredit = Theme.of(context).extension<AppThemeColors>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(AppRadius.chip),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: AppTextSize.heading,
+            letterSpacing: -0.3,
+            color: valueColor,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
-          child: Icon(icon, color: iconColor, size: AppIconSize.micro),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(height: 3),
+        Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            fontSize: AppTextSize.body,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.6,
+            color: kredit.textTertiary,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Buscador (mismo lenguaje visual que CreditsListScreen) ──────────────────
+class _SearchField extends StatelessWidget {
+  final TextEditingController controller;
+  final String query;
+
+  const _SearchField({required this.controller, required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    final kredit = Theme.of(context).extension<AppThemeColors>()!;
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        hintText: 'Buscar registro...',
+        hintStyle: TextStyle(fontSize: AppTextSize.body, color: kredit.textTertiary),
+        prefixIcon: Icon(Icons.search, size: AppIconSize.small, color: kredit.textSecondary),
+        suffixIcon: query.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear, size: AppIconSize.small),
+                onPressed: controller.clear,
+              )
+            : null,
+        filled: true,
+        fillColor: kredit.bgCard,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: kredit.borderCard.withValues(alpha: 0.6)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: kredit.borderCard.withValues(alpha: 0.6)),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoResultsState extends StatelessWidget {
+  final String query;
+  const _NoResultsState({required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    final kredit = Theme.of(context).extension<AppThemeColors>()!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
+            Icon(Icons.search_off_rounded, size: AppIconSize.large, color: kredit.textTertiary),
+            const SizedBox(height: 12),
             Text(
-              label,
-              style: TextStyle(
-                fontSize: AppTextSize.caption,
-                color: colors.textTertiary,
-              ),
-            ),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: AppTextSize.body,
-                fontWeight: FontWeight.w700,
-                color: colors.textPrimary,
-              ),
+              'Sin resultados para "$query"',
+              style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary),
             ),
           ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -644,7 +552,7 @@ class _EmptyState extends StatelessWidget {
               Text(
                 'Empieza a registrar',
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: AppTextSize.heading,
                   fontWeight: FontWeight.w800,
                   color: colors.textPrimary,
                 ),
@@ -681,25 +589,20 @@ class _LibroCard extends ConsumerWidget {
   final FinanceAccount libro;
   final VoidCallback onTap;
   final VoidCallback onFavorito;
+  final VoidCallback onEditar;
 
   const _LibroCard({
     required this.libro,
     required this.onTap,
     required this.onFavorito,
+    required this.onEditar,
   });
-
-  // Determina si el color de fondo es claro para elegir el ink correcto
-  static bool _isLight(Color c) =>
-      ThemeData.estimateBrightnessForColor(c) == Brightness.light;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final libroColor = _colorFromHex(libro.color);
     final colors = Theme.of(context).extension<AppThemeColors>()!;
-    final pattern = _patternForId(libro.id);
     final summary = ref.watch(financeAccountSummaryProvider(libro.id));
-    final light = _isLight(libroColor);
-    final ink = light ? Colors.black : Colors.white;
 
     return Dismissible(
       key: ValueKey(libro.id),
@@ -730,195 +633,156 @@ class _LibroCard extends ConsumerWidget {
         onFavorito();
         return false;
       },
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: AppSpacing.tile),
-          decoration: BoxDecoration(
-            color: colors.bgCard,
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            border: Border.all(color: colors.borderCard),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
+      child: Container(
+        margin: const EdgeInsets.only(bottom: AppSpacing.tile),
+        decoration: BoxDecoration(
+          color: colors.bgCard,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          border: Border.all(color: colors.borderCard.withValues(alpha: 0.6)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        // IntrinsicHeight: la franja de color de 4px necesita una altura
+        // acotada para poder estirarse (ver bug en movements_tab.dart con
+        // el mismo patrón — Row+stretch sin esto fuerza altura infinita).
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── Zona superior coloreada ──────────────────────────────
-              Stack(
-                children: [
-                  // Fondo de color del registro
-                  Container(
-                    width: double.infinity,
-                    height: 96,
-                    color: libroColor,
-                  ),
-                  // Patrón superpuesto con más opacidad para que se vea
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _PatternPainter(pattern, ink),
-                    ),
-                  ),
-                  // Contenido de la zona superior
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.card, AppSpacing.card,
-                      AppSpacing.card, AppSpacing.card,
-                    ),
-                    child: Row(
+              Container(width: 4, color: libroColor),
+              Expanded(
+                child: InkWell(
+                  onTap: onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.card),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Inicial en círculo
-                        Hero(
-                          tag: 'libro_icon_${libro.id}',
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: ink.withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              libro.nombre.isNotEmpty
-                                  ? libro.nombre[0].toUpperCase()
-                                  : '?',
-                              style: TextStyle(
-                                color: ink,
-                                fontWeight: FontWeight.w800,
-                                fontSize: AppTextSize.heading,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.tile),
-                        // Nombre
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
+                        // ── Nombre + chip "Principal" + flecha ────────────
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
                                 libro.nombre,
                                 style: TextStyle(
-                                  fontSize: AppTextSize.heading,
+                                  fontSize: AppTextSize.body,
                                   fontWeight: FontWeight.w700,
-                                  color: ink,
-                                  height: 1.1,
+                                  color: colors.textSecondary,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              if (libro.esFavorito) ...[
-                                const SizedBox(height: 4),
-                                Row(
+                            ),
+                            if (libro.esFavorito) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: libroColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(AppRadius.chip),
+                                ),
+                                child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
-                                      Icons.star_rounded,
-                                      color: ink.withValues(alpha: 0.7),
-                                      size: AppIconSize.micro,
-                                    ),
+                                    Icon(Icons.star_rounded, color: libroColor, size: AppIconSize.micro),
                                     const SizedBox(width: 3),
                                     Text(
-                                      'Principal',
+                                      'PRINCIPAL',
                                       style: TextStyle(
-                                        color: ink.withValues(alpha: 0.7),
                                         fontSize: AppTextSize.caption,
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.5,
+                                        color: libroColor,
                                       ),
                                     ),
                                   ],
                                 ),
-                              ],
+                              ),
+                            ],
+                            const SizedBox(width: 4),
+                            GestureDetector(
+                              onTap: onEditar,
+                              behavior: HitTestBehavior.opaque,
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(Icons.edit_outlined, size: AppIconSize.small, color: colors.textTertiary),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.arrow_forward_rounded, size: AppIconSize.small, color: colors.textTertiary),
+                          ],
+                        ),
+                        if (libro.descripcion.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            libro.descripcion,
+                            style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        // ── Balance: protagonista, grande y contundente —
+                        // lo primero que se lee al escanear la tarjeta.
+                        summary.when(
+                          loading: () => SizedBox(
+                            height: AppTextSize.emphasis,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: SizedBox(
+                                width: 16, height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 1.5, color: libroColor),
+                              ),
+                            ),
+                          ),
+                          error: (e, st) => const SizedBox(height: AppTextSize.emphasis),
+                          data: (s) {
+                            final balance = libro.saldoInicial + s.ingresos - s.gastos;
+                            final positivo = balance >= 0;
+                            final balanceColor = positivo
+                                ? const Color(0xFF22C55E)
+                                : const Color(0xFFEF4444);
+                            return Text(
+                              '${positivo ? '' : '-'}${formatCOP(balance.abs())}',
+                              style: TextStyle(
+                                fontSize: AppTextSize.emphasis,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.6,
+                                color: balanceColor,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Divider(height: 1, color: colors.borderCard),
+                        const SizedBox(height: 10),
+                        // Ingresos/Gastos en texto neutro — el balance de
+                        // arriba ya es el único color de la tarjeta; una
+                        // barra y cifras verdes/rojas acá encima saturaban.
+                        summary.when(
+                          loading: () => const SizedBox.shrink(),
+                          error: (e, st) => const SizedBox.shrink(),
+                          data: (s) => Row(
+                            children: [
+                              _StatColumn(
+                                label: 'Ingresos',
+                                value: formatCOP(s.ingresos),
+                                valueColor: colors.textPrimary,
+                                colors: colors,
+                              ),
+                              const SizedBox(width: AppSpacing.section),
+                              _StatColumn(
+                                label: 'Gastos',
+                                value: formatCOP(s.gastos),
+                                valueColor: colors.textPrimary,
+                                colors: colors,
+                              ),
                             ],
                           ),
                         ),
-                        // Flecha
-                        Icon(
-                          Icons.arrow_forward_rounded,
-                          color: ink.withValues(alpha: 0.55),
-                          size: AppIconSize.small,
-                        ),
                       ],
                     ),
                   ),
-                ],
-              ),
-              // ── Zona inferior neutra ─────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.card,
-                  vertical: AppSpacing.tile,
-                ),
-                child: summary.when(
-                  loading: () => SizedBox(
-                    height: 36,
-                    child: Center(
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: libroColor,
-                        ),
-                      ),
-                    ),
-                  ),
-                  error: (e, st) => const SizedBox(height: 36),
-                  data: (s) {
-                    final balance = libro.saldoInicial + s.ingresos - s.gastos;
-                    final positivo = balance >= 0;
-                    final balanceColor = positivo
-                        ? const Color(0xFF22C55E)
-                        : const Color(0xFFEF4444);
-
-                    return Row(
-                      children: [
-                        // Ingresos
-                        _StatColumn(
-                          label: 'Ingresos',
-                          value: '\$${_fmt(s.ingresos)}',
-                          valueColor: const Color(0xFF22C55E),
-                          colors: colors,
-                        ),
-                        // Separador vertical
-                        Container(
-                          width: 1,
-                          height: 32,
-                          color: colors.borderCard,
-                          margin: const EdgeInsets.symmetric(horizontal: AppSpacing.card),
-                        ),
-                        // Gastos
-                        _StatColumn(
-                          label: 'Gastos',
-                          value: '\$${_fmt(s.gastos)}',
-                          valueColor: const Color(0xFFEF4444),
-                          colors: colors,
-                        ),
-                        const Spacer(),
-                        // Balance neto destacado
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              'Balance',
-                              style: TextStyle(
-                                fontSize: AppTextSize.caption,
-                                color: colors.textTertiary,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${positivo ? '+' : ''}\$${_fmt(balance)}',
-                              style: TextStyle(
-                                fontSize: AppTextSize.heading,
-                                fontWeight: FontWeight.w800,
-                                color: balanceColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
                 ),
               ),
             ],
@@ -971,22 +835,34 @@ class _StatColumn extends StatelessWidget {
 // ─── Sheet crear registro ─────────────────────────────────────────────────────
 class _NuevoRegistroSheet extends ConsumerStatefulWidget {
   final VoidCallback onCreado;
-  const _NuevoRegistroSheet({required this.onCreado});
+  // Si no es null, el sheet edita este registro en vez de crear uno nuevo
+  // — mismo formulario, los campos arrancan prellenados con sus valores.
+  final FinanceAccount? editar;
+  const _NuevoRegistroSheet({required this.onCreado, this.editar});
 
   @override
   ConsumerState<_NuevoRegistroSheet> createState() => _NuevoRegistroSheetState();
 }
 
 class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
-  final _nombreController = TextEditingController();
-  final _saldoController = TextEditingController();
-  Color _color = const Color(0xFFEF4444);
+  late final _nombreController =
+      TextEditingController(text: widget.editar?.nombre ?? '');
+  late final _saldoController = TextEditingController(
+      text: widget.editar != null ? _fmt(widget.editar!.saldoInicial) : '');
+  late final _descripcionController =
+      TextEditingController(text: widget.editar?.descripcion ?? '');
+  late Color _color = widget.editar != null
+      ? _colorFromHex(widget.editar!.color)
+      : const Color(0xFFEF4444);
   bool _guardando = false;
+
+  bool get _esEdicion => widget.editar != null;
 
   @override
   void dispose() {
     _nombreController.dispose();
     _saldoController.dispose();
+    _descripcionController.dispose();
     super.dispose();
   }
 
@@ -995,15 +871,20 @@ class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
     if (nombre.isEmpty) return;
     setState(() => _guardando = true);
     final db = ref.read(databaseProvider);
-    final id = const Uuid().v4();
+    final id = widget.editar?.id ?? const Uuid().v4();
     final inicial = double.tryParse(_saldoController.text.replaceAll(',', '.')) ?? 0.0;
-    await db.upsertFinanceAccount(FinanceAccountsCompanion.insert(
-      id: id,
-      nombre: nombre,
-      tipo: 'registro',
-      icono: nombre,
-      color: '#${colorToHex(_color)}',
+    final descripcion = _descripcionController.text.trim();
+    await db.upsertFinanceAccount(FinanceAccountsCompanion(
+      id: Value(id),
+      nombre: Value(nombre),
+      tipo: Value(widget.editar?.tipo ?? 'registro'),
+      icono: Value(widget.editar?.icono ?? nombre),
+      color: Value('#${colorToHex(_color)}'),
       saldoInicial: Value(inicial),
+      activa: Value(widget.editar?.activa ?? true),
+      orden: Value(widget.editar?.orden ?? '0'),
+      esFavorito: Value(widget.editar?.esFavorito ?? false),
+      descripcion: Value(descripcion),
     ));
     widget.onCreado();
     if (mounted) Navigator.of(context).pop();
@@ -1032,27 +913,36 @@ class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
             ),
           ),
           const SizedBox(height: 16),
-          Text('Nuevo registro', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+          Text(_esEdicion ? 'Editar registro' : 'Nuevo registro',
+              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
           TextField(
             controller: _nombreController,
-            autofocus: true,
+            autofocus: !_esEdicion,
             textCapitalization: TextCapitalization.sentences,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Nombre del registro',
               hintText: 'Ej: Gastos personales',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.tile)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _descripcionController,
+            textCapitalization: TextCapitalization.sentences,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Descripción (opcional)',
+              hintText: 'Para qué usas este registro',
             ),
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _saldoController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Saldo inicial (opcional)',
               hintText: '0',
               prefixText: '\$ ',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.tile)),
             ),
           ),
           const SizedBox(height: 16),
@@ -1068,8 +958,11 @@ class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
             child: FilledButton(
               onPressed: _guardando ? null : _guardar,
               child: _guardando
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Crear registro'),
+                  ? SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary),
+                    )
+                  : Text(_esEdicion ? 'Guardar cambios' : 'Crear registro'),
             ),
           ),
         ],

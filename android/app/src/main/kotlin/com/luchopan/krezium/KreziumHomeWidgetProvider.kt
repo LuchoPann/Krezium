@@ -17,9 +17,9 @@ import es.antonborri.home_widget.HomeWidgetProvider
 /// Data is written by `lib/services/home_widget_service.dart` via the
 /// `home_widget` plugin's `HomeWidget.saveWidgetData` (backed by
 /// SharedPreferences) and this class simply reads it back out on each
-/// `onUpdate` cycle and paints it into `res/layout/kredit_widget_layout.xml`.
+/// `onUpdate` cycle and paints it into `res/layout/krezium_widget_layout.xml`.
 /// Tapping anywhere on the widget opens `MainActivity`.
-class KreditHomeWidgetProvider : HomeWidgetProvider() {
+class KreziumHomeWidgetProvider : HomeWidgetProvider() {
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
@@ -27,16 +27,16 @@ class KreditHomeWidgetProvider : HomeWidgetProvider() {
         widgetData: SharedPreferences
     ) {
         appWidgetIds.forEach { widgetId ->
-            val views = RemoteViews(context.packageName, R.layout.kredit_widget_layout).apply {
+            val views = RemoteViews(context.packageName, R.layout.krezium_widget_layout).apply {
                 // Tono de fondo — mismas 3 variantes que Cuenta >
                 // Personalización > Variante de Tema Oscuro
                 // (pure/cool/warm en app_theme.dart), elegido con
                 // setBackgroundResource en vez de un color fijo para
                 // conservar las esquinas redondeadas del drawable.
                 val bgResId = when (widgetData.getString("bg_tone", "pure")) {
-                    "cool" -> R.drawable.kredit_widget_background_cool
-                    "warm" -> R.drawable.kredit_widget_background_warm
-                    else -> R.drawable.kredit_widget_background_pure
+                    "cool" -> R.drawable.krezium_widget_background_cool
+                    "warm" -> R.drawable.krezium_widget_background_warm
+                    else -> R.drawable.krezium_widget_background_pure
                 }
                 setInt(R.id.widget_root, "setBackgroundResource", bgResId)
 

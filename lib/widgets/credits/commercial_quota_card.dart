@@ -6,7 +6,7 @@ import '../../domain/commercial_quota_calculator.dart';
 import '../../domain/credit_calculator.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/credit_display_utils.dart';
-import '../kredit_wordmark.dart';
+import '../krezium_wordmark.dart';
 import '../voucher_pattern.dart';
 import '../wallet_card.dart';
 

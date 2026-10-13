@@ -25,7 +25,7 @@ import 'how_it_works_screen.dart';
 import '../lock/setup_lock_screen.dart';
 import '../../providers/widget_privacy_provider.dart';
 import '../../utils/nav_utils.dart';
-import '../../widgets/kredit_bottom_dialogs.dart';
+import '../../widgets/krezium_bottom_dialogs.dart';
 import '../../providers/entorno_provider.dart';
 
 part 'account_screen_widgets.dart';

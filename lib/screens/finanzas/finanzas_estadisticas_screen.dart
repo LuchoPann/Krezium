@@ -9,6 +9,7 @@ import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/utils/credit_display_utils.dart';
 
 // ─── Color helpers ─────────────────────────────────────────────────────────────
 
@@ -280,10 +281,7 @@ class _FinanzasEstadisticasScreenState
 
           // Map categorías
           final catMap = asyncCats.valueOrNull != null
-              ? {
-                  for (final c in asyncCats.valueOrNull!)
-                    if (c is CatalogoCategoria) c.id: c
-                }
+              ? {for (final c in asyncCats.valueOrNull!) c.id: c}
               : <String, CatalogoCategoria>{};
 
           final tot = _totales(allTxs);
@@ -496,11 +494,11 @@ class _ResumenCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '\$${monto.toStringAsFixed(0)}',
+              formatCOP(monto),
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.bold,
-                fontSize: 14,
+                fontSize: AppTextSize.body,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
               maxLines: 1,
@@ -549,10 +547,12 @@ class _PieDonutSection extends StatelessWidget {
         color: color,
         radius: isTouched ? 70 : 60,
         title: isTouched ? '${pct.toStringAsFixed(1)}%' : '',
-        titleStyle: const TextStyle(
-          fontSize: 12,
+        // Color de categoría arbitrario — texto blanco fijo se volvía
+        // ilegible en las tonalidades claras de _kPieColors.
+        titleStyle: TextStyle(
+          fontSize: AppTextSize.caption,
           fontWeight: FontWeight.bold,
-          color: Colors.white,
+          color: legibleForegroundOn(color),
         ),
         badgeWidget: isTouched
             ? Container(
@@ -563,10 +563,10 @@ class _PieDonutSection extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  '$label\n\$${item.monto.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
+                  '$label\n${formatCOP(item.monto)}',
+                  style: TextStyle(
+                    color: legibleForegroundOn(color),
+                    fontSize: AppTextSize.caption,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
@@ -646,8 +646,8 @@ class _PieLegendItem extends StatelessWidget {
             decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 4),
         Text(
-          '$nombre  \$${item.monto.toStringAsFixed(0)} (${pct.toStringAsFixed(1)}%)',
-          style: const TextStyle(fontSize: 11),
+          '$nombre  ${formatCOP(item.monto)} (${pct.toStringAsFixed(1)}%)',
+          style: const TextStyle(fontSize: AppTextSize.caption),
         ),
       ],
     );
@@ -709,7 +709,7 @@ class _BarTendencia extends StatelessWidget {
                 reservedSize: 36,
                 getTitlesWidget: (v, meta) => Text(
                   fmt(v),
-                  style: const TextStyle(fontSize: 10),
+                  style: const TextStyle(fontSize: AppTextSize.caption),
                 ),
               ),
             ),
@@ -723,7 +723,7 @@ class _BarTendencia extends StatelessWidget {
                   }
                   return Text(
                     _kMesesCortos[tendencia[idx].month],
-                    style: const TextStyle(fontSize: 10),
+                    style: const TextStyle(fontSize: AppTextSize.caption),
                   );
                 },
               ),
@@ -742,11 +742,11 @@ class _BarTendencia extends StatelessWidget {
                 final isIng = rodIndex == 0;
                 return BarTooltipItem(
                   '${_kMesesCortos[t.month]}\n'
-                  '${isIng ? "Ingresos" : "Gastos"}: \$${rod.toY.toStringAsFixed(0)}',
+                  '${isIng ? "Ingresos" : "Gastos"}: ${formatCOP(rod.toY)}',
                   TextStyle(
                     color: isIng ? _kIngresos : _kGastos,
                     fontWeight: FontWeight.bold,
-                    fontSize: 11,
+                    fontSize: AppTextSize.caption,
                   ),
                 );
               },
@@ -809,7 +809,7 @@ class _LibroBalanceCard extends StatelessWidget {
                           : '?',
                       style: TextStyle(
                           color: libroColor,
-                          fontSize: 10,
+                          fontSize: AppTextSize.caption,
                           fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -818,7 +818,7 @@ class _LibroBalanceCard extends StatelessWidget {
                     child: Text(
                       libro.nombre,
                       style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
+                          fontSize: AppTextSize.caption, fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -826,11 +826,11 @@ class _LibroBalanceCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '\$${balance.toStringAsFixed(2)}',
+                formatCOP(balance),
                 style: TextStyle(
                   color: balanceColor,
                   fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  fontSize: AppTextSize.body,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
                 overflow: TextOverflow.ellipsis,

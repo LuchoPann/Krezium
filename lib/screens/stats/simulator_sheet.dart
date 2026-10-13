@@ -18,7 +18,7 @@ import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/credit_display_utils.dart';
 import '../../utils/currency_input_formatter.dart';
-import '../../widgets/kredit_bottom_dialogs.dart';
+import '../../widgets/krezium_bottom_dialogs.dart';
 
 part 'simulator_sheet_widgets.dart';
 

@@ -70,7 +70,7 @@
         <!-- Home screen widget: total debt + next payment, synced from
              lib/services/home_widget_service.dart via the home_widget plugin. -->
         <receiver
-            android:name=".KreditHomeWidgetProvider"
+            android:name=".KreziumHomeWidgetProvider"
             android:label="Resumen"
             android:exported="false">
             <intent-filter>
@@ -78,7 +78,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/kredit_widget_info" />
+                android:resource="@xml/krezium_widget_info" />
         </receiver>
     </application>
     <!-- Required to query activities that can process text, see:

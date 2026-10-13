@@ -17,7 +17,7 @@ import '../theme/app_theme.dart';
 import '../utils/credit_display_utils.dart';
 import 'card_design_painter.dart';
 import 'demo_badge.dart';
-import 'kredit_wordmark.dart';
+import 'krezium_wordmark.dart';
 import 'voucher_pattern.dart';
 
 /// Real bank/issuer logo assets, keyed by [BankInfo.cssClass]. Only entities

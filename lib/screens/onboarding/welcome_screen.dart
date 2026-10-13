@@ -6,7 +6,7 @@ import '../../providers/notification_settings_provider.dart';
 import '../../providers/onboarding_provider.dart';
 import 'entorno_selection_screen.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/kredit_wordmark.dart';
+import '../../widgets/krezium_wordmark.dart';
 import '../../widgets/notification_settings_tile.dart';
 import '../lock/setup_lock_screen.dart';
 

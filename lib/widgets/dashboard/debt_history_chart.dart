@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/debt_history_provider.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/kredit_section_card.dart';
+import '../../widgets/krezium_section_card.dart';
 
 const _monthLabels = [
   'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',

@@ -10,6 +10,7 @@ class FinanceAccount {
   final bool activa;
   final String orden;
   final bool esFavorito;
+  final String descripcion;
 
   const FinanceAccount({
     required this.id,
@@ -21,6 +22,7 @@ class FinanceAccount {
     required this.activa,
     required this.orden,
     this.esFavorito = false,
+    this.descripcion = '',
   });
 
   factory FinanceAccount.fromRow(FinanceAccountRow row) => FinanceAccount(
@@ -33,12 +35,13 @@ class FinanceAccount {
     activa: row.activa,
     orden: row.orden,
     esFavorito: row.esFavorito,
+    descripcion: row.descripcion,
   );
 
   Map<String, dynamic> toJson() => {
     'id': id, 'nombre': nombre, 'tipo': tipo, 'icono': icono,
     'color': color, 'saldoInicial': saldoInicial, 'activa': activa,
-    'orden': orden, 'esFavorito': esFavorito,
+    'orden': orden, 'esFavorito': esFavorito, 'descripcion': descripcion,
   };
 
   factory FinanceAccount.fromJson(Map<String, dynamic> json) => FinanceAccount(
@@ -51,6 +54,7 @@ class FinanceAccount {
     activa: json['activa'] as bool? ?? true,
     orden: json['orden'] as String? ?? '0',
     esFavorito: json['esFavorito'] as bool? ?? false,
+    descripcion: json['descripcion'] as String? ?? '',
   );
 }
 

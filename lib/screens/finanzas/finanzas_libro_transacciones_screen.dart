@@ -7,12 +7,8 @@ import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/nueva_transaccion_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
-
-// ─── Color helper ─────────────────────────────────────────────────────────────
-Color _colorFromHex(String hex) {
-  final h = hex.replaceAll('#', '');
-  return Color(int.parse('FF$h', radix: 16));
-}
+import 'package:krezium/utils/credit_display_utils.dart';
+import 'package:krezium/widgets/krezium_section_card.dart';
 
 // ─── Public screen ────────────────────────────────────────────────────────────
 class FinanzasLibroTransaccionesScreen extends ConsumerStatefulWidget {
@@ -60,6 +56,10 @@ class _FinanzasLibroTransaccionesScreenState
   String _claveGrupo(FinanceTransaction tx, String periodo) {
     final d = _parseFecha(tx.fecha);
     switch (periodo) {
+      case 'sin_agrupar':
+        return '_todo';
+      case 'anual':
+        return '${d.year}';
       case 'semanal':
         final inicioSemana = d.subtract(Duration(days: d.weekday - 1));
         return '${inicioSemana.year}-${inicioSemana.month.toString().padLeft(2, '0')}-${inicioSemana.day.toString().padLeft(2, '0')}';
@@ -84,6 +84,10 @@ class _FinanzasLibroTransaccionesScreenState
 
   String _grupoLabel(String clave, String periodo) {
     switch (periodo) {
+      case 'sin_agrupar':
+        return 'Todas las transacciones';
+      case 'anual':
+        return clave;
       case 'semanal':
         final inicio = _parseFecha(clave);
         final fin = inicio.add(const Duration(days: 6));
@@ -108,13 +112,6 @@ class _FinanzasLibroTransaccionesScreenState
     if (d == today) return 'Hoy';
     if (d == today.subtract(const Duration(days: 1))) return 'Ayer';
     return '${_kDiasCorto[d.weekday - 1]} ${d.day} ${_kMesesCorto[d.month]}';
-  }
-
-  // Fecha corta para mostrar dentro de cada fila — mantiene el registro
-  // autocontenido aunque el usuario pierda de vista el encabezado de grupo.
-  String _fechaCorta(String fecha) {
-    final d = _parseFecha(fecha);
-    return '${d.day} ${_kMesesCorto[d.month]}';
   }
 
   // ─── Totales ───────────────────────────────────────────────────────────────
@@ -162,14 +159,35 @@ class _FinanzasLibroTransaccionesScreenState
     );
   }
 
-  void _mostrarFiltrosSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _FiltrosSheet(
-        filtros: ref.read(finanzasFiltrosProvider),
-        onChanged: (f) => ref.read(finanzasFiltrosProvider.notifier).state = f,
+  // Ventanita emergente anclada al ícono de filtro (en vez del bottom sheet
+  // de antes) — una lista compacta tipo menú que no ocupa toda la pantalla.
+  // showMenu por sí solo cierra el menú en cada tap; _FiltrosPopupContent
+  // usa un StatefulBuilder interno para que elegir una opción actualice el
+  // filtro sin cerrar la ventanita, igual que un menú de "Ordenar por".
+  void _mostrarFiltrosPopup(BuildContext anchorContext) {
+    final button = anchorContext.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(anchorContext).context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset(0, button.size.height), ancestor: overlay),
+        button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
       ),
+      Offset.zero & overlay.size,
+    );
+    showMenu<void>(
+      context: anchorContext,
+      position: position,
+      constraints: const BoxConstraints(minWidth: 240, maxWidth: 280),
+      items: [
+        PopupMenuItem<void>(
+          enabled: false,
+          padding: EdgeInsets.zero,
+          child: _FiltrosPopupContent(
+            filtros: ref.read(finanzasFiltrosProvider),
+            onChanged: (f) => ref.read(finanzasFiltrosProvider.notifier).state = f,
+          ),
+        ),
+      ],
     );
   }
 
@@ -216,7 +234,6 @@ class _FinanzasLibroTransaccionesScreenState
     final asyncLibros = ref.watch(financeAccountsProvider);
     final asyncCats = ref.watch(allFinanceCategoriesProvider);
     final colors = Theme.of(context).extension<AppThemeColors>()!;
-    final libroColor = _colorFromHex(_libroActual.color);
 
     return Scaffold(
       body: asyncTx.when(
@@ -227,10 +244,7 @@ class _FinanzasLibroTransaccionesScreenState
           final tot = _totales(txs);
 
           final catMap = asyncCats.valueOrNull != null
-              ? {
-                  for (final c in asyncCats.valueOrNull!)
-                    if (c is CatalogoCategoria) c.id: c
-                }
+              ? {for (final c in asyncCats.valueOrNull!) c.id: c}
               : <String, CatalogoCategoria>{};
 
           // Build list of slivers
@@ -241,28 +255,13 @@ class _FinanzasLibroTransaccionesScreenState
             SliverAppBar(
               pinned: true,
               floating: false,
-              expandedHeight: 140,
-              leading: Hero(
-                tag: 'libro_icon_${_libroActual.id}',
-                child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: CircleAvatar(
-                      backgroundColor: libroColor.withValues(alpha: 0.3),
-                      child: Text(
-                        _libroActual.icono.isNotEmpty
-                            ? _libroActual.icono[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              // Antes forzaba Colors.white — invisible en modo claro, donde
+              // el AppBar (sin backgroundColor propio) hereda bgPrimary
+              // claro del AppBarTheme. colors.textPrimary ya es el color
+              // correcto para ese fondo en cualquier modo.
+              leading: IconButton(
+                icon: Icon(Icons.arrow_back, color: colors.textPrimary),
+                onPressed: () => Navigator.pop(context),
               ),
               title: asyncLibros.maybeWhen(
                 data: (rows) {
@@ -271,9 +270,9 @@ class _FinanzasLibroTransaccionesScreenState
                     value: _libroActual.id,
                     underline: const SizedBox(),
                     dropdownColor: colors.bgCard,
-                    icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                    style: const TextStyle(
-                      color: Colors.white,
+                    icon: Icon(Icons.arrow_drop_down, color: colors.textPrimary),
+                    style: TextStyle(
+                      color: colors.textPrimary,
                       fontSize: AppTextSize.body,
                       fontWeight: FontWeight.bold,
                     ),
@@ -292,8 +291,8 @@ class _FinanzasLibroTransaccionesScreenState
                 },
                 orElse: () => Text(
                   _libroActual.nombre,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: colors.textPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -303,39 +302,24 @@ class _FinanzasLibroTransaccionesScreenState
                   icon: const Icon(Icons.search_outlined),
                   onPressed: () => _mostrarBusqueda(context, txs),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.tune_outlined),
-                  onPressed: _mostrarFiltrosSheet,
+                Builder(
+                  builder: (iconCtx) => IconButton(
+                    icon: const Icon(Icons.tune_outlined),
+                    onPressed: () => _mostrarFiltrosPopup(iconCtx),
+                  ),
                 ),
               ],
-              flexibleSpace: FlexibleSpaceBar(
-                background: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 80, 16, 8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      // Resumen (histórico completo — ya no recortado por mes)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _ResumenChip(
-                              label: 'Ingresos',
-                              monto: tot.ingresos,
-                              color: const Color(0xFF22C55E)),
-                          _ResumenChip(
-                              label: 'Gastos',
-                              monto: tot.gastos,
-                              color: const Color(0xFFEF4444)),
-                          _ResumenChip(
-                              label: 'Balance',
-                              monto: tot.balance,
-                              color: tot.balance >= 0
-                                  ? const Color(0xFF22C55E)
-                                  : const Color(0xFFEF4444)),
-                        ],
-                      ),
-                    ],
-                  ),
+            ),
+          );
+
+          // Resumen como tarjeta propia (no flotando en el AppBar) — le da
+          // peso visual y deja de sentirse "suelto" sobre el fondo.
+          slivers.add(
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: AppSectionCard(
+                  children: [_ResumenCard(tot: tot, cantidad: txs.length)],
                 ),
               ),
             ),
@@ -348,22 +332,10 @@ class _FinanzasLibroTransaccionesScreenState
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Hero(
-                        tag: 'libro_icon_${_libroActual.id}',
-                        child: CircleAvatar(
-                          radius: 36,
-                          backgroundColor: libroColor.withValues(alpha: 0.2),
-                          child: Text(
-                            _libroActual.icono.isNotEmpty
-                                ? _libroActual.icono[0].toUpperCase()
-                                : '?',
-                            style: TextStyle(
-                              color: libroColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 28,
-                            ),
-                          ),
-                        ),
+                      Icon(
+                        Icons.receipt_long_outlined,
+                        size: AppIconSize.large,
+                        color: colors.textTertiary,
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -382,67 +354,62 @@ class _FinanzasLibroTransaccionesScreenState
             for (final entry in grupos.entries) {
               final clave = entry.key;
               final grupoTxs = entry.value;
-              final grupoTot = grupoTxs.fold<double>(
-                0,
-                (sum, t) =>
-                    sum + (t.tipo == 'ingreso' ? t.monto : -t.monto),
-              );
 
-              // Encabezado de grupo (diario / semanal / mensual según filtro)
+              // Cada grupo es su propia tarjeta (header + filas + divisores
+              // internos), en vez de texto suelto + lista plana — así el
+              // histórico se ve "contenido" en bloques, no mezclado con el
+              // fondo de la pantalla.
               slivers.add(
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding:
-                        const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: AppSectionCard(
                       children: [
-                        Text(
-                          _grupoLabel(clave, filtros.periodo),
-                          style: TextStyle(
-                            fontSize: AppTextSize.caption,
-                            color: colors.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          '${grupoTot >= 0 ? '+' : ''}\$${grupoTot.abs().toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: AppTextSize.caption,
-                            color: grupoTot >= 0
-                                ? const Color(0xFF22C55E)
-                                : const Color(0xFFEF4444),
-                            fontFeatures: const [
-                              FontFeature.tabularFigures()
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _grupoLabel(clave, filtros.periodo),
+                                style: TextStyle(
+                                  fontSize: AppTextSize.caption,
+                                  color: colors.textSecondary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              // Texto neutro en vez de un monto verde/rojo
+                              // sin contexto — un color ahí "sale de la
+                              // nada" para quien no sabe de dónde surge.
+                              Text(
+                                '${grupoTxs.length} ${grupoTxs.length == 1 ? 'registro' : 'registros'}',
+                                style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
+                              ),
                             ],
                           ),
                         ),
+                        for (var i = 0; i < grupoTxs.length; i++) ...[
+                          if (i > 0)
+                            Divider(
+                              height: 1,
+                              color: colors.textTertiary.withValues(alpha: 0.1),
+                            ),
+                          _TxRow(
+                            tx: grupoTxs[i],
+                            cat: catMap[grupoTxs[i].categoryId],
+                            onConfirmDismiss: () =>
+                                _confirmarEliminar(context, grupoTxs[i]),
+                            onDismissed: () => _eliminar(grupoTxs[i]),
+                            onEditar: () => showNuevaTransaccionSheet(
+                              context,
+                              libroId: grupoTxs[i].accountId,
+                              editar: grupoTxs[i],
+                            ),
+                            colors: colors,
+                          ),
+                        ],
                       ],
                     ),
-                  ),
-                ),
-              );
-
-              // Transacciones del grupo — cada fila lleva su propia fecha
-              // corta para que el registro sea legible por sí solo.
-              slivers.add(
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (ctx, i) {
-                      final tx = grupoTxs[i];
-                      final cat = catMap[tx.categoryId];
-                      return _TxRow(
-                        tx: tx,
-                        cat: cat,
-                        fechaCorta: _fechaCorta(tx.fecha),
-                        compacto: filtros.densidad == 'compacto',
-                        onConfirmDismiss: () =>
-                            _confirmarEliminar(context, tx),
-                        onDismissed: () => _eliminar(tx),
-                        colors: colors,
-                      );
-                    },
-                    childCount: grupoTxs.length,
                   ),
                 ),
               );
@@ -456,64 +423,189 @@ class _FinanzasLibroTransaccionesScreenState
           );
         },
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // FAB secundario — plantillas
-          FloatingActionButton.small(
-            heroTag: 'fab_plantillas',
-            onPressed: _mostrarPlantillasSheet,
-            child: const Icon(Icons.description_outlined),
-          ),
-          const SizedBox(height: 8),
-          // FAB principal — nueva transacción
-          FloatingActionButton(
-            heroTag: 'fab_nueva_tx',
-            onPressed: () => showNuevaTransaccionSheet(
-              context,
-              libroId: _libroActual.id,
+      // Mismo patrón que credits_list_screen.dart: color de acento explícito
+      // + contraste calculado — sin esto el FAB caía al tono por defecto de
+      // Material3 (ajeno al acento elegido), y Finanzas no se sentía
+      // personalizado aunque el usuario hubiera elegido un color.
+      floatingActionButton: Builder(builder: (context) {
+        final accentColor = Theme.of(context).colorScheme.primary;
+        final fgColor = legibleForegroundOn(accentColor);
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // FAB secundario — plantillas
+            FloatingActionButton.small(
+              heroTag: 'fab_plantillas',
+              backgroundColor: accentColor,
+              foregroundColor: fgColor,
+              onPressed: _mostrarPlantillasSheet,
+              child: const Icon(Icons.description_outlined),
             ),
-            child: const Icon(Icons.add),
-          ),
-        ],
-      ),
+            const SizedBox(height: 8),
+            // FAB principal — nueva transacción
+            FloatingActionButton(
+              heroTag: 'fab_nueva_tx',
+              backgroundColor: accentColor,
+              foregroundColor: fgColor,
+              onPressed: () => showNuevaTransaccionSheet(
+                context,
+                libroId: _libroActual.id,
+              ),
+              child: const Icon(Icons.add),
+            ),
+          ],
+        );
+      }),
     );
   }
 }
 
-// ─── Resumen chip ─────────────────────────────────────────────────────────────
-class _ResumenChip extends StatelessWidget {
-  final String label;
-  final double monto;
-  final Color color;
+// ─── Resumen informativo ────────────────────────────────────────────────────
+// Tipografía pura, sin cajas ni barras de color: el color queda reservado
+// para el monto de cada transacción en la lista, nunca para decoración del
+// resumen — evita que el verde/rojo "invada" la pantalla antes de llegar
+// siquiera al histórico.
+class _ResumenCard extends StatelessWidget {
+  final ({double ingresos, double gastos, double balance}) tot;
+  final int cantidad;
 
-  const _ResumenChip({
-    required this.label,
-    required this.monto,
-    required this.color,
+  const _ResumenCard({required this.tot, required this.cantidad});
+
+  String _insight() {
+    if (cantidad == 0) return 'Aún no hay registros.';
+    if (tot.gastos == 0) {
+      return '$cantidad ${cantidad == 1 ? 'registro' : 'registros'} · aún no tienes gastos.';
+    }
+    if (tot.ingresos == 0) {
+      return '$cantidad ${cantidad == 1 ? 'registro' : 'registros'} · aún no tienes ingresos.';
+    }
+    final diff = ((tot.ingresos - tot.gastos).abs() / tot.gastos * 100).round();
+    final quien = tot.ingresos >= tot.gastos ? 'ingresos superan gastos' : 'gastos superan ingresos';
+    return '$cantidad ${cantidad == 1 ? 'registro' : 'registros'} · $quien en un $diff%.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<AppThemeColors>()!;
+    final totalFlujo = tot.ingresos + tot.gastos;
+    final pctIngresos = totalFlujo > 0 ? tot.ingresos / totalFlujo * 100 : 0.0;
+    final pctGastos = totalFlujo > 0 ? tot.gastos / totalFlujo * 100 : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Balance a la izquierda, protagonista.
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'BALANCE TOTAL',
+                    style: TextStyle(
+                      fontSize: AppTextSize.caption,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
+                      color: colors.textTertiary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    formatCOP(tot.balance),
+                    style: TextStyle(
+                      fontSize: AppTextSize.hero,
+                      fontWeight: FontWeight.w800,
+                      color: colors.textPrimary,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Container(width: 1, height: 56, color: colors.textTertiary.withValues(alpha: 0.15)),
+            const SizedBox(width: 14),
+            // Ingresos (arriba) / Gastos (abajo) a la derecha — únicos dos
+            // puntos de color de la tarjeta, flechas más chicas que el
+            // texto para no competir con el balance.
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ResumenDato(
+                  icono: Icons.north_east,
+                  iconoColor: const Color(0xFF22C55E),
+                  texto: formatCOP(tot.ingresos),
+                  pct: pctIngresos,
+                  colors: colors,
+                ),
+                const SizedBox(height: 10),
+                _ResumenDato(
+                  icono: Icons.south_east,
+                  iconoColor: const Color(0xFFEF4444),
+                  texto: formatCOP(tot.gastos),
+                  pct: pctGastos,
+                  colors: colors,
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text(
+          _insight(),
+          style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
+        ),
+      ],
+    );
+  }
+}
+
+class _ResumenDato extends StatelessWidget {
+  final IconData icono;
+  final Color iconoColor;
+  final String texto;
+  final double pct;
+  final AppThemeColors colors;
+
+  const _ResumenDato({
+    required this.icono,
+    required this.iconoColor,
+    required this.texto,
+    required this.pct,
+    required this.colors,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: AppTextSize.caption,
-            color: Colors.white70,
-          ),
-        ),
-        Text(
-          '\$${monto.toStringAsFixed(2)}',
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-            fontSize: AppTextSize.caption,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
+        Icon(icono, size: 14, color: iconoColor),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              texto,
+              style: TextStyle(
+                fontSize: AppTextSize.body,
+                fontWeight: FontWeight.w700,
+                color: colors.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            Text(
+              '${pct.toStringAsFixed(0)}% del total',
+              style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
+            ),
+          ],
         ),
       ],
     );
@@ -524,19 +616,17 @@ class _ResumenChip extends StatelessWidget {
 class _TxRow extends StatelessWidget {
   final FinanceTransaction tx;
   final CatalogoCategoria? cat;
-  final String fechaCorta;
-  final bool compacto;
   final Future<bool> Function() onConfirmDismiss;
   final VoidCallback onDismissed;
+  final VoidCallback onEditar;
   final AppThemeColors colors;
 
   const _TxRow({
     required this.tx,
     required this.cat,
-    required this.fechaCorta,
-    required this.compacto,
     required this.onConfirmDismiss,
     required this.onDismissed,
+    required this.onEditar,
     required this.colors,
   });
 
@@ -546,14 +636,20 @@ class _TxRow extends StatelessWidget {
     final montoColor =
         isIngreso ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
     final montoStr =
-        '${isIngreso ? '+' : '-'}\$${tx.monto.toStringAsFixed(2)}';
+        '${isIngreso ? '+' : '-'}${formatCOP(tx.monto)}';
 
-    final catColor = cat != null ? cat!.color : colors.textSecondary;
     final catNombre = cat?.nombre ?? tx.categoryId;
-    // Parent name si es subcategoría
-    final catLabel = catNombre;
 
-    final subtitle = [
+    // La subcategoría es el título (protagonista de la fila); la categoría
+    // padre pasa al subtítulo junto con nota y ordenante.
+    final padre = cat?.parentId != null
+        ? catalogoCategoriaPadres
+            .where((p) => p.id == cat!.parentId)
+            .firstOrNull
+        : null;
+
+    final detalle = [
+      if (padre != null) padre.nombre,
       if (tx.nota.isNotEmpty) tx.nota,
       if (tx.personaSitio != null && tx.personaSitio!.isNotEmpty)
         tx.personaSitio!,
@@ -561,85 +657,137 @@ class _TxRow extends StatelessWidget {
 
     return Dismissible(
       key: ValueKey(tx.id),
-      direction: DismissDirection.endToStart,
+      direction: DismissDirection.horizontal,
+      // Swipe izquierda = eliminar (rojo); swipe derecha = editar (no se
+      // elimina nada — confirmDismiss devuelve false para que la fila
+      // vuelva a su lugar después de abrir el sheet).
       background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 24),
+        color: colors.textTertiary.withValues(alpha: 0.15),
+        child: Icon(Icons.edit_outlined, color: colors.textPrimary),
+      ),
+      secondaryBackground: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 24),
         color: const Color(0xFFEF4444).withValues(alpha: 0.2),
         child: const Icon(Icons.delete_outline, color: Color(0xFFEF4444)),
       ),
-      confirmDismiss: (_) => onConfirmDismiss(),
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) {
+          onEditar();
+          return false;
+        }
+        return onConfirmDismiss();
+      },
       onDismissed: (_) => onDismissed(),
-      child: ListTile(
-        dense: compacto,
-        minVerticalPadding: compacto ? 4 : 8,
-        leading: CircleAvatar(
-          radius: 16,
-          backgroundColor: catColor.withValues(alpha: 0.2),
-          child: cat != null
-              ? Icon(cat!.icono, color: catColor, size: 16)
-              : Text(
-                  catNombre.isNotEmpty ? catNombre[0].toUpperCase() : '?',
-                  style: TextStyle(color: catColor, fontSize: 12),
+      child: InkWell(
+        onTap: onEditar,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Ícono neutro (ni verde ni rojo): el único color admitido
+              // en la fila es el monto, a la derecha — así no hay dos
+              // bloques de color compitiendo por la misma señal.
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: colors.textTertiary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-        ),
-        title: Text(
-          catLabel,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: (!compacto && subtitle.isNotEmpty)
-            ? Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: AppTextSize.caption,
+                child: Icon(
+                  cat?.icono ?? Icons.label_outline,
+                  size: AppIconSize.small,
                   color: colors.textSecondary,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              )
-            : null,
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              montoStr,
-              style: TextStyle(
-                color: montoColor,
-                fontWeight: FontWeight.bold,
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
-            ),
-            // Siempre visible — el registro se entiende sin depender del
-            // encabezado de grupo, aunque el usuario esté lejos de él al hacer scroll.
-            Text(
-              tx.hora != null && tx.hora!.isNotEmpty
-                  ? '$fechaCorta · ${tx.hora}'
-                  : fechaCorta,
-              style: TextStyle(
-                fontSize: AppTextSize.caption,
-                color: colors.textSecondary,
+              const SizedBox(width: 12),
+              // Subcategoría como título (protagonista); categoría padre,
+              // nota y ordenante quedan en el subtítulo.
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      catNombre,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: AppTextSize.body,
+                        color: colors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (detalle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        detalle,
+                        style: TextStyle(
+                          fontSize: AppTextSize.caption,
+                          color: colors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              // Monto como protagonista de la columna derecha; hora debajo,
+              // como caption — en vez de ocupar una franja fija a la izquierda.
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    montoStr,
+                    style: TextStyle(
+                      color: montoColor,
+                      fontWeight: FontWeight.bold,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  if (tx.hora != null && tx.hora!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      tx.hora!,
+                      style: TextStyle(
+                        fontSize: AppTextSize.caption,
+                        color: colors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ─── Filtros sheet ────────────────────────────────────────────────────────────
-class _FiltrosSheet extends StatefulWidget {
+// ─── Contenido del popup de filtros ───────────────────────────────────────────
+// Lista compacta tipo menú (ventanita emergente anclada al ícono de filtro),
+// en vez del bottom sheet de antes con segmented buttons/switches — cada
+// fila es un ListTile con check a la izquierda cuando está seleccionada,
+// agrupadas por sección con un divisor fino.
+class _FiltrosPopupContent extends StatefulWidget {
   final FinanzasFiltros filtros;
   final ValueChanged<FinanzasFiltros> onChanged;
 
-  const _FiltrosSheet({required this.filtros, required this.onChanged});
+  const _FiltrosPopupContent({required this.filtros, required this.onChanged});
 
   @override
-  State<_FiltrosSheet> createState() => _FiltrosSheetState();
+  State<_FiltrosPopupContent> createState() => _FiltrosPopupContentState();
 }
 
-class _FiltrosSheetState extends State<_FiltrosSheet> {
+class _FiltrosPopupContentState extends State<_FiltrosPopupContent> {
   late FinanzasFiltros _f;
 
   @override
@@ -653,85 +801,71 @@ class _FiltrosSheetState extends State<_FiltrosSheet> {
     widget.onChanged(f);
   }
 
+  Widget _opcion({
+    required BuildContext context,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final colors = Theme.of(context).extension<AppThemeColors>()!;
+    return ListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      title: Text(
+        label,
+        style: TextStyle(color: colors.textPrimary, fontSize: AppTextSize.body),
+      ),
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        size: AppIconSize.small,
+        color: selected ? Theme.of(context).colorScheme.primary : colors.textTertiary,
+      ),
+      onTap: onTap,
+    );
+  }
+
+  Widget _header(BuildContext context, String text) {
+    final colors = Theme.of(context).extension<AppThemeColors>()!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: AppTextSize.caption,
+          fontWeight: FontWeight.w700,
+          color: colors.textSecondary,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[600],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Filtros',
-              style: TextStyle(
-                  fontSize: AppTextSize.heading,
-                  fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-
-            // Agrupación visual — todo el historial se muestra siempre;
-            // esto solo decide cómo se agrupan los encabezados de sección.
-            const Text('Agrupar por',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'diario', label: Text('Día')),
-                ButtonSegment(value: 'semanal', label: Text('Semana')),
-                ButtonSegment(value: 'mensual', label: Text('Mes')),
-              ],
-              selected: {_f.periodo},
-              onSelectionChanged: (s) =>
-                  _update(_f.copyWith(periodo: s.first)),
-            ),
-            const SizedBox(height: 16),
-
-            // Orden
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(_f.ascending ? 'Más antiguo primero' : 'Más reciente primero'),
-              value: _f.ascending,
-              onChanged: (v) => _update(_f.copyWith(ascending: v)),
-            ),
-
-            // Densidad
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(_f.densidad == 'compacto' ? 'Compacto' : 'Cómodo'),
-              value: _f.densidad == 'compacto',
-              onChanged: (v) =>
-                  _update(_f.copyWith(densidad: v ? 'compacto' : 'comodo')),
-            ),
-
-            // Tipo
-            const Text('Tipo', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'todos', label: Text('Todos')),
-                ButtonSegment(value: 'ingreso', label: Text('Ingresos')),
-                ButtonSegment(value: 'gasto', label: Text('Gastos')),
-              ],
-              selected: {_f.tipoFiltro},
-              onSelectionChanged: (s) =>
-                  _update(_f.copyWith(tipoFiltro: s.first)),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+    final colors = Theme.of(context).extension<AppThemeColors>()!;
+    return Container(
+      color: colors.bgCard,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _header(context, 'Agrupar por'),
+          _opcion(context: context, label: 'Día', selected: _f.periodo == 'diario', onTap: () => _update(_f.copyWith(periodo: 'diario'))),
+          _opcion(context: context, label: 'Semana', selected: _f.periodo == 'semanal', onTap: () => _update(_f.copyWith(periodo: 'semanal'))),
+          _opcion(context: context, label: 'Mes', selected: _f.periodo == 'mensual', onTap: () => _update(_f.copyWith(periodo: 'mensual'))),
+          _opcion(context: context, label: 'Año', selected: _f.periodo == 'anual', onTap: () => _update(_f.copyWith(periodo: 'anual'))),
+          _opcion(context: context, label: 'Sin agrupar', selected: _f.periodo == 'sin_agrupar', onTap: () => _update(_f.copyWith(periodo: 'sin_agrupar'))),
+          Divider(height: 8, color: colors.textTertiary.withValues(alpha: 0.2)),
+          _header(context, 'Orden'),
+          _opcion(context: context, label: 'Más reciente primero', selected: !_f.ascending, onTap: () => _update(_f.copyWith(ascending: false))),
+          _opcion(context: context, label: 'Más antiguo primero', selected: _f.ascending, onTap: () => _update(_f.copyWith(ascending: true))),
+          Divider(height: 8, color: colors.textTertiary.withValues(alpha: 0.2)),
+          _header(context, 'Tipo'),
+          _opcion(context: context, label: 'Todos', selected: _f.tipoFiltro == 'todos', onTap: () => _update(_f.copyWith(tipoFiltro: 'todos'))),
+          _opcion(context: context, label: 'Ingresos', selected: _f.tipoFiltro == 'ingreso', onTap: () => _update(_f.copyWith(tipoFiltro: 'ingreso'))),
+          _opcion(context: context, label: 'Gastos', selected: _f.tipoFiltro == 'gasto', onTap: () => _update(_f.copyWith(tipoFiltro: 'gasto'))),
+        ],
       ),
     );
   }
@@ -781,7 +915,12 @@ class _BusquedaSheetState extends State<_BusquedaSheet> {
   @override
   Widget build(BuildContext context) {
     final tc = Theme.of(context).extension<AppThemeColors>()!;
-    return DraggableScrollableSheet(
+    // Padding(bottom: viewInsets): un DraggableScrollableSheet no se
+    // reacomoda solo con el teclado — sin esto, los resultados de abajo
+    // quedaban tapados al escribir.
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.85,
       minChildSize: 0.5,
@@ -805,16 +944,9 @@ class _BusquedaSheetState extends State<_BusquedaSheet> {
                   TextField(
                     controller: _ctrl,
                     autofocus: true,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       hintText: 'Buscar transacciones…',
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: tc.bgSecondary,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.tile),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      prefixIcon: Icon(Icons.search),
                     ),
                   ),
                 ],
@@ -848,7 +980,7 @@ class _BusquedaSheetState extends State<_BusquedaSheet> {
                           title: Text(titulo, maxLines: 1, overflow: TextOverflow.ellipsis),
                           subtitle: Text(tx.fecha, style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary)),
                           trailing: Text(
-                            '\$${tx.monto.toStringAsFixed(2)}',
+                            formatCOP(tx.monto),
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: isIngreso ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
@@ -861,6 +993,7 @@ class _BusquedaSheetState extends State<_BusquedaSheet> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -938,7 +1071,7 @@ class _PlantillasSheet extends ConsumerWidget {
                       ),
                       title: Text(t.nombre),
                       subtitle: t.monto != null
-                          ? Text('\$${t.monto!.toStringAsFixed(2)}', style: TextStyle(color: tc.textSecondary, fontSize: AppTextSize.caption))
+                          ? Text(formatCOP(t.monto!), style: TextStyle(color: tc.textSecondary, fontSize: AppTextSize.caption))
                           : null,
                       trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                       onTap: () => onPlantillaSeleccionada(t),

@@ -46,7 +46,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -158,24 +158,63 @@ class AppDatabase extends _$AppDatabase {
               await m.createTable(pagosRealizados);
             }
           }
-          if (from < 15) {
-            await m.createTable(cardStatements);
-            await m.addColumn(cardMovements, cardMovements.installmentIndex);
-            await m.addColumn(cardMovements, cardMovements.statementCutoff);
+          if (from < 17) {
+            // v15/v16/v17 se desarrollaron en vivo esta sesión: algunos
+            // dispositivos (incl. el de desarrollo) ya tienen estas
+            // columnas/tablas de iteraciones previas de hot-restart aunque
+            // su PRAGMA user_version no haya llegado a esa versión todavía.
+            // Igual que el guard de from<12 para notification_days_before:
+            // verificar con PRAGMA table_info antes de cada ADD COLUMN /
+            // CREATE TABLE evita "duplicate column name"/"table exists".
+            Future<Set<String>> colsOf(String table) async {
+              final rows = await customSelect('PRAGMA table_info($table)').get();
+              return rows.map((r) => r.read<String>('name')).toSet();
+            }
+
+            Future<bool> tableExists(String table) async {
+              final rows = await customSelect(
+                      "SELECT name FROM sqlite_master WHERE type='table' AND name='$table'")
+                  .get();
+              return rows.isNotEmpty;
+            }
+
+            if (from < 15) {
+              if (!await tableExists('card_statements')) {
+                await m.createTable(cardStatements);
+              }
+              final movCols = await colsOf('card_movements');
+              if (!movCols.contains('installment_index')) {
+                await m.addColumn(cardMovements, cardMovements.installmentIndex);
+              }
+              if (!movCols.contains('statement_cutoff')) {
+                await m.addColumn(cardMovements, cardMovements.statementCutoff);
+              }
+            }
+            if (from < 16) {
+              if (!await tableExists('installment_purchases')) {
+                await m.createTable(installmentPurchases);
+              }
+              final movCols = await colsOf('card_movements');
+              if (!movCols.contains('statement_id')) {
+                await m.addColumn(cardMovements, cardMovements.statementId);
+              }
+              if (!movCols.contains('installment_purchase_id')) {
+                await m.addColumn(
+                    cardMovements, cardMovements.installmentPurchaseId);
+              }
+            }
+            if (from >= 15 && from < 17) {
+              final stmtCols = await colsOf('card_statements');
+              if (!stmtCols.contains('opening_balance')) {
+                await m.addColumn(cardStatements, cardStatements.openingBalance);
+              }
+            }
           }
-          if (from < 16) {
-            await m.createTable(installmentPurchases);
-            await m.addColumn(cardMovements, cardMovements.statementId);
-            await m.addColumn(
-                cardMovements, cardMovements.installmentPurchaseId);
-          }
-          if (from >= 15 && from < 17) {
-            // Solo para quien ya tenía la tabla cardStatements (creada en
-            // el bloque from<15 de arriba) SIN esta columna. Alguien que
-            // viene de from<15 la crea de una vez con el schema actual
-            // (que ya incluye openingBalance) en ese mismo bloque — volver
-            // a agregarla aquí tiraría "duplicate column name".
-            await m.addColumn(cardStatements, cardStatements.openingBalance);
+          if (from < 18) {
+            final acctCols = await customSelect('PRAGMA table_info(finance_accounts)').get();
+            if (!acctCols.map((r) => r.read<String>('name')).contains('descripcion')) {
+              await m.addColumn(financeAccounts, financeAccounts.descripcion);
+            }
           }
         },
         // SQLite ignores FK constraints (like Credits.quotaId's

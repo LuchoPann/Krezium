@@ -945,10 +945,6 @@ class VoucherPatternPainter extends CustomPainter {
       pattern != oldDelegate.pattern;
 }
 
-/// Utility: returns white or black, whichever contrasts better against [bg].
-Color legibleForegroundOn(Color bg) =>
-    bg.computeLuminance() > 0.35 ? Colors.black : Colors.white;
-
 /// Dashed stroke traced along [voucherOutline], inset from the true edge —
 /// reads as a stitched comprobante line rather than a solid border.
 class VoucherBorderPainter extends CustomPainter {

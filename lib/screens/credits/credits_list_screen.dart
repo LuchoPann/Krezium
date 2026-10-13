@@ -12,7 +12,7 @@ import '../../providers/commercial_quotas_provider.dart';
 import '../../providers/credits_filter_provider.dart';
 import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/kredit_bottom_dialogs.dart';
+import '../../widgets/krezium_bottom_dialogs.dart';
 import '../../utils/credit_display_utils.dart';
 import '../../widgets/credits/commercial_quota_card.dart';
 import '../../widgets/wallet_card.dart';

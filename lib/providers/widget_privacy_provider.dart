@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Whether the Android home screen widget (see
 /// `lib/services/home_widget_service.dart` and
-/// `android/.../KreditHomeWidgetProvider.kt`) is allowed to show real
+/// `android/.../KreziumHomeWidgetProvider.kt`) is allowed to show real
 /// amounts (total debt / next payment sum) on the lock screen / home
 /// screen, which is visible WITHOUT unlocking the app — even when the user
 /// has PIN/biometric app-lock enabled (see `security_settings_tile.dart`).

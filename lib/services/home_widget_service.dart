@@ -7,9 +7,9 @@ import '../domain/upcoming_payment.dart';
 import '../utils/credit_display_utils.dart';
 
 /// Android App Widget name registered in
-/// `android/app/src/main/kotlin/.../KreditHomeWidgetProvider.kt` and
+/// `android/app/src/main/kotlin/.../KreziumHomeWidgetProvider.kt` and
 /// `AndroidManifest.xml`.
-const _androidWidgetName = 'KreditHomeWidgetProvider';
+const _androidWidgetName = 'KreziumHomeWidgetProvider';
 
 /// Pushes the current total debt, % paid and next upcoming payment into the
 /// SharedPreferences-backed storage that `home_widget` shares with the

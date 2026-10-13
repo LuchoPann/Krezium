@@ -112,7 +112,13 @@ class _EditarPlantillaSheetState extends State<_EditarPlantillaSheet> {
     final colors = Theme.of(context).extension<AppThemeColors>()!;
     final isEdit = widget.template != null;
 
-    return DraggableScrollableSheet(
+    // Padding(bottom: viewInsets) en el nivel más externo: un
+    // DraggableScrollableSheet NO se reacomoda solo cuando aparece el
+    // teclado (a diferencia de un Scaffold con resizeToAvoidBottomInset),
+    // así que sin esto el teclado tapaba los campos de más abajo.
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
       initialChildSize: 0.7,
       maxChildSize: 0.95,
       minChildSize: 0.4,
@@ -255,6 +261,7 @@ class _EditarPlantillaSheetState extends State<_EditarPlantillaSheet> {
           ),
         );
       },
+      ),
     );
   }
 }

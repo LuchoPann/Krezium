@@ -5,7 +5,7 @@ import '../../providers/app_lock_provider.dart';
 import '../../providers/credits_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
-import '../kredit_bottom_dialogs.dart';
+import '../krezium_bottom_dialogs.dart';
 
 class DangerZoneCard extends ConsumerWidget {
   const DangerZoneCard({super.key});
@@ -123,6 +123,7 @@ class DangerZoneCard extends ConsumerWidget {
                 FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.danger,
+                    foregroundColor: legibleForegroundOn(AppColors.danger),
                     minimumSize: const Size(double.infinity, 50),
                   ),
                   onPressed: () async {

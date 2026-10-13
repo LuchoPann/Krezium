@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import '../data/models/credit.dart';
 import '../data/models/installment.dart';
-import 'card_calculator.dart';
+import 'card_statement_engine.dart';
 import 'credit_calculator.dart';
 import 'date_utils.dart';
 import 'interest_rate.dart';
@@ -26,7 +26,7 @@ class PendingPayment {
   double get amount {
     if (installment != null) return installment!.amount;
     final c = credit;
-    return c is CardCredit ? c.currentBalance : 0;
+    return c is CardCredit ? getPayableSummary(c).exigible : 0;
   }
 
   int daysUntilDue([DateTime? now]) {
@@ -91,8 +91,11 @@ List<PendingPayment> buildPendingPayments(
           ),
         );
       }
-    } else if (c is CardCredit && c.currentBalance > 0) {
-      items.add(PendingPayment(credit: c, dueDate: getCardCycleDates(c).dueDate));
+    } else if (c is CardCredit) {
+      final summary = getPayableSummary(c);
+      if (summary.dueDate != null) {
+        items.add(PendingPayment(credit: c, dueDate: summary.dueDate!));
+      }
     }
   }
   items.sort((a, b) => b.urgency(now).compareTo(a.urgency(now)));

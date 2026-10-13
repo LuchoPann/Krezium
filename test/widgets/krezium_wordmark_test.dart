@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:krezium/widgets/kredit_wordmark.dart';
+import 'package:krezium/widgets/krezium_wordmark.dart';
 
 void main() {
   testWidgets('AppWordmark renders without crashing', (tester) async {

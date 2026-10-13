@@ -9,7 +9,7 @@ import '../../providers/credits_provider.dart';
 import '../../screens/credit_detail/edit_credit_sheet.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/credit_display_utils.dart';
-import '../kredit_bottom_dialogs.dart';
+import '../krezium_bottom_dialogs.dart';
 import 'schedule_tab.dart';
 import 'stat_box.dart';
 import 'summary_tab.dart';
