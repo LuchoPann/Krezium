@@ -204,6 +204,13 @@ class _FinanzasEstadisticasScreenState
     final asyncLibros = ref.watch(financeAccountsProvider);
     final asyncCats   = ref.watch(allFinanceCategoriesProvider);
     final colors      = Theme.of(context).extension<AppThemeColors>()!;
+    // Balance "oficial" (transfer-aware) del libro activo — la tarjeta
+    // "Balance" de la fila Resumen lo usa en vez del balance period-scoped
+    // de _totales, que viene de una query solo-origen y no refleja
+    // transferencias recibidas dentro del periodo.
+    final balanceOficial = _libroActual == null
+        ? null
+        : ref.watch(financeAccountBalanceProvider(_libroActual!.id));
 
     // Auto-set libro from provider if still null (first frame after accounts load)
     if (_libroActual == null) {
@@ -286,6 +293,16 @@ class _FinanzasEstadisticasScreenState
           final pieData = _gastosPorCategoria(allTxs);
           final tendencia = _tendencia(allTxs);
           final hayDatos = pieData.isNotEmpty || tot.ingresos > 0 || tot.gastos > 0;
+          // Balance "oficial" (transfer-aware) para la tarjeta de Resumen —
+          // tot.balance es period-scoped y viene de una query solo-origen,
+          // así que no refleja transferencias recibidas dentro del periodo.
+          // Mientras el provider carga/falla, se usa tot.balance como
+          // fallback visual.
+          final balanceTarjeta = balanceOficial?.maybeWhen(
+                data: (b) => b.saldo,
+                orElse: () => tot.balance,
+              ) ??
+              tot.balance;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -338,8 +355,8 @@ class _FinanzasEstadisticasScreenState
                     const SizedBox(width: 8),
                     _ResumenCard(
                       label: 'Balance',
-                      monto: tot.balance,
-                      color: tot.balance >= 0 ? _kIngresos : _kGastos,
+                      monto: balanceTarjeta,
+                      color: balanceTarjeta >= 0 ? _kIngresos : _kGastos,
                       colors: colors,
                     ),
                   ],
