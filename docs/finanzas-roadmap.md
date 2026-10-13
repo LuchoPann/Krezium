@@ -2,10 +2,10 @@
 
 Roadmap maestro de 9 fases propuesto en `UltimoChatConGPT.md`. Reglas: una fase a la vez, sin avanzar sin autorización, sin romper lo maduro (registros/transacciones/categorías/historial).
 
-## Progreso: 1 de 9 fases (Fase 00 cerrada)
+## Progreso: 2 de 9 fases (Fase 00 y Fase 01 cerradas)
 
 - [x] **Fase 00 — Auditoría técnica** (solo lectura) — cerrada 2026-10-13
-- [ ] Fase 01 — Integridad financiera y cálculos
+- [x] **Fase 01 — Integridad financiera y cálculos** — cerrada 2026-10-13 — ver [`docs/finanzas-fase01-cierre.md`](./finanzas-fase01-cierre.md)
 - [ ] Fase 02 — Navegación y estructura de vistas
 - [ ] Fase 03 — Inicio financiero (Registros)
 - [ ] Fase 04 — Presupuestos
