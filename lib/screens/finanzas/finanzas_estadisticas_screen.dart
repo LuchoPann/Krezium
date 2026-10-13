@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/models/finance_models.dart';
+import 'package:krezium/domain/finance_ledger.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/theme/app_theme.dart';
@@ -134,16 +135,13 @@ class _FinanzasEstadisticasScreenState
 
   ({double ingresos, double gastos, double balance}) _totales(
       List<FinanceTransaction> txs) {
-    double ing = 0, gas = 0;
-    for (final t in txs) {
-      if (!_periodo.isInRange(t.fecha)) continue;
-      if (t.tipo == 'ingreso') ing += t.monto;
-      if (t.tipo == 'gasto')   gas += t.monto;
-    }
+    final enPeriodo =
+        txs.where((t) => _periodo.isInRange(t.fecha)).toList();
+    final ig = calcularIngresosGastos(enPeriodo, _libroActual?.id ?? '');
     return (
-      ingresos: ing,
-      gastos: gas,
-      balance: (_libroActual?.saldoInicial ?? 0) + ing - gas,
+      ingresos: ig.ingresos,
+      gastos: ig.gastos,
+      balance: (_libroActual?.saldoInicial ?? 0) + ig.ingresos - ig.gastos,
     );
   }
 
@@ -426,16 +424,6 @@ class _FinanzasEstadisticasScreenState
                                 libro: l,
                                 libroColor: lColor,
                                 colors: colors,
-                                txsFuture: ref
-                                    .read(databaseProvider)
-                                    .getFinanceTransactionsByLibro(
-                                      libroId: l.id,
-                                      mes: null,
-                                      tipo: null,
-                                    )
-                                    .then((rows) => rows
-                                        .map(FinanceTransaction.fromRow)
-                                        .toList()),
                               );
                             },
                           ),
@@ -760,33 +748,30 @@ class _BarTendencia extends StatelessWidget {
 
 // ─── Libro balance card ───────────────────────────────────────────────────────
 
-class _LibroBalanceCard extends StatelessWidget {
+class _LibroBalanceCard extends ConsumerWidget {
   final FinanceAccount libro;
   final Color libroColor;
   final AppThemeColors colors;
-  final Future<List<FinanceTransaction>> txsFuture;
 
   const _LibroBalanceCard({
     required this.libro,
     required this.libroColor,
     required this.colors,
-    required this.txsFuture,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<FinanceTransaction>>(
-      future: txsFuture,
-      builder: (ctx, snap) {
-        double balance = libro.saldoInicial;
-        if (snap.hasData) {
-          for (final t in snap.data!) {
-            if (t.tipo == 'ingreso') balance += t.monto;
-            if (t.tipo == 'gasto')   balance -= t.monto;
-          }
-        }
-        final balanceColor = balance >= 0 ? _kIngresos : _kGastos;
-        return Container(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final balanceAsync = ref.watch(financeAccountBalanceProvider(libro.id));
+    return balanceAsync.when(
+      loading: () => _buildCard(libro.saldoInicial),
+      error: (e, st) => _buildCard(libro.saldoInicial),
+      data: (b) => _buildCard(b.saldo),
+    );
+  }
+
+  Widget _buildCard(double balance) {
+    final balanceColor = balance >= 0 ? _kIngresos : _kGastos;
+    return Container(
           width: 140,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -838,7 +823,5 @@ class _LibroBalanceCard extends StatelessWidget {
             ],
           ),
         );
-      },
-    );
   }
 }

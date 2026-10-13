@@ -1,0 +1,40 @@
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:krezium/data/db/database.dart';
+import 'package:krezium/providers/database_provider.dart';
+import 'package:krezium/providers/finance_provider.dart';
+
+void main() {
+  test('financeAccountBalanceProvider combina saldo, ingresos/gastos y reservas', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    await db.upsertFinanceAccount(FinanceAccountsCompanion.insert(
+      id: 'A', nombre: 'A', tipo: 'efectivo', icono: 'wallet', color: '#000',
+      saldoInicial: const Value(100),
+    ));
+    await db.upsertFinanceTransaction(FinanceTransactionsCompanion.insert(
+      id: 't1', accountId: 'A', categoryId: 'ingresos', tipo: 'ingreso',
+      monto: 200, fecha: '2026-10-01',
+    ));
+    await db.upsertFinanceReservation(FinanceReservationsCompanion.insert(
+      id: 'r1', accountId: 'A', nombre: 'Vacaciones', monto: 50, creadaEn: '2026-10-01',
+    ));
+
+    final container = ProviderContainer(overrides: [
+      databaseProvider.overrideWithValue(db),
+    ]);
+    addTearDown(container.dispose);
+
+    final balance = await container.read(financeAccountBalanceProvider('A').future);
+
+    expect(balance.saldo, 300);
+    expect(balance.ingresos, 200);
+    expect(balance.gastos, 0);
+    expect(balance.reservado, 50);
+    expect(balance.disponibleEstimado, 250);
+    expect(balance.reservasExcedenSaldo, false);
+
+    await db.close();
+  });
+}

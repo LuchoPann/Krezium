@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/finanzas_filtros.dart';
 import 'package:krezium/data/models/finance_models.dart';
+import 'package:krezium/domain/finance_ledger.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/nueva_transaccion_sheet.dart';
@@ -116,15 +117,8 @@ class _FinanzasLibroTransaccionesScreenState
 
   // ─── Totales ───────────────────────────────────────────────────────────────
 
-  ({double ingresos, double gastos, double balance}) _totales(
-      List<FinanceTransaction> txs) {
-    double ing = 0, gas = 0;
-    for (final t in txs) {
-      if (t.tipo == 'ingreso') ing += t.monto;
-      if (t.tipo == 'gasto') gas += t.monto;
-    }
-    return (ingresos: ing, gastos: gas, balance: _libroActual.saldoInicial + ing - gas);
-  }
+  ({double ingresos, double gastos}) _totales(List<FinanceTransaction> txs) =>
+      calcularIngresosGastos(txs, _libroActual.id);
 
   // ─── Filtros sheet ─────────────────────────────────────────────────────────
 
@@ -242,6 +236,11 @@ class _FinanzasLibroTransaccionesScreenState
         data: (txs) {
           final grupos = _agrupar(txs, filtros.periodo, filtros.ascending);
           final tot = _totales(txs);
+          final balanceAsync = ref.watch(financeAccountBalanceProvider(_libroActual.id));
+          final balance = balanceAsync.maybeWhen(
+            data: (b) => b.saldo,
+            orElse: () => _libroActual.saldoInicial,
+          );
 
           final catMap = asyncCats.valueOrNull != null
               ? {for (final c in asyncCats.valueOrNull!) c.id: c}
@@ -319,7 +318,7 @@ class _FinanzasLibroTransaccionesScreenState
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                 child: AppSectionCard(
-                  children: [_ResumenCard(tot: tot, cantidad: txs.length)],
+                  children: [_ResumenCard(tot: tot, balance: balance, cantidad: txs.length)],
                 ),
               ),
             ),
@@ -467,10 +466,11 @@ class _FinanzasLibroTransaccionesScreenState
 // resumen — evita que el verde/rojo "invada" la pantalla antes de llegar
 // siquiera al histórico.
 class _ResumenCard extends StatelessWidget {
-  final ({double ingresos, double gastos, double balance}) tot;
+  final ({double ingresos, double gastos}) tot;
+  final double balance;
   final int cantidad;
 
-  const _ResumenCard({required this.tot, required this.cantidad});
+  const _ResumenCard({required this.tot, required this.balance, required this.cantidad});
 
   String _insight() {
     if (cantidad == 0) return 'Aún no hay registros.';
@@ -515,7 +515,7 @@ class _ResumenCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    formatCOP(tot.balance),
+                    formatCOP(balance),
                     style: TextStyle(
                       fontSize: AppTextSize.hero,
                       fontWeight: FontWeight.w800,

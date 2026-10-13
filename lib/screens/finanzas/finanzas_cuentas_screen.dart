@@ -602,7 +602,7 @@ class _LibroCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final libroColor = _colorFromHex(libro.color);
     final colors = Theme.of(context).extension<AppThemeColors>()!;
-    final summary = ref.watch(financeAccountSummaryProvider(libro.id));
+    final balanceAsync = ref.watch(financeAccountBalanceProvider(libro.id));
 
     return Dismissible(
       key: ValueKey(libro.id),
@@ -723,7 +723,7 @@ class _LibroCard extends ConsumerWidget {
                         const SizedBox(height: 8),
                         // ── Balance: protagonista, grande y contundente —
                         // lo primero que se lee al escanear la tarjeta.
-                        summary.when(
+                        balanceAsync.when(
                           loading: () => SizedBox(
                             height: AppTextSize.emphasis,
                             child: Align(
@@ -735,8 +735,8 @@ class _LibroCard extends ConsumerWidget {
                             ),
                           ),
                           error: (e, st) => const SizedBox(height: AppTextSize.emphasis),
-                          data: (s) {
-                            final balance = libro.saldoInicial + s.ingresos - s.gastos;
+                          data: (b) {
+                            final balance = b.saldo;
                             final positivo = balance >= 0;
                             final balanceColor = positivo
                                 ? const Color(0xFF22C55E)
@@ -759,21 +759,21 @@ class _LibroCard extends ConsumerWidget {
                         // Ingresos/Gastos en texto neutro — el balance de
                         // arriba ya es el único color de la tarjeta; una
                         // barra y cifras verdes/rojas acá encima saturaban.
-                        summary.when(
+                        balanceAsync.when(
                           loading: () => const SizedBox.shrink(),
                           error: (e, st) => const SizedBox.shrink(),
-                          data: (s) => Row(
+                          data: (b) => Row(
                             children: [
                               _StatColumn(
                                 label: 'Ingresos',
-                                value: formatCOP(s.ingresos),
+                                value: formatCOP(b.ingresos),
                                 valueColor: colors.textPrimary,
                                 colors: colors,
                               ),
                               const SizedBox(width: AppSpacing.section),
                               _StatColumn(
                                 label: 'Gastos',
-                                value: formatCOP(s.gastos),
+                                value: formatCOP(b.gastos),
                                 valueColor: colors.textPrimary,
                                 colors: colors,
                               ),

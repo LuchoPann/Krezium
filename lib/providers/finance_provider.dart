@@ -3,6 +3,7 @@ import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/finanzas_filtros.dart';
 import 'package:krezium/data/models/finance_models.dart';
+import 'package:krezium/domain/finance_ledger.dart';
 import 'database_provider.dart';
 
 final financeAccountsProvider = FutureProvider<List<FinanceAccountRow>>((ref) {
@@ -64,7 +65,52 @@ final finanzasFiltrosProvider = StateProvider<FinanzasFiltros>(
 // Libro activo (ID del libro seleccionado en Tab 0)
 final finanzasLibroActivoProvider = StateProvider<String?>((_) => null);
 
+class FinanceAccountBalance {
+  final double saldo;
+  final double ingresos;
+  final double gastos;
+  final double reservado;
+  final double disponibleEstimado;
+  final bool reservasExcedenSaldo;
+  const FinanceAccountBalance({
+    required this.saldo, required this.ingresos, required this.gastos,
+    required this.reservado, required this.disponibleEstimado,
+    required this.reservasExcedenSaldo,
+  });
+}
+
+/// Fuente única de cálculo de saldo/ingresos/gastos/disponible para un
+/// registro — reemplaza los cálculos locales que antes vivían repetidos en
+/// finanzas_cuentas_screen, finanzas_libro_transacciones_screen y
+/// finanzas_estadisticas_screen.
+final financeAccountBalanceProvider =
+    FutureProvider.family<FinanceAccountBalance, String>((ref, libroId) async {
+  final db = ref.watch(databaseProvider);
+  final cuentas = await db.getFinanceAccounts(incluirArchivadas: true);
+  final cuenta = cuentas.where((c) => c.id == libroId).firstOrNull;
+  final saldoInicial = cuenta?.saldoInicial ?? 0.0;
+
+  final rows = await db.getFinanceTransactionsInvolvingLibro(libroId: libroId);
+  final txs = rows.map(FinanceTransaction.fromRow).toList();
+
+  final saldo = calcularSaldo(
+    saldoInicial: saldoInicial, txsInvolucradas: txs, libroId: libroId,
+  );
+  final ig = calcularIngresosGastos(txs, libroId);
+
+  final reservas = await db.getFinanceReservations(libroId);
+  final reservado = totalReservado(reservas);
+  final disp = calcularDisponibleEstimado(saldo: saldo, reservado: reservado);
+
+  return FinanceAccountBalance(
+    saldo: saldo, ingresos: ig.ingresos, gastos: ig.gastos,
+    reservado: reservado, disponibleEstimado: disp.disponibleEstimado,
+    reservasExcedenSaldo: disp.reservasExcedenSaldo,
+  );
+});
+
 // Totales globales (sin filtros) de un libro — para el lobby
+// @Deprecated('Usar financeAccountBalanceProvider en su lugar')
 final financeAccountSummaryProvider =
     FutureProvider.family<({double ingresos, double gastos}), String>(
         (ref, libroId) async {
