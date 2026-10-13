@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/models/finance_models.dart';
+import 'package:krezium/domain/finance_ledger.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/categoria_selector_sheet.dart';
@@ -185,6 +186,10 @@ class _NuevaTransaccionSheetState
     final monto = double.tryParse(_montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
     if (monto == null || monto <= 0) return;
     if (_libroId == null) return;
+    if (_tipo == 'transferencia' &&
+        !esTransferenciaValida(origenId: _libroId, destinoId: _libroDestinoId)) {
+      return;
+    }
     if (_categoriaSeleccionada == null && _tipo != 'transferencia') return;
 
     setState(() => _guardando = true);

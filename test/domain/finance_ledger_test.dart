@@ -79,6 +79,21 @@ void main() {
     });
   });
 
+  group('esTransferenciaValida', () {
+    test('origen y destino distintos y presentes: válida', () {
+      expect(esTransferenciaValida(origenId: 'A', destinoId: 'B'), true);
+    });
+    test('origen igual a destino: inválida', () {
+      expect(esTransferenciaValida(origenId: 'A', destinoId: 'A'), false);
+    });
+    test('destino nulo: inválida', () {
+      expect(esTransferenciaValida(origenId: 'A', destinoId: null), false);
+    });
+    test('origen nulo: inválida', () {
+      expect(esTransferenciaValida(origenId: null, destinoId: 'B'), false);
+    });
+  });
+
   group('calcularDisponibleEstimado', () {
     test('sin reservas, disponible == saldo', () {
       final r = calcularDisponibleEstimado(saldo: 500, reservado: 0);

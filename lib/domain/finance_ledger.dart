@@ -48,6 +48,14 @@ double calcularSaldo({
   return (ingresos: ingresos, gastos: gastos);
 }
 
+/// Una transferencia es válida solo si tiene origen y destino distintos y
+/// ambos definidos. No valida existencia en DB — eso lo hace quien la llama
+/// con los libros ya cargados en memoria (ver nueva_transaccion_sheet).
+bool esTransferenciaValida({required String? origenId, required String? destinoId}) {
+  if (origenId == null || destinoId == null) return false;
+  return origenId != destinoId;
+}
+
 double totalReservado(List<FinanceReservationRow> reservas) =>
     reservas.fold(0.0, (sum, r) => sum + r.monto);
 
