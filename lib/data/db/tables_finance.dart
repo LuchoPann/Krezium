@@ -49,6 +49,7 @@ class FinanceTransactions extends Table {
   @ReferenceName('transferTransactions')
   TextColumn get transferToAccountId => text().nullable()
       .references(FinanceAccounts, #id, onDelete: KeyAction.setNull)();
+  TextColumn get revisionNota => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -87,4 +88,17 @@ class FinanceBudgets extends Table {
   IntColumn get anio => integer()();
   IntColumn get mes => integer()(); // 1-12
   RealColumn get montoLimite => real()();
+}
+
+@DataClassName('FinanceReservationRow')
+class FinanceReservations extends Table {
+  TextColumn get id => text()();
+  TextColumn get accountId =>
+      text().references(FinanceAccounts, #id, onDelete: KeyAction.restrict)();
+  TextColumn get nombre => text()();
+  RealColumn get monto => real()();
+  TextColumn get creadaEn => text()(); // ISO8601
+
+  @override
+  Set<Column> get primaryKey => {id};
 }

@@ -37,7 +37,7 @@ class QuotaHasActivePurchasesException implements Exception {
   Credits, Installments, CardMovements, CardStatements,
   InstallmentPurchases, LoanAbonos, CommercialQuotas, PagosRealizados,
   FinanceAccounts, FinanceCategories, FinanceTransactions, FinanceBudgets,
-  FinancePlaces, FinanceTemplates,
+  FinancePlaces, FinanceTemplates, FinanceReservations,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(openConnection());
@@ -46,7 +46,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -54,6 +54,24 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
         },
         onUpgrade: (m, from, to) async {
+          // Algunos dispositivos (incl. el de desarrollo) ya tienen estas
+          // columnas/tablas de iteraciones previas de hot-restart aunque su
+          // PRAGMA user_version no haya llegado a esa versión todavía.
+          // Verificar con PRAGMA table_info / sqlite_master antes de cada
+          // ADD COLUMN / CREATE TABLE evita "duplicate column name"/"table
+          // exists".
+          Future<Set<String>> colsOf(String table) async {
+            final rows = await customSelect('PRAGMA table_info($table)').get();
+            return rows.map((r) => r.read<String>('name')).toSet();
+          }
+
+          Future<bool> tableExists(String table) async {
+            final rows = await customSelect(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='$table'")
+                .get();
+            return rows.isNotEmpty;
+          }
+
           if (from < 2) {
             await m.addColumn(credits, credits.interestRateType);
           }
@@ -166,18 +184,6 @@ class AppDatabase extends _$AppDatabase {
             // Igual que el guard de from<12 para notification_days_before:
             // verificar con PRAGMA table_info antes de cada ADD COLUMN /
             // CREATE TABLE evita "duplicate column name"/"table exists".
-            Future<Set<String>> colsOf(String table) async {
-              final rows = await customSelect('PRAGMA table_info($table)').get();
-              return rows.map((r) => r.read<String>('name')).toSet();
-            }
-
-            Future<bool> tableExists(String table) async {
-              final rows = await customSelect(
-                      "SELECT name FROM sqlite_master WHERE type='table' AND name='$table'")
-                  .get();
-              return rows.isNotEmpty;
-            }
-
             if (from < 15) {
               if (!await tableExists('card_statements')) {
                 await m.createTable(cardStatements);
@@ -214,6 +220,15 @@ class AppDatabase extends _$AppDatabase {
             final acctCols = await customSelect('PRAGMA table_info(finance_accounts)').get();
             if (!acctCols.map((r) => r.read<String>('name')).contains('descripcion')) {
               await m.addColumn(financeAccounts, financeAccounts.descripcion);
+            }
+          }
+          if (from < 19) {
+            if (!await tableExists('finance_reservations')) {
+              await m.createTable(financeReservations);
+            }
+            final txCols = await colsOf('finance_transactions');
+            if (!txCols.contains('revision_nota')) {
+              await m.addColumn(financeTransactions, financeTransactions.revisionNota);
             }
           }
         },
@@ -783,6 +798,17 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> upsertFinanceBudget(FinanceBudgetsCompanion row) =>
       into(financeBudgets).insertOnConflictUpdate(row);
+
+  // --- Finance Reservations ---
+
+  Future<List<FinanceReservationRow>> getFinanceReservations(String accountId) =>
+      (select(financeReservations)..where((r) => r.accountId.equals(accountId))).get();
+
+  Future<void> upsertFinanceReservation(FinanceReservationsCompanion row) =>
+      into(financeReservations).insertOnConflictUpdate(row);
+
+  Future<void> deleteFinanceReservation(String id) =>
+      (delete(financeReservations)..where((r) => r.id.equals(id))).go();
 
   // -------------------------------------------------------------------------
 
