@@ -30,6 +30,18 @@ class QuotaHasActivePurchasesException implements Exception {
       'QuotaHasActivePurchasesException: $activeCount active purchase(s)';
 }
 
+/// Thrown by [AppDatabase.deleteFinanceAccountSafely] when [count]
+/// transactions still reference the account (as origin or transfer
+/// destination) — the UI should offer archiving or a confirmed hard delete
+/// instead of silently losing history.
+class AccountHasTransactionsException implements Exception {
+  final int count;
+  const AccountHasTransactionsException(this.count);
+  @override
+  String toString() =>
+      'AccountHasTransactionsException: $count transacción(es) asociada(s)';
+}
+
 /// App-wide Drift database. Replaces app.js's single Dexie `kv` table (which
 /// just stashed the whole `state` object as one JSON blob) with a proper
 /// relational schema — see lib/data/db/tables.dart for the mapping notes.
@@ -704,8 +716,44 @@ class AppDatabase extends _$AppDatabase {
 
   // --- Finance Accounts ---
 
-  Future<List<FinanceAccountRow>> getFinanceAccounts() =>
-      select(financeAccounts).get();
+  Future<List<FinanceAccountRow>> getFinanceAccounts({bool incluirArchivadas = false}) {
+    final q = select(financeAccounts);
+    if (!incluirArchivadas) q.where((t) => t.activa.equals(true));
+    return q.get();
+  }
+
+  Future<void> archiveFinanceAccount(String id) =>
+      (update(financeAccounts)..where((t) => t.id.equals(id)))
+          .write(const FinanceAccountsCompanion(activa: Value(false)));
+
+  Future<void> reactivateFinanceAccount(String id) =>
+      (update(financeAccounts)..where((t) => t.id.equals(id)))
+          .write(const FinanceAccountsCompanion(activa: Value(true)));
+
+  Future<int> countTransactionsForAccount(String accountId) async {
+    final rows = await (select(financeTransactions)
+          ..where((t) =>
+              t.accountId.equals(accountId) | t.transferToAccountId.equals(accountId)))
+        .get();
+    return rows.length;
+  }
+
+  Future<void> deleteFinanceAccountSafely(String id) async {
+    final count = await countTransactionsForAccount(id);
+    if (count > 0) throw AccountHasTransactionsException(count);
+    await deleteFinanceAccount(id);
+  }
+
+  /// Borrado físico definitivo: elimina las transacciones donde esta cuenta
+  /// es el origen y luego la cuenta. Las transacciones donde esta cuenta
+  /// era el destino de una transferencia (transferToAccountId) quedan con
+  /// ese campo en null por el FK onDelete: setNull — se conservan como
+  /// ingreso/gasto normal del otro lado, pero pierden la referencia de
+  /// destino. Solo se invoca tras confirmación explícita del usuario.
+  Future<void> deleteFinanceAccountAndHistory(String id) => transaction(() async {
+        await (delete(financeTransactions)..where((t) => t.accountId.equals(id))).go();
+        await deleteFinanceAccount(id);
+      });
 
   Future<void> upsertFinanceAccount(FinanceAccountsCompanion row) =>
       into(financeAccounts).insertOnConflictUpdate(row);
@@ -783,6 +831,24 @@ class AppDatabase extends _$AppDatabase {
       ..where((t) => t.accountId.equals(libroId));
     if (mes != null) q.where((t) => t.fecha.like('$mes%'));
     if (tipo != null) q.where((t) => t.tipo.equals(tipo));
+    q.orderBy([(t) => ascending
+        ? OrderingTerm.asc(t.fecha)
+        : OrderingTerm.desc(t.fecha)]);
+    return q.get();
+  }
+
+  /// Igual que [getFinanceTransactionsByLibro] pero incluye también las
+  /// transferencias cuyo destino es [libroId] — necesario para que el
+  /// registro destino vea el dinero que recibió.
+  Future<List<FinanceTransactionRow>> getFinanceTransactionsInvolvingLibro({
+    required String libroId,
+    String? mes,
+    bool ascending = false,
+  }) {
+    final q = select(financeTransactions)
+      ..where((t) =>
+          t.accountId.equals(libroId) | t.transferToAccountId.equals(libroId));
+    if (mes != null) q.where((t) => t.fecha.like('$mes%'));
     q.orderBy([(t) => ascending
         ? OrderingTerm.asc(t.fecha)
         : OrderingTerm.desc(t.fecha)]);
