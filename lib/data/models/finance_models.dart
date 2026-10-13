@@ -113,12 +113,13 @@ class FinanceTransaction {
   final String? personaSitio;
   final String? hora;
   final String? transferToAccountId;
+  final String? revisionNota;
 
   const FinanceTransaction({
     required this.id, required this.accountId, required this.categoryId,
     required this.tipo, required this.monto, required this.fecha,
     required this.nota, required this.esRecurrente, this.recurrenciaConfig,
-    this.personaSitio, this.hora, this.transferToAccountId,
+    this.personaSitio, this.hora, this.transferToAccountId, this.revisionNota,
   });
 
   factory FinanceTransaction.fromRow(FinanceTransactionRow row) => FinanceTransaction(
@@ -134,6 +135,7 @@ class FinanceTransaction {
     personaSitio: row.personaSitio,
     hora: row.hora,
     transferToAccountId: row.transferToAccountId,
+    revisionNota: row.revisionNota,
   );
 
   Map<String, dynamic> toJson() => {
@@ -142,6 +144,7 @@ class FinanceTransaction {
     'esRecurrente': esRecurrente, 'recurrenciaConfig': recurrenciaConfig,
     'personaSitio': personaSitio, 'hora': hora,
     'transferToAccountId': transferToAccountId,
+    'revisionNota': revisionNota,
   };
 
   factory FinanceTransaction.fromJson(Map<String, dynamic> json) => FinanceTransaction(
@@ -157,6 +160,7 @@ class FinanceTransaction {
     personaSitio: json['personaSitio'] as String?,
     hora: json['hora'] as String?,
     transferToAccountId: json['transferToAccountId'] as String?,
+    revisionNota: json['revisionNota'] as String?,
   );
 }
 
