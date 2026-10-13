@@ -936,3 +936,69 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 }
+
+class FinanceHistoricalAudit {
+  final int reconstruibles;
+  final int dudosas;
+  final int noReconstruibles;
+  final List<String> idsDudosos;
+  const FinanceHistoricalAudit({
+    required this.reconstruibles,
+    required this.dudosas,
+    required this.noReconstruibles,
+    required this.idsDudosos,
+  });
+}
+
+/// Clasifica las transacciones tipo 'transferencia' existentes:
+/// - reconstruible: tiene transferToAccountId no nulo y ese registro existe
+///   y es distinto del origen — el fix de cálculo (Tasks 2-4) ya la hace
+///   funcionar correctamente sin modificar datos.
+/// - dudosa: transferToAccountId nulo, o apunta a un registro que ya no
+///   existe, o es igual al origen (dato corrupto de antes de esta fase).
+/// No modifica nada — solo cuenta y lista.
+Future<FinanceHistoricalAudit> auditarTransferenciasHistoricas(AppDatabase db) async {
+  final todas = await (db.select(db.financeTransactions)
+        ..where((t) => t.tipo.equals('transferencia')))
+      .get();
+  final cuentas = (await db.getFinanceAccounts(incluirArchivadas: true))
+      .map((c) => c.id)
+      .toSet();
+
+  var reconstruibles = 0;
+  final dudosas = <String>[];
+  for (final t in todas) {
+    final destino = t.transferToAccountId;
+    final esValida = destino != null && destino != t.accountId && cuentas.contains(destino);
+    if (esValida) {
+      reconstruibles++;
+    } else {
+      dudosas.add(t.id);
+    }
+  }
+  return FinanceHistoricalAudit(
+    reconstruibles: reconstruibles,
+    dudosas: dudosas.length,
+    noReconstruibles: 0,
+    idsDudosos: dudosas,
+  );
+}
+
+/// Marca con revisionNota (sin tocar monto/fecha/cuentas) las transferencias
+/// dudosas detectadas por [auditarTransferenciasHistoricas]. Idempotente:
+/// si ya tienen la nota, no se vuelve a escribir.
+Future<void> aplicarSenalamientoTransferenciasDudosas(AppDatabase db) async {
+  final audit = await auditarTransferenciasHistoricas(db);
+  for (final id in audit.idsDudosos) {
+    final fila = await (db.select(db.financeTransactions)..where((t) => t.id.equals(id)))
+        .getSingle();
+    if (fila.revisionNota != null) continue;
+    await (db.update(db.financeTransactions)..where((t) => t.id.equals(id))).write(
+      const FinanceTransactionsCompanion(
+        revisionNota: Value(
+          'Transferencia histórica sin destino verificable — revisar manualmente.',
+        ),
+      ),
+    );
+  }
+}

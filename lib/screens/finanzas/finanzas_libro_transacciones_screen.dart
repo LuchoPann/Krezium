@@ -744,13 +744,33 @@ class _TxRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    montoStr,
-                    style: TextStyle(
-                      color: montoColor,
-                      fontWeight: FontWeight.bold,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (tx.revisionNota != null) ...[
+                        GestureDetector(
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(tx.revisionNota!)),
+                            );
+                          },
+                          child: Icon(
+                            Icons.warning_amber_rounded,
+                            size: AppIconSize.small,
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        montoStr,
+                        style: TextStyle(
+                          color: montoColor,
+                          fontWeight: FontWeight.bold,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
                   ),
                   if (tx.hora != null && tx.hora!.isNotEmpty) ...[
                     const SizedBox(height: 2),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -51,6 +52,10 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
   @override
   void initState() {
     super.initState();
+    // Señala (sin modificar datos de negocio) las transferencias históricas
+    // dudosas cada vez que se abre el módulo — idempotente y barato, evita
+    // acoplar esta lógica a la migración de schema (Task 7).
+    unawaited(aplicarSenalamientoTransferenciasDudosas(ref.read(databaseProvider)));
     _searchCtrl.addListener(() => setState(() => _query = _searchCtrl.text.trim().toLowerCase()));
     ref.listenManual<AsyncValue<List<FinanceAccountRow>>>(
       financeAccountsProvider,
