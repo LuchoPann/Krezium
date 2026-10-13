@@ -211,7 +211,16 @@ class _FinanzasLibroTransaccionesScreenState
   Future<void> _eliminar(FinanceTransaction tx) async {
     final db = ref.read(databaseProvider);
     await db.deleteFinanceTransaction(tx.id);
-    ref.invalidate(finanzasLibroTxProvider(_libroActual.id));
+    // La transacción pudo afectar tanto a su registro de origen como, si
+    // era una transferencia, al de destino — ambos saldos deben refrescarse.
+    final cuentasTocadas = <String>{
+      tx.accountId,
+      if (tx.transferToAccountId != null) tx.transferToAccountId!,
+    };
+    for (final cuentaId in cuentasTocadas) {
+      ref.invalidate(finanzasLibroTxProvider(cuentaId));
+      ref.invalidate(financeAccountBalanceProvider(cuentaId));
+    }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transacción eliminada')),
@@ -395,6 +404,7 @@ class _FinanzasLibroTransaccionesScreenState
                             ),
                           _TxRow(
                             tx: grupoTxs[i],
+                            libroActualId: _libroActual.id,
                             cat: catMap[grupoTxs[i].categoryId],
                             onConfirmDismiss: () =>
                                 _confirmarEliminar(context, grupoTxs[i]),
@@ -416,8 +426,10 @@ class _FinanzasLibroTransaccionesScreenState
           }
 
           return RefreshIndicator(
-            onRefresh: () async =>
-                ref.invalidate(finanzasLibroTxProvider(_libroActual.id)),
+            onRefresh: () async {
+              ref.invalidate(finanzasLibroTxProvider(_libroActual.id));
+              ref.invalidate(financeAccountBalanceProvider(_libroActual.id));
+            },
             child: CustomScrollView(slivers: slivers),
           );
         },
@@ -615,6 +627,7 @@ class _ResumenDato extends StatelessWidget {
 // ─── Fila de transacción ──────────────────────────────────────────────────────
 class _TxRow extends StatelessWidget {
   final FinanceTransaction tx;
+  final String libroActualId;
   final CatalogoCategoria? cat;
   final Future<bool> Function() onConfirmDismiss;
   final VoidCallback onDismissed;
@@ -623,6 +636,7 @@ class _TxRow extends StatelessWidget {
 
   const _TxRow({
     required this.tx,
+    required this.libroActualId,
     required this.cat,
     required this.onConfirmDismiss,
     required this.onDismissed,
@@ -632,13 +646,20 @@ class _TxRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isIngreso = tx.tipo == 'ingreso';
+    // Una transferencia entrante (este libro es el destino, no el origen)
+    // siempre suma, sin importar que tx.tipo siga siendo 'transferencia' —
+    // esa marca describe la transacción desde el lado del origen.
+    final esTransferenciaEntrante =
+        tx.tipo == 'transferencia' && tx.accountId != libroActualId;
+    final isIngreso = tx.tipo == 'ingreso' || esTransferenciaEntrante;
     final montoColor =
         isIngreso ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
     final montoStr =
         '${isIngreso ? '+' : '-'}${formatCOP(tx.monto)}';
 
-    final catNombre = cat?.nombre ?? tx.categoryId;
+    final catNombre = esTransferenciaEntrante
+        ? 'Transferencia recibida'
+        : (cat?.nombre ?? tx.categoryId);
 
     // La subcategoría es el título (protagonista de la fila); la categoría
     // padre pasa al subtítulo junto con nota y ordenante.

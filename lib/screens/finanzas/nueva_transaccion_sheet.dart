@@ -188,6 +188,9 @@ class _NuevaTransaccionSheetState
     if (_libroId == null) return;
     if (_tipo == 'transferencia' &&
         !esTransferenciaValida(origenId: _libroId, destinoId: _libroDestinoId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Elige un registro destino distinto al de origen')),
+      );
       return;
     }
     if (_categoriaSeleccionada == null && _tipo != 'transferencia') return;
@@ -233,24 +236,32 @@ class _NuevaTransaccionSheetState
         hora: Value(horaStr),
         personaSitio: Value(ordenante.isEmpty ? null : ordenante),
         transferToAccountId: Value(_tipo == 'transferencia' ? _libroDestinoId : null),
+        // Si la transacción pasa a ser una transferencia válida (o deja de
+        // serlo) tras una edición, cualquier aviso de "transferencia dudosa"
+        // que tuviera de antes queda obsoleto — insertOnConflictUpdate deja
+        // intactos los campos no mencionados en el companion, así que hay
+        // que limpiarlo explícitamente o el badge histórico queda pegado
+        // para siempre aunque el usuario ya corrigió el dato.
+        revisionNota: const Value(null),
       ));
 
-      // finanzasLibroTxProvider/financeAccountSummaryProvider son
+      // finanzasLibroTxProvider/financeAccountBalanceProvider son
       // FutureProvider: no son reactivos a escrituras en la DB, solo
       // vuelven a correr si algo que watchean cambia o si se invalidan a
-      // mano — sin esto, la lista y los totales quedaban desactualizados
-      // hasta un pull-to-refresh manual.
-      ref.invalidate(finanzasLibroTxProvider(_libroId!));
-      ref.invalidate(financeAccountSummaryProvider(_libroId!));
-      if (_tipo == 'transferencia' && _libroDestinoId != null) {
-        ref.invalidate(finanzasLibroTxProvider(_libroDestinoId!));
-        ref.invalidate(financeAccountSummaryProvider(_libroDestinoId!));
-      }
-      // Al editar, si se cambió de libro, el de origen también queda con
-      // una lista/totales desactualizados.
-      if (widget.editar != null && widget.editar!.accountId != _libroId) {
-        ref.invalidate(finanzasLibroTxProvider(widget.editar!.accountId));
-        ref.invalidate(financeAccountSummaryProvider(widget.editar!.accountId));
+      // mano — sin esto, la lista y los totales/saldo quedaban
+      // desactualizados hasta un pull-to-refresh manual o reinicio.
+      final cuentasTocadas = <String>{
+        _libroId!,
+        if (_tipo == 'transferencia' && _libroDestinoId != null) _libroDestinoId!,
+        // Al editar, si se cambió de libro u origen/destino, las cuentas
+        // viejas también quedan con listas/saldos desactualizados.
+        if (widget.editar != null) widget.editar!.accountId,
+        if (widget.editar?.transferToAccountId != null)
+          widget.editar!.transferToAccountId!,
+      };
+      for (final cuentaId in cuentasTocadas) {
+        ref.invalidate(finanzasLibroTxProvider(cuentaId));
+        ref.invalidate(financeAccountBalanceProvider(cuentaId));
       }
       if (ordenante.isNotEmpty) ref.invalidate(financePlacesProvider);
 
@@ -351,6 +362,11 @@ class _NuevaTransaccionSheetState
                         key: const ValueKey(2),
                         tipo: _tipo,
                         isEditing: widget.editar != null,
+                        libros: libros,
+                        libroId: _libroId,
+                        libroDestinoId: _libroDestinoId,
+                        onLibroDestinoChanged: (v) =>
+                            setState(() => _libroDestinoId = v),
                         // Cambiar entre ingreso/gasto desde el paso 2 — antes
                         // solo era posible en el paso 1, que se salta cuando
                         // el sheet se abre con un libro ya preseleccionado
@@ -570,6 +586,10 @@ class _LibroSelector extends StatelessWidget {
 class _Paso2 extends ConsumerWidget {
   final String tipo;
   final bool isEditing;
+  final List<FinanceAccount> libros;
+  final String? libroId;
+  final String? libroDestinoId;
+  final ValueChanged<String?> onLibroDestinoChanged;
   final ValueChanged<String> onTipoChanged;
   final CatalogoCategoria? categoriaSeleccionada;
   final DateTime fecha;
@@ -594,6 +614,10 @@ class _Paso2 extends ConsumerWidget {
     super.key,
     required this.tipo,
     required this.isEditing,
+    required this.libros,
+    required this.libroId,
+    required this.libroDestinoId,
+    required this.onLibroDestinoChanged,
     required this.onTipoChanged,
     required this.categoriaSeleccionada,
     required this.fecha,
@@ -678,6 +702,22 @@ class _Paso2 extends ConsumerWidget {
         if (tipo != 'transferencia') ...[
           _TipoPill(tipo: tipo, onChanged: onTipoChanged, tc: tc),
           const SizedBox(height: 8),
+        ],
+
+        // Selector de destino: el Paso 1 (donde normalmente se elige) se
+        // salta al editar una transferencia ya existente — sin esto no
+        // había forma de corregir el destino de una transferencia dudosa
+        // desde el flujo de edición.
+        if (tipo == 'transferencia') ...[
+          _LibroSelector(
+            label: 'Destino',
+            libros: libros,
+            libroId: libroDestinoId,
+            onChanged: onLibroDestinoChanged,
+            tc: tc,
+            excludeId: libroId,
+          ),
+          const SizedBox(height: 16),
         ],
 
         // Monto como protagonista: hero centrado, coloreado por tipo. Lleva

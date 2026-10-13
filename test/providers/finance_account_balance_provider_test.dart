@@ -37,4 +37,37 @@ void main() {
 
     await db.close();
   });
+
+  test('invalidar el provider tras escribir una transacción refleja el nuevo saldo '
+      '(simula lo que hace la UI tras guardar/editar/eliminar una transacción)', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    await db.upsertFinanceAccount(FinanceAccountsCompanion.insert(
+      id: 'A', nombre: 'A', tipo: 'efectivo', icono: 'wallet', color: '#000',
+      saldoInicial: const Value(100),
+    ));
+
+    final container = ProviderContainer(overrides: [
+      databaseProvider.overrideWithValue(db),
+    ]);
+    addTearDown(container.dispose);
+
+    final inicial = await container.read(financeAccountBalanceProvider('A').future);
+    expect(inicial.saldo, 100);
+
+    // Escribir una transacción por fuera del provider — como lo hace
+    // nueva_transaccion_sheet._guardar antes de invalidar.
+    await db.upsertFinanceTransaction(FinanceTransactionsCompanion.insert(
+      id: 't1', accountId: 'A', categoryId: 'ingresos', tipo: 'ingreso',
+      monto: 500, fecha: '2026-10-01',
+    ));
+
+    // Sin invalidar, el FutureProvider (solo watchea databaseProvider) no
+    // recalcula solo — el mismo valor cacheado seguiría siendo 100 si no se
+    // invalida explícitamente, que es justo el bug que se está corrigiendo.
+    container.invalidate(financeAccountBalanceProvider('A'));
+    final actualizado = await container.read(financeAccountBalanceProvider('A').future);
+    expect(actualizado.saldo, 600);
+
+    await db.close();
+  });
 }

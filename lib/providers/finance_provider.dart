@@ -109,36 +109,16 @@ final financeAccountBalanceProvider =
   );
 });
 
-// Totales globales (sin filtros) de un libro — para el lobby
-// @Deprecated('Usar financeAccountBalanceProvider en su lugar')
-final financeAccountSummaryProvider =
-    FutureProvider.family<({double ingresos, double gastos}), String>(
-        (ref, libroId) async {
-  final db = ref.watch(databaseProvider);
-  final rows = await db.getFinanceTransactionsByLibro(
-    libroId: libroId,
-    mes: null,
-    tipo: null,
-    ascending: true,
-  );
-  final txs = rows.map(FinanceTransaction.fromRow).toList();
-  final ingresos = txs
-      .where((t) => t.tipo == 'ingreso')
-      .fold(0.0, (sum, t) => sum + t.monto);
-  final gastos = txs
-      .where((t) => t.tipo == 'gasto')
-      .fold(0.0, (sum, t) => sum + t.monto);
-  return (ingresos: ingresos, gastos: gastos);
-});
-
-// Historial completo del libro activo (sin recorte por mes)
+// Historial completo del libro activo (sin recorte por mes) — incluye las
+// transferencias entrantes (transferToAccountId == libroId) para que el
+// registro destino también vea el dinero que recibió.
 final finanzasLibroTxProvider =
     FutureProvider.family<List<FinanceTransaction>, String>(
         (ref, libroId) async {
   final db = ref.watch(databaseProvider);
   final filtros = ref.watch(finanzasFiltrosProvider);
   final tipo = filtros.tipoFiltro == 'todos' ? null : filtros.tipoFiltro;
-  final rows = await db.getFinanceTransactionsByLibro(
+  final rows = await db.getFinanceTransactionsInvolvingLibro(
     libroId: libroId,
     mes: null,
     tipo: tipo,

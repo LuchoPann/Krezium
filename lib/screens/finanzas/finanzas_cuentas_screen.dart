@@ -131,32 +131,40 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
 
   Future<void> _eliminarLibro(BuildContext context, FinanceAccount libro) async {
     final db = ref.read(databaseProvider);
-    final count = await db.countTransactionsForAccount(libro.id);
-    if (count == 0) {
-      await db.deleteFinanceAccountSafely(libro.id);
-      ref.invalidate(financeAccountsProvider);
-      return;
-    }
-    if (!context.mounted) return;
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar definitivamente'),
-        content: Text(
-          'Este registro tiene $count movimiento(s). Eliminarlo borrará también '
-          'todo su historial de forma irreversible. Si solo quieres dejar de '
-          'verlo pero conservar los datos, usa "Archivar" en su lugar.\n\n'
-          '¿Seguro que quieres eliminarlo y perder su historial para siempre?',
+    try {
+      final count = await db.countTransactionsForAccount(libro.id);
+      if (count == 0) {
+        await db.deleteFinanceAccountSafely(libro.id);
+        ref.invalidate(financeAccountsProvider);
+        return;
+      }
+      if (!context.mounted) return;
+      final confirmado = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Eliminar definitivamente'),
+          content: Text(
+            'Este registro tiene $count movimiento(s). Eliminarlo borrará también '
+            'todo su historial de forma irreversible. Si solo quieres dejar de '
+            'verlo pero conservar los datos, usa "Archivar" en su lugar.\n\n'
+            '¿Seguro que quieres eliminarlo y perder su historial para siempre?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar y perder historial')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar y perder historial')),
-        ],
-      ),
-    );
-    if (confirmado == true) {
-      await db.deleteFinanceAccountAndHistory(libro.id);
-      if (context.mounted) ref.invalidate(financeAccountsProvider);
+      );
+      if (confirmado == true) {
+        await db.deleteFinanceAccountAndHistory(libro.id);
+        if (context.mounted) ref.invalidate(financeAccountsProvider);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo eliminar el registro: $e')),
+        );
+      }
     }
   }
 
@@ -301,23 +309,21 @@ class _GlobalHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     double totalIngresos = 0;
     double totalGastos = 0;
-    double totalInicial = 0;
+    double balance = 0;
     bool loading = false;
 
     for (final libro in libros) {
-      totalInicial += libro.saldoInicial;
-      final summary = ref.watch(financeAccountSummaryProvider(libro.id));
-      summary.when(
-        data: (s) {
-          totalIngresos += s.ingresos;
-          totalGastos += s.gastos;
+      final balanceAsync = ref.watch(financeAccountBalanceProvider(libro.id));
+      balanceAsync.when(
+        data: (b) {
+          totalIngresos += b.ingresos;
+          totalGastos += b.gastos;
+          balance += b.saldo;
         },
         loading: () => loading = true,
         error: (e, st) {},
       );
     }
-
-    final balance = totalInicial + totalIngresos - totalGastos;
     final colors = Theme.of(context).extension<AppThemeColors>()!;
     final topPad = MediaQuery.of(context).padding.top;
 
