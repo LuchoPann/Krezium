@@ -38,6 +38,8 @@ Future<void> showNuevaTransaccionSheet(
   FinanceTemplate? template,
   FinanceTransaction? editar,
   String? tipoInicial,
+  double? montoInicial,
+  VoidCallback? onGuardado,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -49,6 +51,8 @@ Future<void> showNuevaTransaccionSheet(
       template: template,
       editar: editar,
       tipoInicial: tipoInicial,
+      montoInicial: montoInicial,
+      onGuardado: onGuardado,
     ),
   );
 }
@@ -60,6 +64,8 @@ class _NuevaTransaccionSheet extends ConsumerStatefulWidget {
   final FinanceTemplate? template;
   final FinanceTransaction? editar;
   final String? tipoInicial;
+  final double? montoInicial;
+  final VoidCallback? onGuardado;
 
   const _NuevaTransaccionSheet({
     this.libroIdInicial,
@@ -67,6 +73,8 @@ class _NuevaTransaccionSheet extends ConsumerStatefulWidget {
     this.template,
     this.editar,
     this.tipoInicial,
+    this.montoInicial,
+    this.onGuardado,
   });
 
   @override
@@ -105,6 +113,9 @@ class _NuevaTransaccionSheetState
     _paso = 2;
     _categoriaSeleccionada = widget.categoriaInicial;
     if (widget.tipoInicial != null) _tipo = widget.tipoInicial!;
+    if (widget.montoInicial != null) {
+      _montoCtrl.text = agruparMiles(widget.montoInicial!.round());
+    }
 
     final t = widget.template;
     if (t != null) {
@@ -301,6 +312,7 @@ class _NuevaTransaccionSheetState
       if (ordenante.isNotEmpty) ref.invalidate(financePlacesProvider);
 
       await HapticFeedback.mediumImpact();
+      widget.onGuardado?.call();
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _guardando = false);

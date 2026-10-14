@@ -8,6 +8,7 @@ import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_goal.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
+import 'package:krezium/screens/finanzas/nueva_transaccion_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
 import 'package:krezium/utils/monto_input_formatter.dart';
@@ -163,39 +164,12 @@ class FinanzasMetasScreen extends ConsumerWidget {
         ));
         ref.invalidate(allFinanceReservationsProvider);
       case 'finalizar':
-        await db.upsertFinanceReservation(FinanceReservationsCompanion(
-          id: Value(meta.id), accountId: Value(meta.accountId), nombre: Value(meta.nombre),
-          monto: Value(meta.monto), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
-          fechaLimite: Value(meta.fechaLimite), estado: const Value('finalizada'),
-        ));
-        ref.invalidate(allFinanceReservationsProvider);
       case 'cancelar':
-        final confirmado = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Cancelar meta'),
-            content: Text(
-              '¿Cancelar "${meta.nombre}"? El dinero reservado (${formatCOP(meta.monto)}) vuelve a estar disponible en el registro.',
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Volver')),
-              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Cancelar meta')),
-            ],
-          ),
-        );
-        if (confirmado == true) {
-          await db.upsertFinanceReservation(FinanceReservationsCompanion(
-            id: Value(meta.id), accountId: Value(meta.accountId), nombre: Value(meta.nombre),
-            monto: Value(meta.monto), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
-            fechaLimite: Value(meta.fechaLimite), estado: const Value('cancelada'),
-          ));
-          ref.invalidate(allFinanceReservationsProvider);
-          // Meta virtual (accountId null) no descuenta de ningún registro
-          // puntual — no hay balance de cuenta que invalidar.
-          if (meta.accountId != null) {
-            ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
-          }
-        }
+        // Completar y cancelar comparten el mismo flujo de cierre: nunca
+        // dejan el dinero reservado en silencio, siempre preguntan qué
+        // hacer con él (ver spec Planificación v2, sección 2.5).
+        if (!context.mounted) return;
+        await _cerrarMeta(context, ref, meta, accion, cuentas);
       case 'eliminar':
         final confirmado = await showDialog<bool>(
           context: context,
@@ -216,6 +190,246 @@ class FinanzasMetasScreen extends ConsumerWidget {
           }
         }
     }
+  }
+
+  /// Flujo de cierre compartido entre completar ('finalizar') y cancelar —
+  /// nunca deja el dinero reservado en silencio: pregunta explícitamente
+  /// qué hacer. Si el usuario cierra el sheet sin elegir, no se aplica
+  /// ningún cambio (la reserva sigue intacta).
+  static Future<void> _cerrarMeta(
+    BuildContext context,
+    WidgetRef ref,
+    FinanceReservationRow meta,
+    String tipoCierre, // 'finalizar' | 'cancelar'
+    List<FinanceAccount> cuentas,
+  ) async {
+    final eleccion = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final tc = Theme.of(ctx).extension<AppThemeColors>()!;
+        return Material(
+          color: Theme.of(ctx).scaffoldBackgroundColor,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    tipoCierre == 'finalizar' ? '¿Completar esta meta?' : '¿Cancelar esta meta?',
+                    style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '¿Qué hacer con ${formatCOP(meta.monto)} reservados?',
+                    style: TextStyle(color: tc.textSecondary),
+                  ),
+                  const SizedBox(height: AppSpacing.section),
+                  ListTile(
+                    leading: const Icon(Icons.shopping_cart_outlined),
+                    title: const Text('Gastar ahora'),
+                    subtitle: const Text('Registra un gasto real por este monto'),
+                    onTap: () => Navigator.pop(ctx, 'gastar'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.account_balance_outlined),
+                    title: const Text('Mantener en un registro'),
+                    subtitle: const Text('Pasa a ser saldo normal de un registro'),
+                    onTap: () => Navigator.pop(ctx, 'mantener'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (eleccion == null || !context.mounted) return; // sin elegir, la reserva sigue intacta
+
+    final nuevoEstado = tipoCierre == 'finalizar' ? 'finalizada' : 'cancelada';
+
+    if (eleccion == 'gastar') {
+      String? libroDestino = meta.accountId;
+      if (libroDestino == null) {
+        // Meta virtual: no tiene cuenta propia, hay que elegir dónde se
+        // refleja el gasto.
+        libroDestino = await _elegirCuentaSimple(context, cuentas);
+        if (libroDestino == null || !context.mounted) return;
+      }
+      await showNuevaTransaccionSheet(
+        context,
+        libroId: libroDestino,
+        tipoInicial: 'gasto',
+        montoInicial: meta.monto,
+        onGuardado: () {
+          final db = ref.read(databaseProvider);
+          db.upsertFinanceReservation(FinanceReservationsCompanion(
+            id: Value(meta.id), accountId: Value(meta.accountId), nombre: Value(meta.nombre),
+            monto: const Value(0), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
+            fechaLimite: Value(meta.fechaLimite), estado: Value(nuevoEstado),
+          ));
+          ref.invalidate(allFinanceReservationsProvider);
+          if (meta.accountId != null) {
+            ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
+          }
+        },
+      );
+    } else if (eleccion == 'mantener') {
+      final destino = await _elegirRegistroDestino(context, ref, cuentas, meta.accountId);
+      if (destino == null || !context.mounted) return;
+      final db = ref.read(databaseProvider);
+      final notaMeta = 'Proveniente de meta: ${meta.nombre}';
+      final descripcionNueva = destino.descripcion.isEmpty ? notaMeta : '${destino.descripcion}; $notaMeta';
+      await db.upsertFinanceAccount(FinanceAccountsCompanion(
+        id: Value(destino.id), nombre: Value(destino.nombre), tipo: Value(destino.tipo),
+        icono: Value(destino.icono), color: Value(destino.color),
+        saldoInicial: Value(destino.saldoInicial + meta.monto),
+        activa: Value(destino.activa), orden: Value(destino.orden), esFavorito: Value(destino.esFavorito),
+        descripcion: Value(descripcionNueva),
+      ));
+      await db.upsertFinanceReservation(FinanceReservationsCompanion(
+        id: Value(meta.id), accountId: Value(meta.accountId), nombre: Value(meta.nombre),
+        monto: const Value(0), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
+        fechaLimite: Value(meta.fechaLimite), estado: Value(nuevoEstado),
+      ));
+      ref.invalidate(allFinanceReservationsProvider);
+      ref.invalidate(financeAccountsProvider);
+      ref.invalidate(financeAccountBalanceProvider(destino.id));
+      if (meta.accountId != null && meta.accountId != destino.id) {
+        ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
+      }
+    }
+  }
+
+  /// Selector simple de cuenta (sin opción de crear) — usado para "gastar
+  /// ahora" cuando la meta es virtual y no tiene cuenta propia.
+  static Future<String?> _elegirCuentaSimple(BuildContext context, List<FinanceAccount> cuentas) {
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final tc = Theme.of(ctx).extension<AppThemeColors>()!;
+        return Material(
+          color: Theme.of(ctx).scaffoldBackgroundColor,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('¿En qué registro?', style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary)),
+                  ),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final c in cuentas)
+                        ListTile(
+                          leading: Icon(iconFromKey(c.icono), color: _colorFromHex(c.color)),
+                          title: Text(c.nombre),
+                          onTap: () => Navigator.of(ctx).pop(c.id),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Selector para "mantener en un registro": el actual (si la meta es
+  /// vinculada), uno existente, o uno nuevo (nombre corto, sin el resto de
+  /// la configuración de un registro — eso puede ajustarse después).
+  static Future<FinanceAccount?> _elegirRegistroDestino(
+    BuildContext context,
+    WidgetRef ref,
+    List<FinanceAccount> cuentas,
+    String? cuentaActualId,
+  ) async {
+    final opcion = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final tc = Theme.of(ctx).extension<AppThemeColors>()!;
+        final cuentaActual = cuentas.where((c) => c.id == cuentaActualId).firstOrNull;
+        return Material(
+          color: Theme.of(ctx).scaffoldBackgroundColor,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (cuentaActual != null)
+                  ListTile(
+                    leading: Icon(iconFromKey(cuentaActual.icono), color: _colorFromHex(cuentaActual.color)),
+                    title: Text('Este mismo registro (${cuentaActual.nombre})'),
+                    onTap: () => Navigator.pop(ctx, cuentaActual.id),
+                  ),
+                for (final c in cuentas.where((c) => c.id != cuentaActualId))
+                  ListTile(
+                    leading: Icon(iconFromKey(c.icono), color: _colorFromHex(c.color)),
+                    title: Text(c.nombre),
+                    onTap: () => Navigator.pop(ctx, c.id),
+                  ),
+                ListTile(
+                  leading: Icon(Icons.add_circle_outline, color: tc.textSecondary),
+                  title: const Text('Crear un registro nuevo'),
+                  onTap: () => Navigator.pop(ctx, '__nuevo__'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (opcion == null) return null;
+    if (opcion != '__nuevo__') {
+      return cuentas.where((c) => c.id == opcion).firstOrNull;
+    }
+    if (!context.mounted) return null;
+    final nombreCtrl = TextEditingController();
+    final nombre = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nuevo registro'),
+        content: TextField(controller: nombreCtrl, autofocus: true, decoration: const InputDecoration(hintText: 'Nombre del registro')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, nombreCtrl.text.trim()),
+            child: const Text('Crear'),
+          ),
+        ],
+      ),
+    );
+    if (nombre == null || nombre.isEmpty) return null;
+    final db = ref.read(databaseProvider);
+    final id = const Uuid().v4();
+    await db.upsertFinanceAccount(FinanceAccountsCompanion.insert(
+      id: id, nombre: nombre, tipo: 'efectivo', icono: 'wallet', color: '#6B7280',
+    ));
+    return FinanceAccount(
+      id: id, nombre: nombre, tipo: 'efectivo', icono: 'wallet', color: '#6B7280',
+      saldoInicial: 0, activa: true, orden: '0', esFavorito: false, descripcion: '',
+    );
   }
 }
 
