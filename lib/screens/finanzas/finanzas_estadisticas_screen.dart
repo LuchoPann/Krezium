@@ -6,12 +6,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/models/finance_models.dart';
+import 'package:krezium/domain/finance_budget.dart';
 import 'package:krezium/domain/finance_ledger.dart';
+import 'package:krezium/domain/finance_observaciones.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/finanzas_libro_transacciones_screen.dart';
+import 'package:krezium/screens/finanzas/finanzas_planificacion_screen.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 // ─── Color helpers ─────────────────────────────────────────────────────────────
 
@@ -158,6 +162,17 @@ class _FinanzasEstadisticasScreenState
     return txs
         .where((t) => t.tipo == 'gasto' && t.fecha.startsWith(prefix))
         .fold(0.0, (s, t) => s + t.monto);
+  }
+
+  Map<String, double> _gastoPorCategoriaEnMes(List<FinanceTransaction> txs, DateTime mes) {
+    final prefix = '${mes.year}-${mes.month.toString().padLeft(2, '0')}';
+    final mapa = <String, double>{};
+    for (final t in txs) {
+      if (t.tipo != 'gasto') continue;
+      if (!t.fecha.startsWith(prefix)) continue;
+      mapa[t.categoryId] = (mapa[t.categoryId] ?? 0) + t.monto;
+    }
+    return mapa;
   }
 
   // ─── Pie data (gastos por categoría) ────────────────────────────────────────
@@ -423,6 +438,16 @@ class _FinanzasEstadisticasScreenState
                 ],
                 const SizedBox(height: 24),
 
+                // ── Sección Observaciones (Fase 07) ───────────────────────
+                // Solo reglas deterministas sobre datos reales — nunca se
+                // muestra nada sin evidencia suficiente (ver finance_observaciones.dart).
+                _ObservacionesSection(
+                  libro: _libroActual!,
+                  allTxs: allTxs,
+                  catMap: catMap,
+                  gastoPorCategoriaMes: _gastoPorCategoriaEnMes,
+                ),
+
                 if (!hayDatos) ...[
                   // ── Estado vacío ──────────────────────────────────────────
                   Center(
@@ -524,6 +549,179 @@ class _FinanzasEstadisticasScreenState
 }
 
 // ─── Resumen card ─────────────────────────────────────────────────────────────
+
+// ─── Observaciones (Fase 07) ────────────────────────────────────────────────
+// Combina 3 reglas deterministas: aumento de gasto en una categoría (del
+// libro activo, mes actual vs. anterior), presupuesto cercano a su límite
+// y meta de ahorro fuera de ritmo (ambas globales — no son por libro).
+// Se oculta por completo si ninguna regla encontró evidencia suficiente.
+class _ObservacionesSection extends ConsumerWidget {
+  final FinanceAccount libro;
+  final List<FinanceTransaction> allTxs;
+  final Map<String, CatalogoCategoria> catMap;
+  final Map<String, double> Function(List<FinanceTransaction>, DateTime) gastoPorCategoriaMes;
+
+  const _ObservacionesSection({
+    required this.libro,
+    required this.allTxs,
+    required this.catMap,
+    required this.gastoPorCategoriaMes,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).extension<AppThemeColors>()!;
+    final now = DateTime.now();
+
+    final obsAumento = observacionesAumentoCategoria(
+      gastoActualPorCategoria: gastoPorCategoriaMes(allTxs, now),
+      gastoAnteriorPorCategoria: gastoPorCategoriaMes(allTxs, DateTime(now.year, now.month - 1)),
+      nombrePorCategoria: {for (final c in catMap.values) c.id: c.nombre},
+    );
+
+    final mes = DateFormat('yyyy-MM').format(now);
+    final budgetsAsync = ref.watch(financeBudgetsProvider((now.year, now.month)));
+    final txMesAsync = ref.watch(financeTransactionsProvider(mes));
+    final catsAsync = ref.watch(allFinanceCategoriesProvider);
+    final metasAsync = ref.watch(allFinanceReservationsProvider);
+
+    final obsPresupuesto = (budgetsAsync.valueOrNull != null &&
+            txMesAsync.valueOrNull != null &&
+            catsAsync.valueOrNull != null)
+        ? observacionesPresupuestoCercano(budgetsAsync.value!.map((b) {
+            final cat = catsAsync.value!.where((c) => c.id == b.categoryId).firstOrNull;
+            final parentPorCategoria = {for (final c in catsAsync.value!) c.id: c.parentId};
+            final txs = txMesAsync.value!.map(FinanceTransaction.fromRow).toList();
+            final gasto = gastoCategoriaPeriodo(
+              categoryId: b.categoryId, transacciones: txs, parentPorCategoria: parentPorCategoria,
+            );
+            return (
+              categoryId: b.categoryId,
+              nombre: cat?.nombre ?? b.categoryId,
+              progreso: progresoPresupuesto(gasto: gasto, limite: b.montoLimite),
+            );
+          }).toList())
+        : <Observacion>[];
+
+    final obsMetas = metasAsync.valueOrNull != null
+        ? observacionesMetaFueraDeRitmo(
+            metasAsync.value!.map((m) => (
+                  id: m.id,
+                  nombre: m.nombre,
+                  aportado: m.monto,
+                  objetivo: m.montoObjetivo,
+                  creadaEn: DateTime.tryParse(m.creadaEn) ?? now,
+                  fechaLimite: m.fechaLimite != null ? DateTime.tryParse(m.fechaLimite!) : null,
+                  estado: m.estado,
+                )).toList(),
+            hoy: now,
+          )
+        : <Observacion>[];
+
+    final todas = [...obsAumento, ...obsPresupuesto, ...obsMetas];
+    if (todas.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Observaciones', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          for (final obs in todas) ...[
+            _ObservacionCard(obs: obs, colors: colors, libro: libro),
+            const SizedBox(height: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ObservacionCard extends ConsumerWidget {
+  final Observacion obs;
+  final AppThemeColors colors;
+  final FinanceAccount libro;
+
+  const _ObservacionCard({required this.obs, required this.colors, required this.libro});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (icono, color, titulo, descripcion) = switch (obs.tipo) {
+      TipoObservacion.aumentoCategoria => (
+          Icons.trending_up,
+          _kGastos,
+          'Aumento en ${obs.nombre}',
+          'Gastaste ${obs.deltaPct!.round()}% más en ${obs.nombre} este mes '
+              '(${formatCOP(obs.valorAnterior!)} → ${formatCOP(obs.valorActual!)}).',
+        ),
+      TipoObservacion.presupuestoCercano => (
+          Icons.pie_chart_outline,
+          obs.progreso! >= 1 ? _kGastos : Colors.amber.shade800,
+          obs.progreso! >= 1 ? 'Presupuesto agotado: ${obs.nombre}' : 'Cerca del límite: ${obs.nombre}',
+          'Vas en ${(obs.progreso! * 100).round()}% del presupuesto de ${obs.nombre} este mes.',
+        ),
+      TipoObservacion.metaFueraDeRitmo => (
+          Icons.flag_outlined,
+          Colors.amber.shade800,
+          'Meta atrasada: ${obs.nombre}',
+          'Llevas ${(obs.valorActual! * 100).round()}% aportado, cuando lo esperado a este punto '
+              'del plazo era ${(obs.valorAnterior! * 100).round()}%.',
+        ),
+    };
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        switch (obs.tipo) {
+          case TipoObservacion.aumentoCategoria:
+            // Mismo patrón de drill-down que la leyenda del donut (Fase 06):
+            // filtra el historial de este libro a la categoría que originó
+            // la observación. El filtro se fija antes de navegar, nunca
+            // dentro del build de la ruta nueva.
+            ref.read(finanzasFiltrosProvider.notifier).state =
+                ref.read(finanzasFiltrosProvider).copyWith(categoriaId: obs.refId);
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => FinanzasLibroTransaccionesScreen(libro: libro)),
+            );
+          case TipoObservacion.presupuestoCercano:
+          case TipoObservacion.metaFueraDeRitmo:
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FinanzasPlanificacionScreen()),
+            );
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: colors.bgCard,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icono, color: color, size: AppIconSize.medium),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titulo, style: TextStyle(fontWeight: FontWeight.w700, color: colors.textPrimary, fontSize: AppTextSize.body)),
+                  const SizedBox(height: 2),
+                  Text(descripcion, style: TextStyle(color: colors.textSecondary, fontSize: AppTextSize.caption)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: AppIconSize.small, color: colors.textTertiary),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _ResumenCard extends StatelessWidget {
   final String label;
