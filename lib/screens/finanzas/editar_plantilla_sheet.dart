@@ -10,6 +10,7 @@ import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/categoria_selector_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/widgets/app_pill_selector.dart';
 import 'package:uuid/uuid.dart';
 
 Future<void> showEditarPlantillaSheet(
@@ -123,12 +124,16 @@ class _EditarPlantillaSheetState extends State<_EditarPlantillaSheet> {
       maxChildSize: 0.95,
       minChildSize: 0.4,
       builder: (ctx, scrollCtrl) {
-        return Container(
-          decoration: BoxDecoration(
-            color: colors.bgCard,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(20)),
+        return Material(
+          // Material (no Container con color propio): un ListTile más abajo
+          // pinta fondo/ripple en el Material más cercano. Color estándar
+          // de sheet (scaffoldBackgroundColor), no bgCard — mismo tono que
+          // Créditos, ver nota igual en nueva_transaccion_sheet.dart.
+          color: Theme.of(context).scaffoldBackgroundColor,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
+          clipBehavior: Clip.antiAlias,
           child: Form(
             key: _formKey,
             child: ListView(
@@ -171,23 +176,17 @@ class _EditarPlantillaSheetState extends State<_EditarPlantillaSheet> {
                 const SizedBox(height: 20),
 
                 // Tipo
-                Center(
-                  child: SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'gasto', label: Text('Gasto')),
-                      ButtonSegment(value: 'ingreso', label: Text('Ingreso')),
-                      ButtonSegment(
-                          value: 'transferencia',
-                          label: Text('Transferencia')),
-                    ],
-                    selected: {_tipo},
-                    onSelectionChanged: (s) {
-                      setState(() {
-                        _tipo = s.first;
-                        _categoria = null;
-                      });
-                    },
-                  ),
+                AppPillSelector<String>(
+                  value: _tipo,
+                  onChanged: (v) => setState(() {
+                    _tipo = v;
+                    _categoria = null;
+                  }),
+                  options: const [
+                    PillOption(value: 'gasto', label: 'Gasto', color: Color(0xFFEF4444)),
+                    PillOption(value: 'ingreso', label: 'Ingreso', color: Color(0xFF22C55E)),
+                    PillOption(value: 'transferencia', label: 'Transferencia', color: Color(0xFF3B82F6)),
+                  ],
                 ),
                 const SizedBox(height: 20),
 

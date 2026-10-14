@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'finance_icon_catalog_full.dart';
+
 // Catálogo de íconos de Finanzas. Se intentó migrar a Phosphor Icons
 // (phosphor_flutter) para tener una biblioteca más grande, pero ese paquete
 // está abandonado desde 2024 y su `PhosphorIconData extends IconData` ya no
@@ -229,7 +231,39 @@ const Map<String, IconData> financeIconMap = {
   'qr_code': Icons.qr_code_outlined,
   'inventory': Icons.inventory_2_outlined,
   'warehouse': Icons.warehouse_outlined,
+  'warning_amber': Icons.warning_amber_outlined,
+
+  // ── Ampliación 2 (catálogo de categorías más granular) ──────────────────
+  'apartment': Icons.apartment_outlined,
+  'assignment': Icons.assignment_outlined,
+  'badge': Icons.badge_outlined,
+  'breakfast': Icons.breakfast_dining_outlined,
+  'description': Icons.description_outlined,
+  'discount': Icons.discount_outlined,
+  'diversity': Icons.diversity_3_outlined,
+  'egg': Icons.egg_outlined,
+  'folder': Icons.folder_outlined,
+  'car_wash': Icons.local_car_wash_outlined,
+  'dining': Icons.local_dining_outlined,
+  'offer': Icons.local_offer_outlined,
+  'pharmacy': Icons.local_pharmacy_outlined,
+  'money_off': Icons.money_off_outlined,
+  'percent': Icons.percent_outlined,
+  'real_estate': Icons.real_estate_agent_outlined,
+  'security': Icons.security_outlined,
+  'shield': Icons.shield_outlined,
+  'sim_card': Icons.sim_card_outlined,
+  'volunteer': Icons.volunteer_activism_outlined,
+  'work_history': Icons.work_history_outlined,
 };
 
-IconData iconFromKey(String? key) =>
-    key != null ? (financeIconMap[key] ?? Icons.label_outline) : Icons.label_outline;
+/// Resuelve una [key] a su ícono: primero en el catálogo curado (chico,
+/// el que usan las categorías fijas del sistema), y si no está ahí, en el
+/// catálogo completo (el que ofrece el selector de categorías
+/// personalizadas, con prácticamente todo Material Icons disponible) —
+/// así una categoría propia puede usar cualquier ícono del proveedor y
+/// seguir resolviéndose correctamente en cualquier parte de la app.
+IconData iconFromKey(String? key) {
+  if (key == null) return Icons.label_outline;
+  return financeIconMap[key] ?? financeIconMapFull[key] ?? Icons.label_outline;
+}

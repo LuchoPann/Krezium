@@ -57,6 +57,22 @@ bool esTransferenciaValida({required String? origenId, required String? destinoI
   return origenId != destinoId;
 }
 
+/// Observación breve sobre el periodo, solo cuando hay datos que la
+/// respalden. Devuelve null si no hubo ningún movimiento (ingresos==0 y
+/// gastos==0) — nunca se inventa una conclusión sin evidencia.
+String? observacionPeriodo({required double ingresos, required double gastos}) {
+  if (ingresos == 0 && gastos == 0) return null;
+  if (ingresos == gastos) return 'Tus ingresos y gastos están equilibrados este mes.';
+  if (gastos == 0) return 'Aún no registras gastos este mes.';
+  if (ingresos == 0) return 'Aún no registras ingresos este mes.';
+  if (ingresos > gastos) {
+    final pct = (((ingresos - gastos) / gastos) * 100).round();
+    return 'Tus ingresos superan tus gastos en $pct% este mes.';
+  }
+  final pct = (((gastos - ingresos) / ingresos) * 100).round();
+  return 'Tus gastos superan tus ingresos en $pct% este mes.';
+}
+
 double totalReservado(List<FinanceReservationRow> reservas) =>
     reservas.fold(0.0, (sum, r) => sum + r.monto);
 

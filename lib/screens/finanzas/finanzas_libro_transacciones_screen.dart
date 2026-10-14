@@ -6,6 +6,7 @@ import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_ledger.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
+import 'package:krezium/screens/finanzas/finanzas_plantillas_screen.dart';
 import 'package:krezium/screens/finanzas/nueva_transaccion_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
@@ -966,11 +967,16 @@ class _BusquedaSheetState extends State<_BusquedaSheet> {
       initialChildSize: 0.85,
       minChildSize: 0.5,
       maxChildSize: 0.95,
-      builder: (ctx, scroll) => Container(
-        decoration: BoxDecoration(
-          color: tc.bgCard,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      builder: (ctx, scroll) => Material(
+        // Material (no Container con color propio): hay un ListTile más
+        // abajo que pinta fondo/ripple en el Material más cercano. Color
+        // estándar de sheet (scaffoldBackgroundColor), no tc.bgCard — mismo
+        // tono que Créditos, ver nota igual en nueva_transaccion_sheet.dart.
+        color: Theme.of(ctx).scaffoldBackgroundColor,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           children: [
             Padding(
@@ -1055,13 +1061,19 @@ class _PlantillasSheet extends ConsumerWidget {
     final tc = Theme.of(context).extension<AppThemeColors>()!;
     final asyncTemplates = ref.watch(financeTemplatesByTipoProvider(null));
 
-    return Container(
-      decoration: BoxDecoration(
-        color: tc.bgCard,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+    return Material(
+      // Material (no Container con color propio): hay un ListTile más abajo
+      // que pinta fondo/ripple en el Material más cercano. Color estándar
+      // de sheet (scaffoldBackgroundColor), no tc.bgCard — mismo tono que
+      // Créditos, ver nota igual en nueva_transaccion_sheet.dart.
+      color: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      child: Column(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1072,7 +1084,22 @@ class _PlantillasSheet extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Text('Usar plantilla', style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.bold, color: tc.textPrimary)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Usar plantilla', style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.bold, color: tc.textPrimary)),
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FinanzasPlantillasScreen()),
+                  );
+                },
+                icon: const Icon(Icons.settings_outlined, size: 18),
+                label: const Text('Administrar'),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           asyncTemplates.when(
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -1123,6 +1150,7 @@ class _PlantillasSheet extends ConsumerWidget {
             },
           ),
         ],
+        ),
       ),
     );
   }

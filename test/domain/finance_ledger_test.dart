@@ -130,4 +130,40 @@ void main() {
       expect(r.reservasExcedenSaldo, false);
     });
   });
+
+  group('observacionPeriodo', () {
+    test('sin ingresos ni gastos: no hay observación', () {
+      expect(observacionPeriodo(ingresos: 0, gastos: 0), isNull);
+    });
+
+    test('ingresos superan gastos: observación con el porcentaje de diferencia', () {
+      final obs = observacionPeriodo(ingresos: 1000, gastos: 500);
+      expect(obs, contains('ingresos'));
+      expect(obs, contains('100%'));
+    });
+
+    test('gastos superan ingresos: observación con el porcentaje de diferencia', () {
+      final obs = observacionPeriodo(ingresos: 400, gastos: 500);
+      expect(obs, contains('gastos'));
+      expect(obs, contains('25%'));
+    });
+
+    test('ingresos y gastos iguales (y mayores a cero): observación de equilibrio sin porcentaje', () {
+      final obs = observacionPeriodo(ingresos: 300, gastos: 300);
+      expect(obs, isNotNull);
+      expect(obs, isNot(contains('%')));
+    });
+
+    test('solo ingresos, sin gastos registrados: no divide por cero, da una observación simple', () {
+      final obs = observacionPeriodo(ingresos: 200, gastos: 0);
+      expect(obs, isNotNull);
+      expect(obs, isNot(contains('%')));
+    });
+
+    test('solo gastos, sin ingresos registrados: no divide por cero, da una observación simple', () {
+      final obs = observacionPeriodo(ingresos: 0, gastos: 200);
+      expect(obs, isNotNull);
+      expect(obs, isNot(contains('%')));
+    });
+  });
 }

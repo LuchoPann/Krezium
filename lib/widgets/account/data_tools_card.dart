@@ -13,6 +13,7 @@ import '../../providers/commercial_quotas_provider.dart';
 import '../../providers/credits_provider.dart';
 import '../../providers/last_backup_provider.dart';
 import '../../services/backup_service.dart';
+import '../app_pill_selector.dart';
 import '../krezium_bottom_dialogs.dart';
 import '../../theme/app_theme.dart';
 
@@ -296,21 +297,18 @@ class _DataToolsCardState extends ConsumerState<DataToolsCard> {
         ),
         if (_autoBackupEnabled) ...[
           const SizedBox(height: 4),
-          // Frecuencia — SegmentedButton que ocupa todo el ancho
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'daily', label: Text('Diario')),
-                ButtonSegment(value: 'weekly', label: Text('Semanal')),
-                ButtonSegment(value: 'monthly', label: Text('Mensual')),
-              ],
-              selected: {_autoFrequency},
-              onSelectionChanged: (s) {
-                setState(() => _autoFrequency = s.first);
-                _savePrefs();
-              },
-            ),
+          // Frecuencia
+          AppPillSelector<String>(
+            value: _autoFrequency,
+            onChanged: (v) {
+              setState(() => _autoFrequency = v);
+              _savePrefs();
+            },
+            options: const [
+              PillOption(value: 'daily', label: 'Diario'),
+              PillOption(value: 'weekly', label: 'Semanal'),
+              PillOption(value: 'monthly', label: 'Mensual'),
+            ],
           ),
           const SizedBox(height: 4),
           // Hora del respaldo
@@ -421,27 +419,16 @@ class _DataToolsCardState extends ConsumerState<DataToolsCard> {
                 ],
               ),
               const SizedBox(height: 6),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'append',
-                      label: Text('Por fecha'),
-                      icon: Icon(Icons.calendar_today_outlined),
-                    ),
-                    ButtonSegment(
-                      value: 'replace',
-                      label: Text('Reemplazar'),
-                      icon: Icon(Icons.sync_outlined),
-                    ),
-                  ],
-                  selected: {_backupMode},
-                  onSelectionChanged: (s) {
-                    setState(() => _backupMode = s.first);
-                    _savePrefs();
-                  },
-                ),
+              AppPillSelector<String>(
+                value: _backupMode,
+                onChanged: (v) {
+                  setState(() => _backupMode = v);
+                  _savePrefs();
+                },
+                options: const [
+                  PillOption(value: 'append', label: 'Por fecha'),
+                  PillOption(value: 'replace', label: 'Reemplazar'),
+                ],
               ),
             ],
           ),

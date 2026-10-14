@@ -13,6 +13,7 @@ import '../../domain/debt_attack_simulator.dart';
 import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/credit_display_utils.dart';
+import '../../widgets/app_pill_selector.dart';
 
 class AttackPlanScreen extends ConsumerStatefulWidget {
   const AttackPlanScreen({super.key});
@@ -105,24 +106,16 @@ class _AttackPlanScreenState extends ConsumerState<AttackPlanScreen> {
           // Strategy selector
           _SectionLabel(text: 'ESTRATEGIA'),
           const SizedBox(height: 8),
-          SegmentedButton<AttackStrategy>(
-            segments: const [
-              ButtonSegment(
-                value: AttackStrategy.avalanche,
-                label: Text('Avalanche'),
-                icon: Icon(Icons.trending_down_rounded),
-              ),
-              ButtonSegment(
-                value: AttackStrategy.snowball,
-                label: Text('Snowball'),
-                icon: Icon(Icons.ac_unit_rounded),
-              ),
-            ],
-            selected: {_strategy},
-            onSelectionChanged: (s) {
-              setState(() => _strategy = s.first);
+          AppPillSelector<AttackStrategy>(
+            value: _strategy,
+            onChanged: (v) {
+              setState(() => _strategy = v);
               _recalculate(credits);
             },
+            options: const [
+              PillOption(value: AttackStrategy.avalanche, label: 'Avalanche'),
+              PillOption(value: AttackStrategy.snowball, label: 'Snowball'),
+            ],
           ),
           const SizedBox(height: 6),
           Text(

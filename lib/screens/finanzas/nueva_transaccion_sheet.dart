@@ -5,16 +5,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
+import 'package:krezium/data/finance_icon_map.dart';
 import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_ledger.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/categoria_selector_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/widgets/app_pill_selector.dart';
 import 'package:krezium/widgets/krezium_section_card.dart';
 import 'package:uuid/uuid.dart';
 
 // ─── Color tokens por tipo ────────────────────────────────────────────────────
+Color _colorFromHex(String hex) {
+  final h = hex.replaceAll('#', '');
+  return Color(int.parse('FF$h', radix: 16));
+}
+
 const _colorIngreso = Color(0xFF22C55E);
 const _colorGasto = Color(0xFFEF4444);
 const _colorTransfer = Color(0xFF3B82F6);
@@ -32,6 +39,7 @@ Future<void> showNuevaTransaccionSheet(
   CatalogoCategoria? categoriaInicial,
   FinanceTemplate? template,
   FinanceTransaction? editar,
+  String? tipoInicial,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -42,6 +50,7 @@ Future<void> showNuevaTransaccionSheet(
       categoriaInicial: categoriaInicial,
       template: template,
       editar: editar,
+      tipoInicial: tipoInicial,
     ),
   );
 }
@@ -52,12 +61,14 @@ class _NuevaTransaccionSheet extends ConsumerStatefulWidget {
   final CatalogoCategoria? categoriaInicial;
   final FinanceTemplate? template;
   final FinanceTransaction? editar;
+  final String? tipoInicial;
 
   const _NuevaTransaccionSheet({
     this.libroIdInicial,
     this.categoriaInicial,
     this.template,
     this.editar,
+    this.tipoInicial,
   });
 
   @override
@@ -89,9 +100,13 @@ class _NuevaTransaccionSheetState
     _fecha = DateTime.now();
     _hora = TimeOfDay.now();
     _libroId = widget.libroIdInicial;
-    // Si ya viene un libro preseleccionado, ir directo al paso de detalle
-    _paso = widget.libroIdInicial != null ? 2 : 1;
+    // El selector de registro ahora vive dentro del propio formulario (paso
+    // 2) cuando hace falta elegirlo — ya no existe un paso previo separado
+    // solo para eso. Si venía preseleccionado (caso normal, desde el FAB de
+    // un registro específico), el formulario ni siquiera lo muestra.
+    _paso = 2;
     _categoriaSeleccionada = widget.categoriaInicial;
+    if (widget.tipoInicial != null) _tipo = widget.tipoInicial!;
 
     final t = widget.template;
     if (t != null) {
@@ -100,7 +115,7 @@ class _NuevaTransaccionSheetState
       _ordenanteCtrl.text = t.personaSitio ?? '';
       _notaCtrl.text = t.nota ?? '';
       if (t.monto != null) {
-        _montoCtrl.text = '\$ ${agruparMiles(t.monto!.round())}';
+        _montoCtrl.text = agruparMiles(t.monto!.round());
       }
       // Buscar categoría del template en el catálogo
       try {
@@ -119,7 +134,7 @@ class _NuevaTransaccionSheetState
       _libroDestinoId = e.transferToAccountId;
       _ordenanteCtrl.text = e.personaSitio ?? '';
       _notaCtrl.text = e.nota;
-      _montoCtrl.text = '\$ ${agruparMiles(e.monto.round())}';
+      _montoCtrl.text = agruparMiles(e.monto.round());
       final fParts = e.fecha.split('-');
       _fecha = DateTime(int.parse(fParts[0]), int.parse(fParts[1]), int.parse(fParts[2]));
       final hParts = (e.hora ?? '00:00').split(':');
@@ -185,7 +200,12 @@ class _NuevaTransaccionSheetState
     if (_guardando) return;
     final monto = double.tryParse(_montoCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
     if (monto == null || monto <= 0) return;
-    if (_libroId == null) return;
+    if (_libroId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Elige un registro')),
+      );
+      return;
+    }
     if (_tipo == 'transferencia' &&
         !esTransferenciaValida(origenId: _libroId, destinoId: _libroDestinoId)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -289,11 +309,23 @@ class _NuevaTransaccionSheetState
       initialChildSize: 0.7,
       minChildSize: 0.4,
       maxChildSize: 0.95,
-      builder: (ctx, scrollCtrl) => Container(
-        decoration: BoxDecoration(
-          color: tc.bgCard,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      builder: (ctx, scrollCtrl) => Material(
+        // Material (no un Container con color propio): los ListTile de
+        // categoría (Paso 3) pintan su fondo/ripple en el Material más
+        // cercano — con un Container de por medio, Flutter los dejaba sin
+        // efecto visual (warning real visto en vivo, "ListTile background
+        // color or ink splashes may be invisible").
+        // scaffoldBackgroundColor (no tc.bgCard): mismo fondo de sheet que
+        // usa Créditos (add_credit_sheet.dart, edit_credit_sheet.dart,
+        // card_movement_sheet.dart) — bgCard es un tono más claro pensado
+        // para tarjetas dentro de una pantalla, no para el fondo del sheet
+        // completo; usarlo aquí hacía que todo Finanzas se viera más claro
+        // que Créditos, reportado explícitamente por el usuario.
+        color: Theme.of(context).scaffoldBackgroundColor,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           children: [
             // Handle
@@ -322,32 +354,6 @@ class _NuevaTransaccionSheetState
                   );
                 },
                 child: switch (_paso) {
-                  1 => _Paso1(
-                        key: const ValueKey(1),
-                        tipo: _tipo,
-                        libroId: _libroId,
-                        libroDestinoId: _libroDestinoId,
-                        libros: libros,
-                        scrollCtrl: scrollCtrl,
-                        onTipoChanged: (v) => setState(() => _tipo = v),
-                        onLibroChanged: (v) => setState(() {
-                          _libroId = v;
-                          if (v != null && v == _libroDestinoId) {
-                            _libroDestinoId = null;
-                          }
-                        }),
-                        onLibroDestinoChanged: (v) =>
-                            setState(() => _libroDestinoId = v),
-                        onContinuar: () {
-                          if (_libroId != null) {
-                            setState(() => _paso = 2);
-                            Future.delayed(
-                              const Duration(milliseconds: 320),
-                              () => _montoFocus.requestFocus(),
-                            );
-                          }
-                        },
-                      ),
                   3 => _Paso3Categoria(
                       key: const ValueKey(3),
                       tipo: _tipo == 'transferencia' ? 'gasto' : _tipo,
@@ -365,6 +371,12 @@ class _NuevaTransaccionSheetState
                         libros: libros,
                         libroId: _libroId,
                         libroDestinoId: _libroDestinoId,
+                        onLibroChanged: (v) => setState(() {
+                          _libroId = v;
+                          if (v != null && v == _libroDestinoId) {
+                            _libroDestinoId = null;
+                          }
+                        }),
                         onLibroDestinoChanged: (v) =>
                             setState(() => _libroDestinoId = v),
                         // Cambiar entre ingreso/gasto desde el paso 2 — antes
@@ -392,9 +404,7 @@ class _NuevaTransaccionSheetState
                         onCategoriaChip: _elegirCategoriaChip,
                         onPickFecha: _pickFecha,
                         onPickHora: _pickHora,
-                        onVolver: widget.libroIdInicial != null
-                            ? () => Navigator.of(context).pop()
-                            : () => setState(() => _paso = 1),
+                        onVolver: () => Navigator.of(context).pop(),
                         onGuardar: () => _guardar(libros),
                         formatFecha: _formatFecha,
                         formatHora: _formatHora,
@@ -408,133 +418,6 @@ class _NuevaTransaccionSheetState
       ),
     );
   }
-}
-
-// ─── Paso 1: picker rápido ────────────────────────────────────────────────────
-class _Paso1 extends StatelessWidget {
-  final String tipo;
-  final String? libroId;
-  final String? libroDestinoId;
-  final List<FinanceAccount> libros;
-  final ScrollController scrollCtrl;
-  final ValueChanged<String> onTipoChanged;
-  final ValueChanged<String?> onLibroChanged;
-  final ValueChanged<String?> onLibroDestinoChanged;
-  final VoidCallback onContinuar;
-
-  const _Paso1({
-    super.key,
-    required this.tipo,
-    required this.libroId,
-    required this.libroDestinoId,
-    required this.libros,
-    required this.scrollCtrl,
-    required this.onTipoChanged,
-    required this.onLibroChanged,
-    required this.onLibroDestinoChanged,
-    required this.onContinuar,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tc = Theme.of(context).extension<AppThemeColors>()!;
-    final color = _tipoColor(tipo);
-
-    return ListView(
-      controller: scrollCtrl,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      children: [
-        // Título
-        Padding(
-          padding: const EdgeInsets.only(bottom: 20),
-          child: Text(
-            'Nueva Transacción',
-            style: TextStyle(
-              fontFamily: 'SpaceGrotesk',
-              fontSize: AppTextSize.heading,
-              fontWeight: FontWeight.w700,
-              color: tc.textPrimary,
-            ),
-          ),
-        ),
-
-        // Tipo
-        Text('Tipo', style: _labelStyle(tc)),
-        const SizedBox(height: 8),
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'ingreso', label: Text('Ingreso'), icon: Icon(Icons.arrow_downward)),
-            ButtonSegment(value: 'gasto', label: Text('Gasto'), icon: Icon(Icons.arrow_upward)),
-            ButtonSegment(value: 'transferencia', label: Text('Transferir'), icon: Icon(Icons.swap_horiz)),
-          ],
-          selected: {tipo},
-          onSelectionChanged: (s) => onTipoChanged(s.first),
-          style: SegmentedButton.styleFrom(
-            selectedBackgroundColor: color.withValues(alpha: 0.18),
-            selectedForegroundColor: color,
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // Libro origen
-        _LibroSelector(
-          label: 'Libro',
-          libros: libros,
-          libroId: libroId,
-          onChanged: onLibroChanged,
-          tc: tc,
-        ),
-
-        // Libro destino (transferencia)
-        if (tipo == 'transferencia') ...[
-          const SizedBox(height: 16),
-          _LibroSelector(
-            label: 'Destino',
-            libros: libros,
-            libroId: libroDestinoId,
-            onChanged: onLibroDestinoChanged,
-            tc: tc,
-            excludeId: libroId,
-          ),
-        ],
-
-        const SizedBox(height: 32),
-
-        // Botón Continuar
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: FilledButton(
-            onPressed: libroId != null ? onContinuar : null,
-            style: FilledButton.styleFrom(backgroundColor: color, foregroundColor: legibleForegroundOn(color)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Continuar',
-                  style: const TextStyle(
-                    fontFamily: 'SpaceGrotesk',
-                    fontWeight: FontWeight.w700,
-                    fontSize: AppTextSize.body,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Icon(Icons.arrow_forward, size: AppIconSize.small),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  TextStyle _labelStyle(AppThemeColors tc) => TextStyle(
-        fontFamily: 'Outfit',
-        fontSize: AppTextSize.caption,
-        fontWeight: FontWeight.w600,
-        color: tc.textSecondary,
-        letterSpacing: 0.8,
-      );
 }
 
 // ─── Selector de libro ────────────────────────────────────────────────────────
@@ -563,21 +446,108 @@ class _LibroSelector extends StatelessWidget {
 
     if (available.isEmpty) {
       return Text(
-        'No hay libros disponibles',
+        'No hay registros disponibles',
         style: TextStyle(color: tc.textSecondary, fontSize: AppTextSize.body),
       );
     }
 
-    // DropdownButtonFormField estándar — mismo patrón que "Frecuencia de
-    // cobro" en add_credit_sheet.dart, sin contenedor/borde propio.
-    return DropdownButtonFormField<String>(
-      initialValue: libroId,
-      isExpanded: true,
-      decoration: InputDecoration(labelText: label),
-      items: available
-          .map((l) => DropdownMenuItem(value: l.id, child: Text(l.nombre)))
-          .toList(),
-      onChanged: onChanged,
+    final seleccionado = available.where((l) => l.id == libroId).firstOrNull;
+
+    // Fila táctil que abre un sheet de selección, en vez de un
+    // DropdownButtonFormField nativo — más rápido de escanear con pocas
+    // opciones y más "de app móvil" que un <select> de formulario web
+    // (boceto aprobado en el artifact de diseño).
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.tile),
+      onTap: () async {
+        final picked = await _elegirRegistro(context, available, tc, seleccionado?.id);
+        if (picked != null) onChanged(picked);
+      },
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary)),
+                const SizedBox(height: 2),
+                Text(
+                  seleccionado?.nombre ?? 'Elegir registro',
+                  style: TextStyle(
+                    fontSize: AppTextSize.body,
+                    fontWeight: FontWeight.w700,
+                    color: seleccionado != null ? tc.textPrimary : tc.textTertiary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right, size: AppIconSize.small, color: tc.textTertiary),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _elegirRegistro(
+    BuildContext context,
+    List<FinanceAccount> opciones,
+    AppThemeColors tc,
+    String? actual,
+  ) {
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Material(
+        color: Theme.of(ctx).scaffoldBackgroundColor,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Container(
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(color: tc.borderCard, borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final libro in opciones)
+                      ListTile(
+                        leading: Icon(iconFromKey(libro.icono), color: _colorFromHex(libro.color)),
+                        title: Text(libro.nombre),
+                        trailing: libro.id == actual
+                            ? Icon(Icons.check, color: Theme.of(ctx).colorScheme.primary)
+                            : null,
+                        onTap: () => Navigator.of(ctx).pop(libro.id),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -589,6 +559,7 @@ class _Paso2 extends ConsumerWidget {
   final List<FinanceAccount> libros;
   final String? libroId;
   final String? libroDestinoId;
+  final ValueChanged<String?> onLibroChanged;
   final ValueChanged<String?> onLibroDestinoChanged;
   final ValueChanged<String> onTipoChanged;
   final CatalogoCategoria? categoriaSeleccionada;
@@ -617,6 +588,7 @@ class _Paso2 extends ConsumerWidget {
     required this.libros,
     required this.libroId,
     required this.libroDestinoId,
+    required this.onLibroChanged,
     required this.onLibroDestinoChanged,
     required this.onTipoChanged,
     required this.categoriaSeleccionada,
@@ -693,55 +665,100 @@ class _Paso2 extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
 
-        // Ingreso/Gasto siempre editable acá — antes solo se podía elegir en
-        // el paso 1, que se salta cuando el libro ya viene preseleccionado
-        // (el flujo normal desde el FAB), dejando el tipo fijo en 'gasto'.
-        // Transferencia no entra acá: necesita el libro destino del paso 1.
-        // Píldora compacta en vez de SegmentedButton grande — más cerca del
-        // mockup aprobado.
-        if (tipo != 'transferencia') ...[
-          _TipoPill(tipo: tipo, onChanged: onTipoChanged, tc: tc),
-          const SizedBox(height: 8),
-        ],
+        // Ingreso/Gasto/Transferencia primero — ya no existe un paso previo
+        // aparte solo para elegir el tipo. Píldora compacta en vez de
+        // SegmentedButton grande — más cerca del mockup aprobado.
+        AppPillSelector<String>(
+          value: tipo,
+          onChanged: onTipoChanged,
+          options: [
+            PillOption(value: 'ingreso', label: 'Ingreso', color: _tipoColor('ingreso')),
+            PillOption(value: 'gasto', label: 'Gasto', color: _tipoColor('gasto')),
+            PillOption(value: 'transferencia', label: 'Transferir', color: _tipoColor('transferencia')),
+          ],
+        ),
+        const SizedBox(height: 16),
 
-        // Selector de destino: el Paso 1 (donde normalmente se elige) se
-        // salta al editar una transferencia ya existente — sin esto no
-        // había forma de corregir el destino de una transferencia dudosa
-        // desde el flujo de edición.
-        if (tipo == 'transferencia') ...[
-          _LibroSelector(
-            label: 'Destino',
-            libros: libros,
-            libroId: libroDestinoId,
-            onChanged: onLibroDestinoChanged,
-            tc: tc,
-            excludeId: libroId,
+        // Registro (origen) y, si aplica, Destino — agrupados en una tarjeta
+        // con borde, igual que el resto del detalle (Fecha/Hora/Lugar/Nota)
+        // en vez de quedar sueltos con un subrayado propio: dos lenguajes
+        // visuales distintos en la misma pantalla se sentía como dos
+        // formularios pegados, no uno solo.
+        AppSectionCard(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.account_balance_wallet_outlined, size: AppIconSize.small, color: tc.textSecondary),
+                const SizedBox(width: 12),
+                // Siempre visible, nunca desaparece al elegir uno. Si el
+                // formulario se abrió desde un registro específico (el
+                // flujo normal, vía el FAB de ese registro), ya viene
+                // preseleccionado acá — el usuario puede cambiarlo igual.
+                Expanded(
+                  child: _LibroSelector(
+                    label: 'Registro',
+                    libros: libros,
+                    libroId: libroId,
+                    onChanged: onLibroChanged,
+                    tc: tc,
+                  ),
+                ),
+              ],
+            ),
+            // Destino: solo para transferencia. Sin esto tampoco había forma
+            // de corregir el destino de una transferencia dudosa al
+            // editarla.
+            if (tipo == 'transferencia') ...[
+              const Divider(height: 24),
+              Row(
+                children: [
+                  Icon(Icons.swap_horiz, size: AppIconSize.small, color: tc.textSecondary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _LibroSelector(
+                      label: 'Destino',
+                      libros: libros,
+                      libroId: libroDestinoId,
+                      onChanged: onLibroDestinoChanged,
+                      tc: tc,
+                      excludeId: libroId,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Monto: mismo lenguaje visual que Créditos (card_movement_sheet.dart)
+        // — etiqueta "MONTO" chica arriba, campo normal alineado a la
+        // izquierda con "$" como prefijo, tamaño de texto moderado. Antes
+        // era un número gigante centrado con subrayado propio, inconsistente
+        // con el resto de la app.
+        Text(
+          'MONTO',
+          style: TextStyle(
+            fontSize: AppTextSize.body,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+            color: tc.textTertiary,
           ),
-          const SizedBox(height: 16),
-        ],
-
-        // Monto como protagonista: hero centrado, coloreado por tipo. Lleva
-        // un subrayado visible (en vez de border: none) — sin eso no había
-        // ninguna pista de que ahí se podía escribir.
+        ),
+        const SizedBox(height: 6),
         TextFormField(
           controller: montoCtrl,
           focusNode: montoFocus,
-          textAlign: TextAlign.center,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [_MontoFormatter()],
           style: TextStyle(
-            fontSize: AppTextSize.hero,
-            fontWeight: FontWeight.w800,
+            fontSize: AppTextSize.emphasis,
+            fontWeight: FontWeight.w700,
             color: color,
           ),
-          decoration: InputDecoration(
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: tc.borderCard, width: 2)),
-            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: color, width: 2)),
-            // El "$" va DENTRO del texto editable (lo agrega el formatter),
-            // no como prefixText — un prefixText ocupa espacio fijo a la
-            // izquierda y el número termina centrado en el resto del
-            // ancho, no en el campo completo.
-            hintText: '\$ 0',
+          decoration: const InputDecoration(
+            prefixText: '\$ ',
+            hintText: 'Ej. 80.000',
           ),
         ),
         const SizedBox(height: 16),
@@ -902,59 +919,6 @@ class _Paso2 extends ConsumerWidget {
 }
 
 // ─── Widgets auxiliares ───────────────────────────────────────────────────────
-// ─── Selector Ingreso/Gasto en píldora ────────────────────────────────────────
-class _TipoPill extends StatelessWidget {
-  final String tipo;
-  final ValueChanged<String> onChanged;
-  final AppThemeColors tc;
-
-  const _TipoPill({required this.tipo, required this.onChanged, required this.tc});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: tc.bgCard,
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: tc.borderCard),
-      ),
-      child: Row(
-        children: [
-          Expanded(child: _tipoSegmento('ingreso', 'Ingreso')),
-          Expanded(child: _tipoSegmento('gasto', 'Gasto')),
-        ],
-      ),
-    );
-  }
-
-  Widget _tipoSegmento(String valor, String label) {
-    final selected = tipo == valor;
-    final color = _tipoColor(valor);
-    return GestureDetector(
-      onTap: () => onChanged(valor),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 9),
-        decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.16) : Colors.transparent,
-          borderRadius: BorderRadius.circular(100),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: AppTextSize.body,
-              fontWeight: FontWeight.w700,
-              color: selected ? color : tc.textTertiary,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ─── Chip de categoría rápida ─────────────────────────────────────────────────
 class _CategoriaChip extends StatelessWidget {
   final CatalogoCategoria categoria;
@@ -1191,7 +1155,7 @@ class _MontoFormatter extends TextInputFormatter {
     if (soloDigitos.isEmpty) {
       return const TextEditingValue(text: '');
     }
-    final formatted = '\$ ${agruparMiles(int.parse(soloDigitos))}';
+    final formatted = agruparMiles(int.parse(soloDigitos));
     return TextEditingValue(
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
@@ -1331,65 +1295,71 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
               }
 
               final padres = delTipo.where((c) => c.parentId == null).toList();
+              if (padres.isEmpty) {
+                return Center(
+                  child: TextButton.icon(
+                    onPressed: _crearCategoria,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Crear categoría nueva'),
+                  ),
+                );
+              }
+              // Acordeón padre→hijo (vuelta al diseño original, pedido
+              // explícito del usuario tras comparar en el artifact: le
+              // gustaba más el acordeón, el problema era que la versión en
+              // la app se veía plana/sin pulir frente al boceto — esta
+              // versión usa _CategoriaPadreTile/_CategoriaHijoTile con el
+              // mismo chip de ícono con fondo de color que el mockup, en
+              // vez de ListTile por defecto).
               return ListView.builder(
                 controller: widget.scrollCtrl,
-                padding: const EdgeInsets.only(bottom: 24),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 itemCount: padres.length + 1,
                 itemBuilder: (context, index) {
                   if (index == padres.length) {
-                    return ListTile(
-                      leading: Container(
-                        width: AppIconSize.medium,
-                        height: AppIconSize.medium,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: tc.borderCard),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(Icons.add, size: AppIconSize.small, color: tc.textSecondary),
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: _CategoriaPadreTile(
+                        nombre: 'Crear categoría nueva',
+                        icono: Icons.add,
+                        color: tc.textSecondary,
+                        tc: tc,
+                        dashed: true,
+                        onTap: _crearCategoria,
                       ),
-                      title: Text(
-                        'Crear categoría nueva',
-                        style: TextStyle(color: tc.textSecondary, fontWeight: FontWeight.w600),
-                      ),
-                      onTap: _crearCategoria,
                     );
                   }
 
                   final padre = padres[index];
                   final hijos = delTipo.where((c) => c.parentId == padre.id).toList();
                   final isExpanded = _expandidos.contains(padre.id);
+                  final color = _tipoColor(padre.tipo);
 
                   return Column(
                     children: [
-                      ListTile(
-                        leading: Icon(padre.icono, size: AppIconSize.medium, color: _tipoColor(padre.tipo)),
-                        title: Text(padre.nombre, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        // "+" para agregar una subcategoría dentro de este
-                        // grupo — antes no había forma de crear una
-                        // categoría anidada, solo categorías sueltas.
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.add, size: AppIconSize.small, color: tc.textTertiary),
-                              tooltip: 'Agregar subcategoría',
-                              onPressed: () async {
-                                final result = await showNuevaCategoriaSheet(
-                                  context,
-                                  widget.tipo,
-                                  parentIdInicial: padre.id,
-                                );
-                                if (result != null) {
-                                  ref.invalidate(allFinanceCategoriesProvider);
-                                  widget.onSeleccionar(result);
-                                }
-                              },
-                            ),
-                            if (hijos.isNotEmpty)
-                              Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
-                          ],
+                      _CategoriaPadreTile(
+                        nombre: padre.nombre,
+                        icono: padre.icono,
+                        color: color,
+                        tc: tc,
+                        trailingExtra: IconButton(
+                          icon: Icon(Icons.add, size: AppIconSize.small, color: tc.textTertiary),
+                          tooltip: 'Agregar subcategoría',
+                          onPressed: () async {
+                            final result = await showNuevaCategoriaSheet(
+                              context,
+                              widget.tipo,
+                              parentIdInicial: padre.id,
+                            );
+                            if (result != null) {
+                              ref.invalidate(allFinanceCategoriesProvider);
+                              widget.onSeleccionar(result);
+                            }
+                          },
                         ),
+                        chevron: hijos.isEmpty
+                            ? null
+                            : (isExpanded ? Icons.expand_less : Icons.expand_more),
                         onTap: () => setState(() {
                           if (isExpanded) {
                             _expandidos.remove(padre.id);
@@ -1402,23 +1372,30 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
                         duration: const Duration(milliseconds: 200),
                         curve: Curves.easeInOut,
                         child: isExpanded
-                            ? Column(
-                                children: hijos.map((hijo) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(left: 32),
-                                    child: ListTile(
-                                      leading: Icon(hijo.icono, size: AppIconSize.medium, color: _tipoColor(hijo.tipo)),
-                                      title: Text(hijo.nombre),
+                            ? Padding(
+                                padding: const EdgeInsets.only(left: 20),
+                                child: Column(
+                                  children: hijos.map((hijo) {
+                                    return _CategoriaHijoTile(
+                                      nombre: hijo.nombre,
+                                      icono: hijo.icono,
+                                      color: _tipoColor(hijo.tipo),
+                                      tc: tc,
                                       onTap: () {
                                         HapticFeedback.lightImpact();
                                         widget.onSeleccionar(hijo);
                                       },
-                                    ),
-                                  );
-                                }).toList(),
+                                    );
+                                  }).toList(),
+                                ),
                               )
                             : const SizedBox.shrink(),
                       ),
+                      if (index < padres.length - 1)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Divider(height: 1, color: tc.borderCard),
+                        ),
                     ],
                   );
                 },
@@ -1427,6 +1404,121 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Fila de categoría padre: ícono en chip redondeado con fondo tenue de su
+/// color (mismo lenguaje que el boceto original del artifact), nombre, y
+/// opcionalmente un control extra (el "+" de agregar subcategoría) y una
+/// flecha de expandir/colapsar.
+class _CategoriaPadreTile extends StatelessWidget {
+  final String nombre;
+  final IconData icono;
+  final Color color;
+  final AppThemeColors tc;
+  final VoidCallback onTap;
+  final Widget? trailingExtra;
+  final IconData? chevron;
+  final bool dashed;
+
+  const _CategoriaPadreTile({
+    required this.nombre,
+    required this.icono,
+    required this.color,
+    required this.tc,
+    required this.onTap,
+    this.trailingExtra,
+    this.chevron,
+    this.dashed = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.tile),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                  border: dashed ? Border.all(color: tc.borderCard, width: 1.2) : null,
+                ),
+                alignment: Alignment.center,
+                child: Icon(icono, size: AppIconSize.medium, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  nombre,
+                  style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w700, color: tc.textPrimary),
+                ),
+              ),
+              ?trailingExtra,
+              if (chevron != null) Icon(chevron, color: tc.textTertiary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Fila de subcategoría (hijo), indentada bajo su padre expandido — mismo
+/// chip de ícono que el padre pero un poco más chico, sin flecha.
+class _CategoriaHijoTile extends StatelessWidget {
+  final String nombre;
+  final IconData icono;
+  final Color color;
+  final AppThemeColors tc;
+  final VoidCallback onTap;
+
+  const _CategoriaHijoTile({
+    required this.nombre,
+    required this.icono,
+    required this.color,
+    required this.tc,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.tile),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Row(
+            children: [
+              Container(
+                width: 30, height: 30,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                alignment: Alignment.center,
+                child: Icon(icono, size: AppIconSize.small, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  nombre,
+                  style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w600, color: tc.textPrimary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -70,4 +70,43 @@ void main() {
 
     await db.close();
   });
+
+  test('financeGlobalPeriodSummaryProvider suma ingresos/gastos del mes sobre todos los registros, '
+      'ignora transferencias y meses distintos', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    await db.upsertFinanceAccount(FinanceAccountsCompanion.insert(
+      id: 'A', nombre: 'A', tipo: 'efectivo', icono: 'wallet', color: '#000',
+    ));
+    await db.upsertFinanceAccount(FinanceAccountsCompanion.insert(
+      id: 'B', nombre: 'B', tipo: 'efectivo', icono: 'wallet', color: '#000',
+    ));
+    await db.upsertFinanceTransaction(FinanceTransactionsCompanion.insert(
+      id: 't1', accountId: 'A', categoryId: 'ingresos', tipo: 'ingreso',
+      monto: 300, fecha: '2026-10-05',
+    ));
+    await db.upsertFinanceTransaction(FinanceTransactionsCompanion.insert(
+      id: 't2', accountId: 'B', categoryId: 'alimentacion', tipo: 'gasto',
+      monto: 100, fecha: '2026-10-10',
+    ));
+    await db.upsertFinanceTransaction(FinanceTransactionsCompanion.insert(
+      id: 't3', accountId: 'A', categoryId: 'transferencia', tipo: 'transferencia',
+      monto: 999, fecha: '2026-10-12', transferToAccountId: const Value('B'),
+    ));
+    await db.upsertFinanceTransaction(FinanceTransactionsCompanion.insert(
+      id: 't4', accountId: 'A', categoryId: 'ingresos', tipo: 'ingreso',
+      monto: 5000, fecha: '2026-09-01',
+    ));
+
+    final container = ProviderContainer(overrides: [
+      databaseProvider.overrideWithValue(db),
+    ]);
+    addTearDown(container.dispose);
+
+    final resumen = await container.read(financeGlobalPeriodSummaryProvider('2026-10').future);
+
+    expect(resumen.ingresos, 300);
+    expect(resumen.gastos, 100);
+
+    await db.close();
+  });
 }

@@ -109,6 +109,33 @@ final financeAccountBalanceProvider =
   );
 });
 
+class FinanceGlobalPeriodSummary {
+  final double ingresos;
+  final double gastos;
+  const FinanceGlobalPeriodSummary({required this.ingresos, required this.gastos});
+}
+
+/// Ingresos/gastos de [mes] ('YYYY-MM') sumados sobre todos los registros
+/// activos — una transferencia nunca cuenta aquí (ver calcularIngresosGastos).
+/// Fuente para el resumen del periodo en el lobby de Registros (Fase 03).
+final financeGlobalPeriodSummaryProvider =
+    FutureProvider.family<FinanceGlobalPeriodSummary, String>((ref, mes) async {
+  final db = ref.watch(databaseProvider);
+  final cuentas = await db.getFinanceAccounts();
+  var ingresos = 0.0;
+  var gastos = 0.0;
+  for (final cuenta in cuentas) {
+    final rows = await db.getFinanceTransactionsInvolvingLibro(
+      libroId: cuenta.id, mes: mes,
+    );
+    final txs = rows.map(FinanceTransaction.fromRow).toList();
+    final ig = calcularIngresosGastos(txs, cuenta.id);
+    ingresos += ig.ingresos;
+    gastos += ig.gastos;
+  }
+  return FinanceGlobalPeriodSummary(ingresos: ingresos, gastos: gastos);
+});
+
 // Historial completo del libro activo (sin recorte por mes) — incluye las
 // transferencias entrantes (transferToAccountId == libroId) para que el
 // registro destino también vea el dinero que recibió.

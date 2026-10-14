@@ -11,6 +11,7 @@ import '../../utils/currency_input_formatter.dart';
 import '../../domain/loan_calculator.dart';
 import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_pill_selector.dart';
 import '../../widgets/interest_rate_type_field.dart';
 import '../../widgets/krezium_section_card.dart';
 import '../../widgets/krezium_bottom_dialogs.dart';
@@ -805,23 +806,17 @@ class _EditCreditSheetState extends ConsumerState<EditCreditSheet> {
               ),
             ),
             const SizedBox(height: 6),
-            SegmentedButton<bool?>(
-              showSelectedIcon: false,
-              style: SegmentedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                textStyle: const TextStyle(fontSize: 12),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              segments: const [
-                ButtonSegment(value: null, label: Text('Desconocido')),
-                ButtonSegment(value: true, label: Text('Sin interés')),
-                ButtonSegment(value: false, label: Text('Con interés')),
-              ],
-              selected: {_oneInstallmentInterestPolicy},
-              onSelectionChanged: (s) => setState(() {
-                _oneInstallmentInterestPolicy = s.first;
+            AppPillSelector<bool?>(
+              value: _oneInstallmentInterestPolicy,
+              onChanged: (v) => setState(() {
+                _oneInstallmentInterestPolicy = v;
                 _hasChanges = true;
               }),
+              options: const [
+                PillOption(value: null, label: 'Desconocido'),
+                PillOption(value: true, label: 'Sin interés'),
+                PillOption(value: false, label: 'Con interés'),
+              ],
             ),
             const SizedBox(height: 4),
             Text(

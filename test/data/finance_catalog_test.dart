@@ -2,24 +2,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 
 void main() {
-  // Conteo actualizado tras expandir Transporte/Salud/Vivienda/Educación/
-  // Alimentación con subcategorías reales (antes algunos padres tenían un
-  // único hijo con el mismo nombre que el padre — ej. "Transporte" dentro
-  // de "Transporte" — sin distinguir medios de transporte reales).
-  test('catálogo tiene exactamente 43 categorías', () {
-    expect(catalogoFinanzas.length, 43);
+  // Conteo actualizado tras ampliar el catálogo a (casi) toda la
+  // amplitud de subcategorías propuesta por el usuario, sobre todo en
+  // gastos — manteniendo los 18 padres ya consolidados (no se refragmentó
+  // en padres, solo se ampliaron las subcategorías de cada uno).
+  test('catálogo tiene exactamente 125 categorías', () {
+    expect(catalogoFinanzas.length, 125);
   });
 
   test('ids únicos en catálogo', () {
     final ids = catalogoFinanzas.map((c) => c.id).toSet();
-    expect(ids.length, 43);
+    expect(ids.length, 125);
   });
 
-  test('8 ingresos y 35 gastos', () {
+  test('12 ingresos y 113 gastos', () {
     final ingresos = catalogoFinanzas.where((c) => c.tipo == 'ingreso').length;
     final gastos = catalogoFinanzas.where((c) => c.tipo == 'gasto').length;
-    expect(ingresos, 8);
-    expect(gastos, 35);
+    expect(ingresos, 12);
+    expect(gastos, 113);
   });
 
   test('cada subcategoría apunta a un padre que existe', () {

@@ -4,10 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
+import 'package:krezium/data/finance_icon_catalog_full.dart';
 import 'package:krezium/data/finance_icon_map.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/widgets/app_pill_selector.dart';
 import 'package:uuid/uuid.dart';
 
 // Un solo tono por tipo (verde ingreso / rojo gasto) en vez de la gama de
@@ -85,7 +87,6 @@ class _CategoriaSelectorSheetState
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<AppThemeColors>()!;
     final asyncCats = ref.watch(allFinanceCategoriesProvider);
 
     return Padding(
@@ -96,12 +97,17 @@ class _CategoriaSelectorSheetState
       maxChildSize: 0.85,
       expand: false,
       builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: colors.bgCard,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(24)),
+        return Material(
+          // Material (no Container con color propio): los ListTile de esta
+          // lista pintan fondo/ripple en el Material más cercano — con un
+          // Container de por medio quedaban sin efecto visual.
+          // scaffoldBackgroundColor, no bgCard — mismo fondo de sheet que
+          // Créditos (ver nota igual en nueva_transaccion_sheet.dart).
+          color: Theme.of(context).scaffoldBackgroundColor,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
+          clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
               // Handle
@@ -140,44 +146,16 @@ class _CategoriaSelectorSheetState
               Padding(
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.card, vertical: 8),
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'gasto',
-                      label: Text('Gasto'),
-                      icon: Icon(Icons.arrow_upward, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: 'ingreso',
-                      label: Text('Ingreso'),
-                      icon: Icon(Icons.arrow_downward, size: 16),
-                    ),
+                child: AppPillSelector<String>(
+                  value: _tipo,
+                  onChanged: (v) => setState(() {
+                    _tipo = v;
+                    _expandidos.clear();
+                  }),
+                  options: [
+                    PillOption(value: 'gasto', label: 'Gasto', color: _colorPorTipo('gasto')),
+                    PillOption(value: 'ingreso', label: 'Ingreso', color: _colorPorTipo('ingreso')),
                   ],
-                  selected: {_tipo},
-                  onSelectionChanged: (selection) {
-                    setState(() {
-                      _tipo = selection.first;
-                      _expandidos.clear();
-                    });
-                  },
-                  style: ButtonStyle(
-                    backgroundColor: WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.selected)) {
-                        return _tipo == 'ingreso'
-                            ? const Color(0xFF22C55E).withValues(alpha: 0.2)
-                            : const Color(0xFFEF4444).withValues(alpha: 0.2);
-                      }
-                      return null;
-                    }),
-                    foregroundColor: WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.selected)) {
-                        return _tipo == 'ingreso'
-                            ? const Color(0xFF22C55E)
-                            : const Color(0xFFEF4444);
-                      }
-                      return null;
-                    }),
-                  ),
                 ),
               ),
               const Divider(height: 1),
@@ -356,8 +334,17 @@ class _NuevaCategoriaSheetState extends ConsumerState<_NuevaCategoriaSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tc = theme.extension<AppThemeColors>()!;
-    final padresDisponibles = catalogoCategoriaPadres
-        .where((p) => p.tipo == _tipo || p.tipo == 'ambos' || _tipo == 'ambos')
+    // Padres disponibles: catálogo fijo + categorías personalizadas del
+    // usuario que actúan como padre (parentId == null) — antes solo se
+    // buscaba en `catalogoCategoriaPadres` (las 8 fijas), así que crear una
+    // subcategoría desde el "+" de un padre personalizado pasaba un id que
+    // el dropdown nunca encontraba en sus `items` y explotaba.
+    final todasAsync = ref.watch(allFinanceCategoriesProvider);
+    final todas = todasAsync.valueOrNull ?? const <CatalogoCategoria>[];
+    final padresDisponibles = todas
+        .where((p) =>
+            p.parentId == null &&
+            (p.tipo == _tipo || p.tipo == 'ambos' || _tipo == 'ambos'))
         .toList();
     final color = _colorPorTipo(_tipo);
     return Padding(
@@ -378,15 +365,14 @@ class _NuevaCategoriaSheetState extends ConsumerState<_NuevaCategoriaSheet> {
           const SizedBox(height: 16),
           Text('Nueva categoría', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'gasto', label: Text('Gasto'), icon: Icon(Icons.arrow_upward, size: 14)),
-              ButtonSegment(value: 'ingreso', label: Text('Ingreso'), icon: Icon(Icons.arrow_downward, size: 14)),
-              ButtonSegment(value: 'ambos', label: Text('Ambos'), icon: Icon(Icons.swap_vert, size: 14)),
+          AppPillSelector<String>(
+            value: _tipo,
+            options: [
+              PillOption(value: 'gasto', label: 'Gasto', color: _colorPorTipo('gasto')),
+              PillOption(value: 'ingreso', label: 'Ingreso', color: _colorPorTipo('ingreso')),
+              PillOption(value: 'ambos', label: 'Ambos', color: _colorPorTipo('ambos')),
             ],
-            selected: {_tipo},
-            onSelectionChanged: (s) => setState(() {
-              final nuevoTipo = s.first;
+            onChanged: (nuevoTipo) => setState(() {
               // La categoría padre depende del tipo — si deja de ser
               // compatible, se limpia para no guardar una combinación rara.
               // OJO: hay que recalcular la lista de padres compatibles con
@@ -395,8 +381,11 @@ class _NuevaCategoriaSheetState extends ConsumerState<_NuevaCategoriaSheet> {
               // usarlo acá dejaba pasar un `_parentId` que ya no encajaba
               // con el nuevo tipo, y el DropdownButtonFormField explotaba
               // en el siguiente build al no encontrar ese valor en `items`.
-              final padresCompatibles = catalogoCategoriaPadres.where(
-                  (p) => p.tipo == nuevoTipo || p.tipo == 'ambos' || nuevoTipo == 'ambos');
+              // Mismo universo que `padresDisponibles` en build(): fijo +
+              // personalizadas (ver fix de categoría padre personalizada).
+              final padresCompatibles = todas.where((p) =>
+                  p.parentId == null &&
+                  (p.tipo == nuevoTipo || p.tipo == 'ambos' || nuevoTipo == 'ambos'));
               _tipo = nuevoTipo;
               if (_parentId != null && !padresCompatibles.any((p) => p.id == _parentId)) {
                 _parentId = null;
@@ -477,7 +466,13 @@ class _IconoPickerSheetState extends State<_IconoPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final tc = Theme.of(context).extension<AppThemeColors>()!;
-    final entradas = financeIconMap.entries
+    // Catálogo curado primero (los ~180 ya pensados para Finanzas), luego
+    // el catálogo completo de Material Icons — el usuario puede elegir
+    // literalmente cualquier ícono del proveedor para su categoría propia,
+    // no solo los preseleccionados. `{...a, ...b}` conserva el valor de
+    // `a` si una clave se repite en ambos (el curado manda).
+    final todosLosIconos = {...financeIconMapFull, ...financeIconMap};
+    final entradas = todosLosIconos.entries
         .where((e) => e.key.toLowerCase().contains(_query.toLowerCase()))
         .toList();
 
@@ -490,7 +485,9 @@ class _IconoPickerSheetState extends State<_IconoPickerSheet> {
         expand: false,
         builder: (context, scrollCtrl) => Container(
           decoration: BoxDecoration(
-            color: tc.bgCard,
+            // scaffoldBackgroundColor, no tc.bgCard — mismo fondo de sheet
+            // estándar que Créditos.
+            color: Theme.of(context).scaffoldBackgroundColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(

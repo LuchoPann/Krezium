@@ -11,11 +11,11 @@ import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/providers/theme_provider.dart';
 import 'package:krezium/screens/finanzas/finanzas_libro_transacciones_screen.dart';
+import 'package:krezium/screens/finanzas/nueva_transaccion_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
 import 'package:krezium/widgets/color_picker_field.dart';
 import 'package:krezium/widgets/krezium_logo.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 // ─── Color helper ─────────────────────────────────────────────────────────────
@@ -45,7 +45,6 @@ class FinanzasCuentasScreen extends ConsumerStatefulWidget {
 }
 
 class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
-  bool _autoPushDone = false;
   final _searchCtrl = TextEditingController();
   String _query = '';
 
@@ -57,38 +56,12 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
     // acoplar esta lógica a la migración de schema (Task 7).
     unawaited(aplicarSenalamientoTransferenciasDudosas(ref.read(databaseProvider)));
     _searchCtrl.addListener(() => setState(() => _query = _searchCtrl.text.trim().toLowerCase()));
-    ref.listenManual<AsyncValue<List<FinanceAccountRow>>>(
-      financeAccountsProvider,
-      (prev, next) {
-        if (next.hasValue && !_autoPushDone) {
-          _checkAndAutoPush(next.value!);
-        }
-      },
-      fireImmediately: true,
-    );
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _checkAndAutoPush(List<FinanceAccountRow> rows) async {
-    if (_autoPushDone) return;
-    final prefs = await SharedPreferences.getInstance();
-    final defaultId = prefs.getString('finanzas_libro_default');
-    if (defaultId == null || !mounted) return;
-    final match = rows.where((r) => r.id == defaultId).toList();
-    if (match.isEmpty || !mounted) return;
-    _autoPushDone = true;
-    final libro = FinanceAccount.fromRow(match.first);
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => FinanzasLibroTransaccionesScreen(libro: libro),
-      ),
-    );
   }
 
   void _mostrarNuevoRegistroSheet() {
@@ -250,24 +223,16 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
         },
       ),
       floatingActionButton: asyncLibros.hasValue && asyncLibros.value!.isNotEmpty
-          ? Builder(builder: (context) {
-              final accentColor = Theme.of(context).colorScheme.primary;
-              return FloatingActionButton.extended(
-                backgroundColor: accentColor,
-                foregroundColor: legibleForegroundOn(accentColor),
-                onPressed: _mostrarNuevoRegistroSheet,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Nuevo registro'),
-              );
-            })
+          ? _FinanzasSpeedDial(
+              libros: asyncLibros.value!.map(FinanceAccount.fromRow).toList(),
+              onNuevoRegistro: _mostrarNuevoRegistroSheet,
+            )
           : null,
     );
   }
 
   Future<void> _marcarFavorito(FinanceAccount libro) async {
     HapticFeedback.mediumImpact();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('finanzas_libro_default', libro.id);
     final db = ref.read(databaseProvider);
     await db.clearFinanceAccountFavoritos();
     if (!mounted) return;
@@ -307,19 +272,13 @@ class _GlobalHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    double totalIngresos = 0;
-    double totalGastos = 0;
     double balance = 0;
     bool loading = false;
 
     for (final libro in libros) {
       final balanceAsync = ref.watch(financeAccountBalanceProvider(libro.id));
       balanceAsync.when(
-        data: (b) {
-          totalIngresos += b.ingresos;
-          totalGastos += b.gastos;
-          balance += b.saldo;
-        },
+        data: (b) => balance += b.saldo,
         loading: () => loading = true,
         error: (e, st) {},
       );
@@ -427,35 +386,6 @@ class _GlobalHeader extends ConsumerWidget {
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
-            const SizedBox(height: 22),
-            // ── Fila de stats secundarios (Ingresos | Gastos) + contador de
-            // registros debajo — mismo patrón que "Por pagar · Créditos
-            // activos" del dashboard.
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _SecondaryStat(
-                    label: 'Ingresos',
-                    value: formatCOP(totalIngresos),
-                    valueColor: colors.textPrimary,
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 34,
-                  margin: const EdgeInsets.symmetric(horizontal: 18),
-                  color: colors.borderCard,
-                ),
-                Expanded(
-                  child: _SecondaryStat(
-                    label: 'Gastos',
-                    value: formatCOP(totalGastos),
-                    valueColor: colors.textPrimary,
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: AppSpacing.section),
             Row(
               children: [
@@ -493,55 +423,141 @@ class _GlobalHeader extends ConsumerWidget {
   }
 }
 
-/// Mismo patrón que `_SecondaryStat` del dashboard de Créditos: valor arriba
-/// (tipografía, sin ícono ni caja propia) y etiqueta en mayúsculas debajo.
-/// [valueColor] queda neutro para Ingresos/Gastos — el verde/rojo se
-/// reservó solo para el balance y los montos individuales, no para cada
-/// cifra agregada (el usuario reportó que tanto color en el resumen
-/// saturaba la vista).
-class _SecondaryStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color valueColor;
+// ─── FAB expandible: Nuevo registro + accesos rápidos de transacción ─────────
+// Antes había una fila fija de 3 botones (Ingreso/Gasto/Transferir) debajo
+// del resumen, compitiendo visualmente con el resto del header. Se
+// consolidan detrás de un único FAB que se expande hacia arriba al tocarlo,
+// como pidió el usuario explícitamente tras ver la pantalla real.
+class _FinanzasSpeedDial extends StatefulWidget {
+  final List<FinanceAccount> libros;
+  final VoidCallback onNuevoRegistro;
 
-  const _SecondaryStat({
+  const _FinanzasSpeedDial({required this.libros, required this.onNuevoRegistro});
+
+  @override
+  State<_FinanzasSpeedDial> createState() => _FinanzasSpeedDialState();
+}
+
+class _FinanzasSpeedDialState extends State<_FinanzasSpeedDial> {
+  bool _abierto = false;
+
+  void _toggle() => setState(() => _abierto = !_abierto);
+
+  void _cerrarYEjecutar(VoidCallback accion) {
+    setState(() => _abierto = false);
+    accion();
+  }
+
+  void _abrirTransaccion(String tipo) {
+    showNuevaTransaccionSheet(
+      context,
+      libroId: widget.libros.length == 1 ? widget.libros.first.id : null,
+      tipoInicial: tipo,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final colors = Theme.of(context).extension<AppThemeColors>()!;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (_abierto) ...[
+          _SpeedDialOption(
+            label: 'Nuevo registro',
+            icon: Icons.account_balance_wallet_outlined,
+            colors: colors,
+            onTap: () => _cerrarYEjecutar(widget.onNuevoRegistro),
+          ),
+          const SizedBox(height: 10),
+          _SpeedDialOption(
+            label: 'Transferir',
+            icon: Icons.swap_horiz,
+            colors: colors,
+            onTap: () => _cerrarYEjecutar(() => _abrirTransaccion('transferencia')),
+          ),
+          const SizedBox(height: 10),
+          _SpeedDialOption(
+            label: 'Gasto',
+            icon: Icons.arrow_upward,
+            colors: colors,
+            onTap: () => _cerrarYEjecutar(() => _abrirTransaccion('gasto')),
+          ),
+          const SizedBox(height: 10),
+          _SpeedDialOption(
+            label: 'Ingreso',
+            icon: Icons.arrow_downward,
+            colors: colors,
+            onTap: () => _cerrarYEjecutar(() => _abrirTransaccion('ingreso')),
+          ),
+          const SizedBox(height: 14),
+        ],
+        FloatingActionButton(
+          backgroundColor: cs.primary,
+          foregroundColor: legibleForegroundOn(cs.primary),
+          onPressed: _toggle,
+          child: AnimatedRotation(
+            turns: _abierto ? 0.125 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: const Icon(Icons.add_rounded),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SpeedDialOption extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final AppThemeColors colors;
+  final VoidCallback onTap;
+
+  const _SpeedDialOption({
     required this.label,
-    required this.value,
-    required this.valueColor,
+    required this.icon,
+    required this.colors,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: AppTextSize.heading,
-            letterSpacing: -0.3,
-            color: valueColor,
-            fontFeatures: const [FontFeature.tabularFigures()],
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(100),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: colors.bgCard,
+                  borderRadius: BorderRadius.circular(AppRadius.chip),
+                  border: Border.all(color: colors.borderCard),
+                ),
+                child: Text(label, style: TextStyle(fontSize: AppTextSize.body, color: colors.textPrimary)),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colors.bgCard,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: colors.borderCard),
+                ),
+                child: Icon(icon, size: AppIconSize.medium, color: colors.textPrimary),
+              ),
+            ],
           ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 3),
-        Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            fontSize: AppTextSize.body,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.6,
-            color: kredit.textTertiary,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
+      ),
     );
   }
 }
