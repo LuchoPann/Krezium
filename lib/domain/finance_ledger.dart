@@ -91,3 +91,16 @@ double totalReservado(List<FinanceReservationRow> reservas) => reservas
   final disponible = saldo - reservado;
   return (disponibleEstimado: disponible, reservasExcedenSaldo: reservado > 0 && reservado > saldo);
 }
+
+/// Compara [actual] contra [anterior] — devuelve null cuando el periodo
+/// anterior no tiene datos (==0), porque calcular un % de variación contra
+/// cero produce una cifra sin sentido (infinita o engañosa), no una
+/// comparación real. La UI decide cómo presentar el delta; esto solo
+/// calcula si hay base comparable y cuál es la variación.
+({double actual, double anterior, double deltaPct})? comparacionPeriodoAnterior({
+  required double actual,
+  required double anterior,
+}) {
+  if (anterior <= 0) return null;
+  return (actual: actual, anterior: anterior, deltaPct: (actual - anterior) / anterior * 100);
+}

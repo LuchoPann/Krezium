@@ -9,6 +9,7 @@ import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_ledger.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
+import 'package:krezium/screens/finanzas/finanzas_libro_transacciones_screen.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
 
@@ -145,6 +146,20 @@ class _FinanzasEstadisticasScreenState
     );
   }
 
+  // ─── Comparación con el mes anterior (Fase 06) ──────────────────────────────
+  // Solo tiene sentido para "Este mes": comparar "3 meses" o "6 meses" contra
+  // el bloque inmediatamente anterior de igual longitud sería más confuso
+  // que útil, así que esa comparación queda fuera de alcance por ahora.
+
+  double _gastosMesAnterior(List<FinanceTransaction> txs) {
+    final now = DateTime.now();
+    final anterior = DateTime(now.year, now.month - 1);
+    final prefix = '${anterior.year}-${anterior.month.toString().padLeft(2, '0')}';
+    return txs
+        .where((t) => t.tipo == 'gasto' && t.fecha.startsWith(prefix))
+        .fold(0.0, (s, t) => s + t.monto);
+  }
+
   // ─── Pie data (gastos por categoría) ────────────────────────────────────────
 
   List<({String catId, double monto})> _gastosPorCategoria(
@@ -187,6 +202,20 @@ class _FinanzasEstadisticasScreenState
       result.add((year: d.year, month: d.month, ingresos: ing, gastos: gas));
     }
     return result;
+  }
+
+  // ─── Fase 06: navegar desde un resultado a los movimientos que lo originan ──
+
+  void _irAMovimientosDeCategoria(String categoriaId) {
+    if (_libroActual == null) return;
+    ref.read(finanzasFiltrosProvider.notifier).state =
+        ref.read(finanzasFiltrosProvider).copyWith(categoriaId: categoriaId);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FinanzasLibroTransaccionesScreen(libro: _libroActual!),
+      ),
+    );
   }
 
   // ─── Formato compacto ────────────────────────────────────────────────────────
@@ -361,6 +390,37 @@ class _FinanzasEstadisticasScreenState
                     ),
                   ],
                 ),
+                // Comparación con el mes anterior — solo para "Este mes" (el
+                // único periodo donde comparar contra "el bloque anterior"
+                // es inequívoco) y solo si ese mes anterior tiene datos
+                // (si no, no hay base real para un %, ver comparacionPeriodoAnterior).
+                if (_periodo == _Periodo.esteMes) ...[
+                  Builder(builder: (context) {
+                    final comparacion = comparacionPeriodoAnterior(
+                      actual: tot.gastos,
+                      anterior: _gastosMesAnterior(allTxs),
+                    );
+                    if (comparacion == null) return const SizedBox.shrink();
+                    final ahora = DateTime.now();
+                    final mesAnterior = DateTime(ahora.year, ahora.month - 1);
+                    final subio = comparacion.deltaPct > 0;
+                    final pct = comparacion.deltaPct.abs().round();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        comparacion.deltaPct == 0
+                            ? 'Gastaste igual que en ${_kMesesCortos[mesAnterior.month]}: ${formatCOP(tot.gastos)}.'
+                            : 'Gastaste $pct% ${subio ? 'más' : 'menos'} que en '
+                                '${_kMesesCortos[mesAnterior.month]} '
+                                '(${formatCOP(comparacion.anterior)} → ${formatCOP(comparacion.actual)}).',
+                        style: TextStyle(
+                          fontSize: AppTextSize.caption,
+                          color: subio ? _kGastos : colors.textSecondary,
+                        ),
+                      ),
+                    );
+                  }),
+                ],
                 const SizedBox(height: 24),
 
                 if (!hayDatos) ...[
@@ -400,6 +460,7 @@ class _FinanzasEstadisticasScreenState
                         });
                       },
                       totalGastos: pieData.fold(0, (s, e) => s + e.monto),
+                      onCategoriaTap: _irAMovimientosDeCategoria,
                     ),
                     const SizedBox(height: 24),
                   ],
@@ -524,6 +585,7 @@ class _PieDonutSection extends StatelessWidget {
   final int? touchedIndex;
   final ValueChanged<int> onTouch;
   final double totalGastos;
+  final ValueChanged<String> onCategoriaTap;
 
   const _PieDonutSection({
     required this.data,
@@ -531,6 +593,7 @@ class _PieDonutSection extends StatelessWidget {
     required this.touchedIndex,
     required this.onTouch,
     required this.totalGastos,
+    required this.onCategoriaTap,
   });
 
   @override
@@ -616,6 +679,7 @@ class _PieDonutSection extends StatelessWidget {
                 color: _kPieColors[i % _kPieColors.length],
                 totalGastos: totalGastos,
                 isOtros: data[i].catId == '__otros__',
+                onTap: data[i].catId == '__otros__' ? null : () => onCategoriaTap(data[i].catId),
               ),
           ],
         ),
@@ -630,6 +694,9 @@ class _PieLegendItem extends StatelessWidget {
   final Color color;
   final double totalGastos;
   final bool isOtros;
+  // Fase 06: navega a los movimientos que originan esta porción — null
+  // para "Otros" (agrupa varias categorías, no hay un único filtro posible).
+  final VoidCallback? onTap;
 
   const _PieLegendItem({
     required this.item,
@@ -637,13 +704,14 @@ class _PieLegendItem extends StatelessWidget {
     required this.color,
     required this.totalGastos,
     required this.isOtros,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final nombre = isOtros ? 'Otros' : (cat?.nombre ?? item.catId);
     final pct = totalGastos > 0 ? item.monto / totalGastos * 100 : 0.0;
-    return Row(
+    final contenido = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
@@ -654,8 +722,14 @@ class _PieLegendItem extends StatelessWidget {
           '$nombre  ${formatCOP(item.monto)} (${pct.toStringAsFixed(1)}%)',
           style: const TextStyle(fontSize: AppTextSize.caption),
         ),
+        if (onTap != null) ...[
+          const SizedBox(width: 2),
+          Icon(Icons.chevron_right, size: AppIconSize.micro, color: Theme.of(context).colorScheme.primary),
+        ],
       ],
     );
+    if (onTap == null) return contenido;
+    return InkWell(onTap: onTap, child: contenido);
   }
 }
 

@@ -159,5 +159,7 @@ final finanzasLibroTxProvider =
     tipo: tipo,
     ascending: filtros.ascending,
   );
-  return rows.map(FinanceTransaction.fromRow).toList();
+  final txs = rows.map(FinanceTransaction.fromRow).toList();
+  if (filtros.categoriaId == null) return txs;
+  return txs.where((t) => t.categoryId == filtros.categoriaId).toList();
 });

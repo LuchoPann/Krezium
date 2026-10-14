@@ -201,13 +201,21 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
                             final libro = filtered[index];
                             return _LibroCard(
                               libro: libro,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      FinanzasLibroTransaccionesScreen(libro: libro),
-                                ),
-                              ),
+                              onTap: () {
+                                // Entrar por el flujo normal siempre arranca
+                                // sin filtro de categoría — ese filtro solo
+                                // lo activa el drill-down desde Estadísticas
+                                // (ver finanzas_estadisticas_screen.dart).
+                                ref.read(finanzasFiltrosProvider.notifier).state =
+                                    ref.read(finanzasFiltrosProvider).copyWith(limpiarCategoria: true);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        FinanzasLibroTransaccionesScreen(libro: libro),
+                                  ),
+                                );
+                              },
                               onFavorito: () => _marcarFavorito(libro),
                               onEditar: () => _mostrarEditarRegistroSheet(libro),
                               onArchivar: () => _archivarLibro(libro),

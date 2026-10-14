@@ -159,6 +159,22 @@ void main() {
     });
   });
 
+  group('comparacionPeriodoAnterior', () {
+    test('sin datos en el periodo anterior, no hay comparación posible', () {
+      expect(comparacionPeriodoAnterior(actual: 100, anterior: 0), null);
+    });
+
+    test('calcula el delta porcentual cuando hay base comparable', () {
+      final r = comparacionPeriodoAnterior(actual: 150, anterior: 100);
+      expect(r!.deltaPct, 50);
+    });
+
+    test('delta negativo cuando el actual es menor', () {
+      final r = comparacionPeriodoAnterior(actual: 50, anterior: 100);
+      expect(r!.deltaPct, -50);
+    });
+  });
+
   group('observacionPeriodo', () {
     test('sin ingresos ni gastos: no hay observación', () {
       expect(observacionPeriodo(ingresos: 0, gastos: 0), isNull);

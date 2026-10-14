@@ -321,6 +321,26 @@ class _FinanzasLibroTransaccionesScreenState
             ),
           );
 
+          // Chip de filtro por categoría — visible solo cuando se llegó acá
+          // desde un resultado de Estadísticas (Fase 06); sin esto, nada en
+          // esta pantalla explicaría por qué el listado está recortado.
+          if (filtros.categoriaId != null) {
+            final cat = catMap[filtros.categoriaId];
+            slivers.add(
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: InputChip(
+                    avatar: cat != null ? Icon(cat.icono, size: AppIconSize.small, color: cat.color) : null,
+                    label: Text('Categoría: ${cat?.nombre ?? filtros.categoriaId}'),
+                    onDeleted: () => ref.read(finanzasFiltrosProvider.notifier).state =
+                        filtros.copyWith(limpiarCategoria: true),
+                  ),
+                ),
+              ),
+            );
+          }
+
           // Resumen como tarjeta propia (no flotando en el AppBar) — le da
           // peso visual y deja de sentirse "suelto" sobre el fondo.
           slivers.add(
