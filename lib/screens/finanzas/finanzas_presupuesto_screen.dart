@@ -56,6 +56,9 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
             parentPorCategoria: parentPorCategoria,
           );
           final progreso = progresoPresupuesto(gasto: gasto, limite: b.montoLimite);
+          final hoy = DateTime.now();
+          final inicioPeriodo = DateTime(anio, mes, 1);
+          final finPeriodo = DateTime(anio, mes + 1, 1).subtract(const Duration(days: 1));
           return _BudgetItemData(
             rowId: b.rowId,
             categoryId: b.categoryId,
@@ -64,6 +67,12 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
             gasto: gasto,
             progreso: progreso,
             estado: estadoPresupuesto(progreso),
+            vaRapido: vaRapido(
+              progreso: progreso,
+              inicioPeriodo: inicioPeriodo,
+              finPeriodo: finPeriodo,
+              hoy: hoy,
+            ),
           );
         }).toList()
           ..sort((a, b) => b.progreso.compareTo(a.progreso));
@@ -230,6 +239,7 @@ class _BudgetItemData {
   final double gasto;
   final double progreso;
   final EstadoPresupuesto estado;
+  final bool vaRapido;
 
   _BudgetItemData({
     required this.rowId,
@@ -239,6 +249,7 @@ class _BudgetItemData {
     required this.gasto,
     required this.progreso,
     required this.estado,
+    required this.vaRapido,
   });
 }
 
@@ -452,6 +463,13 @@ class _BudgetCard extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (data.vaRapido) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Vas más rápido de lo esperado para este punto del mes',
+                          style: TextStyle(fontSize: AppTextSize.caption, color: Colors.amber.shade800),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -466,6 +484,13 @@ class _BudgetCard extends StatelessWidget {
 
 /// Sheet de creación/edición — bg = scaffoldBackgroundColor (sheet completo,
 /// no tarjeta/overlay) según la regla de diseño estandarizado del proyecto.
+///
+/// Flujo guiado de 4 pasos (Planificación v2): 1) elegir categoría,
+/// 2) revisar sugerencia (mediana de los últimos 3 meses, solo si hay
+/// datos suficientes), 3) ajustar el límite con vista previa en vivo del
+/// gasto ya acumulado, 4) confirmar. Al editar, la categoría es la
+/// identidad del presupuesto y no es editable — el flujo arranca directo
+/// en el paso de ajustar el límite.
 class _PresupuestoFormSheet extends ConsumerStatefulWidget {
   final int anio, mes;
   final List<CatalogoCategoria> categoriasDisponibles;
@@ -490,6 +515,8 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
     text: widget.montoInicial != null ? agruparMiles(widget.montoInicial!.round()) : '',
   );
   bool _guardando = false;
+  bool _sugerenciaAplicada = false;
+  late int _paso = _editando ? 2 : 0;
 
   bool get _editando => widget.categoriaInicial != null;
 
@@ -521,57 +548,6 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  Future<void> _elegirCategoria() async {
-    final picked = await showModalBottomSheet<CatalogoCategoria>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final tc = Theme.of(ctx).extension<AppThemeColors>()!;
-        return Material(
-          color: Theme.of(ctx).scaffoldBackgroundColor,
-          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-          clipBehavior: Clip.antiAlias,
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Categoría',
-                      style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary),
-                    ),
-                  ),
-                ),
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final c in widget.categoriasDisponibles)
-                        ListTile(
-                          leading: Icon(c.icono, color: c.color),
-                          title: Text(c.nombre),
-                          trailing: c.id == _categoria?.id
-                              ? Icon(Icons.check, color: Theme.of(ctx).colorScheme.primary)
-                              : null,
-                          onTap: () => Navigator.of(ctx).pop(c),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    if (picked != null) setState(() => _categoria = picked);
-  }
-
   @override
   Widget build(BuildContext context) {
     final tc = Theme.of(context).extension<AppThemeColors>()!;
@@ -591,66 +567,318 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
                 _editando ? 'Editar presupuesto' : 'Nuevo presupuesto',
                 style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary),
               ),
-              const SizedBox(height: AppSpacing.section),
-              InkWell(
-                borderRadius: BorderRadius.circular(AppRadius.tile),
-                // Al editar, la categoría es la identidad del presupuesto —
-                // cambiarla aquí equivaldría a crear uno nuevo y dejar
-                // huérfano el límite anterior, así que no se permite.
-                onTap: _editando ? null : _elegirCategoria,
-                child: Row(
-                  children: [
-                    Icon(
-                      _categoria?.icono ?? Icons.category_outlined,
-                      size: AppIconSize.small,
-                      color: tc.textSecondary,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text('Categoría', style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary)),
-                    ),
-                    Text(
-                      _categoria?.nombre ?? 'Elegir categoría',
-                      style: TextStyle(
-                        fontSize: AppTextSize.body,
-                        fontWeight: FontWeight.w600,
-                        color: _categoria != null ? tc.textPrimary : tc.textTertiary,
-                      ),
-                    ),
-                    if (!_editando) ...[
-                      const SizedBox(width: 4),
-                      Icon(Icons.chevron_right, size: AppIconSize.small, color: tc.textTertiary),
-                    ],
-                  ],
-                ),
-              ),
-              const Divider(height: 24),
-              Text('LÍMITE MENSUAL', style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w700, color: tc.textTertiary)),
-              const SizedBox(height: 6),
-              TextFormField(
-                controller: _montoCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [MontoInputFormatter()],
-                autofocus: !_editando,
-                onChanged: (_) => setState(() {}),
-                style: TextStyle(fontSize: AppTextSize.emphasis, fontWeight: FontWeight.w700, color: tc.textPrimary),
-                decoration: const InputDecoration(prefixText: '\$ ', hintText: 'Ej. 500.000'),
+              const SizedBox(height: 4),
+              Text(
+                _editando ? 'Ajustar límite' : _tituloPaso(_paso),
+                style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary),
               ),
               const SizedBox(height: AppSpacing.section),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: FilledButton(
-                  onPressed: (_guardando || _categoria == null || _montoValido == null) ? null : _guardar,
-                  child: _guardando
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text(_editando ? 'Guardar cambios' : 'Crear presupuesto'),
-                ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _contenidoPaso(tc),
               ),
+              const SizedBox(height: AppSpacing.section),
+              _botonesPaso(tc),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  String _tituloPaso(int paso) => switch (paso) {
+        0 => 'Paso 1 de 4 · Elegir categoría',
+        1 => 'Paso 2 de 4 · Revisar sugerencia',
+        2 => 'Paso 3 de 4 · Ajustar el límite',
+        _ => 'Paso 4 de 4 · Confirmar',
+      };
+
+  Widget _contenidoPaso(AppThemeColors tc) {
+    switch (_paso) {
+      case 0:
+        return _PasoCategoria(
+          key: const ValueKey('paso0'),
+          categorias: widget.categoriasDisponibles,
+          seleccionada: _categoria,
+          onSeleccionar: (c) => setState(() {
+            _categoria = c;
+            _paso = 1;
+          }),
+        );
+      case 1:
+        return _PasoSugerencia(
+          key: const ValueKey('paso1'),
+          categoria: _categoria!,
+          anio: widget.anio,
+          mes: widget.mes,
+          onUsarSugerencia: (monto) => setState(() {
+            _montoCtrl.text = agruparMiles(monto.round());
+            _sugerenciaAplicada = true;
+          }),
+        );
+      case 2:
+        return _PasoLimite(
+          key: const ValueKey('paso2'),
+          categoria: _categoria,
+          montoCtrl: _montoCtrl,
+          anio: widget.anio,
+          mes: widget.mes,
+          autofocus: !_sugerenciaAplicada,
+          onChanged: () => setState(() {}),
+        );
+      default:
+        return _PasoConfirmar(
+          key: const ValueKey('paso3'),
+          categoria: _categoria!,
+          monto: _montoValido,
+          anio: widget.anio,
+          mes: widget.mes,
+        );
+    }
+  }
+
+  Widget _botonesPaso(AppThemeColors tc) {
+    final esPrimerPaso = _paso == (_editando ? 2 : 0);
+    final puedeAvanzar = switch (_paso) {
+      0 => false, // paso 0 avanza al tocar una categoría, no con botón
+      2 => _montoValido != null,
+      _ => true,
+    };
+    return Row(
+      children: [
+        if (!esPrimerPaso)
+          TextButton(
+            onPressed: _guardando ? null : () => setState(() => _paso--),
+            child: const Text('Atrás'),
+          ),
+        const Spacer(),
+        if (_paso < 3 && _paso != 0)
+          FilledButton(
+            onPressed: puedeAvanzar ? () => setState(() => _paso++) : null,
+            child: const Text('Siguiente'),
+          )
+        else if (_paso == 3)
+          SizedBox(
+            width: 180,
+            height: 50,
+            child: FilledButton(
+              onPressed: _guardando ? null : _guardar,
+              child: _guardando
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text(_editando ? 'Guardar cambios' : 'Crear presupuesto'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Paso 1: elegir categoría (lista inline, no un sub-sheet aparte).
+class _PasoCategoria extends StatelessWidget {
+  final List<CatalogoCategoria> categorias;
+  final CatalogoCategoria? seleccionada;
+  final ValueChanged<CatalogoCategoria> onSeleccionar;
+
+  const _PasoCategoria({super.key, required this.categorias, required this.seleccionada, required this.onSeleccionar});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 320,
+      child: ListView.builder(
+        itemCount: categorias.length,
+        itemBuilder: (ctx, i) {
+          final c = categorias[i];
+          return ListTile(
+            leading: Icon(c.icono, color: c.color),
+            title: Text(c.nombre),
+            trailing: c.id == seleccionada?.id ? Icon(Icons.check, color: Theme.of(ctx).colorScheme.primary) : null,
+            onTap: () => onSeleccionar(c),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Paso 2: sugerencia basada en la mediana de los últimos 3 meses — solo
+/// se muestra si sugerenciaPresupuesto encontró datos suficientes (≥2 de
+/// esos 3 meses con gasto registrado); si no, el paso simplemente informa
+/// que no hay base suficiente, sin fabricar un número.
+class _PasoSugerencia extends ConsumerWidget {
+  final CatalogoCategoria categoria;
+  final int anio, mes;
+  final ValueChanged<double> onUsarSugerencia;
+
+  const _PasoSugerencia({
+    super.key,
+    required this.categoria,
+    required this.anio,
+    required this.mes,
+    required this.onUsarSugerencia,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tc = Theme.of(context).extension<AppThemeColors>()!;
+    final txsAsync = ref.watch(financeTransactionsProvider(null));
+    final catsAsync = ref.watch(allFinanceCategoriesProvider);
+
+    return txsAsync.when(
+      loading: () => const SizedBox(height: 120, child: Center(child: CircularProgressIndicator())),
+      error: (e, _) => SizedBox(height: 120, child: Center(child: Text('Error: $e'))),
+      data: (txRows) {
+        final cats = catsAsync.valueOrNull ?? const [];
+        final parentPorCategoria = {for (final c in cats) c.id: c.parentId};
+        final transacciones = txRows.map(FinanceTransaction.fromRow).toList();
+        final hoy = DateTime(anio, mes);
+        final sugerencia = sugerenciaPresupuesto(
+          categoryId: categoria.id,
+          transacciones: transacciones,
+          parentPorCategoria: parentPorCategoria,
+          hoy: hoy,
+        );
+        if (sugerencia == null) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              'Todavía no hay suficiente historial de gasto en "${categoria.nombre}" '
+              'para sugerir un límite. Puedes escribirlo tú en el siguiente paso.',
+              style: TextStyle(color: tc.textSecondary),
+            ),
+          );
+        }
+        const nombresMes = [
+          '', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'
+        ];
+        final desglose = sugerencia.meses
+            .map((m) => '${nombresMes[m.month]} ${formatCOP(m.monto)}')
+            .join(', ');
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Sugerencia para ${categoria.nombre}', style: TextStyle(color: tc.textSecondary)),
+            const SizedBox(height: 4),
+            Text(
+              formatCOP(sugerencia.sugerido),
+              style: TextStyle(fontSize: AppTextSize.emphasis, fontWeight: FontWeight.w700, color: tc.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            Text('Basado en tus últimos 3 meses: $desglose.', style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary)),
+            const SizedBox(height: AppSpacing.tile),
+            OutlinedButton(
+              onPressed: () => onUsarSugerencia(sugerencia.sugerido),
+              child: const Text('Usar esta sugerencia'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Paso 3: ajustar el límite, con vista previa en vivo de lo ya gastado y
+/// lo que quedaría disponible con el valor actual del campo.
+class _PasoLimite extends ConsumerWidget {
+  final CatalogoCategoria? categoria;
+  final TextEditingController montoCtrl;
+  final int anio, mes;
+  final bool autofocus;
+  final VoidCallback onChanged;
+
+  const _PasoLimite({
+    super.key,
+    required this.categoria,
+    required this.montoCtrl,
+    required this.anio,
+    required this.mes,
+    required this.autofocus,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tc = Theme.of(context).extension<AppThemeColors>()!;
+    final mesStr = '$anio-${mes.toString().padLeft(2, '0')}';
+    final txsAsync = ref.watch(financeTransactionsProvider(mesStr));
+    final catsAsync = ref.watch(allFinanceCategoriesProvider);
+    final cat = categoria;
+
+    double gastoAcumulado = 0;
+    if (cat != null && txsAsync.hasValue && catsAsync.hasValue) {
+      final parentPorCategoria = {for (final c in catsAsync.value!) c.id: c.parentId};
+      final transacciones = txsAsync.value!.map(FinanceTransaction.fromRow).toList();
+      gastoAcumulado = gastoCategoriaPeriodo(
+        categoryId: cat.id,
+        transacciones: transacciones,
+        parentPorCategoria: parentPorCategoria,
+      );
+    }
+    final digitos = montoCtrl.text.replaceAll('.', '');
+    final montoActual = double.tryParse(digitos);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('LÍMITE MENSUAL', style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w700, color: tc.textTertiary)),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: montoCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [MontoInputFormatter()],
+          autofocus: autofocus,
+          onChanged: (_) => onChanged(),
+          style: TextStyle(fontSize: AppTextSize.emphasis, fontWeight: FontWeight.w700, color: tc.textPrimary),
+          decoration: const InputDecoration(prefixText: '\$ ', hintText: 'Ej. 500.000'),
+        ),
+        if (gastoAcumulado > 0) ...[
+          const SizedBox(height: AppSpacing.tile),
+          Text('Ya gastado este mes: ${formatCOP(gastoAcumulado)}', style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary)),
+          if (montoActual != null)
+            Text(
+              'Con este límite quedarían: ${formatCOP(montoActual - gastoAcumulado)}',
+              style: TextStyle(
+                fontSize: AppTextSize.caption,
+                fontWeight: FontWeight.w600,
+                color: (montoActual - gastoAcumulado) < 0 ? Colors.red : tc.textSecondary,
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Paso 4: resumen final antes de guardar.
+class _PasoConfirmar extends StatelessWidget {
+  final CatalogoCategoria categoria;
+  final double? monto;
+  final int anio, mes;
+
+  const _PasoConfirmar({super.key, required this.categoria, required this.monto, required this.anio, required this.mes});
+
+  @override
+  Widget build(BuildContext context) {
+    final tc = Theme.of(context).extension<AppThemeColors>()!;
+    const nombresMes = [
+      '', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(categoria.icono, color: categoria.color, size: AppIconSize.medium),
+          const SizedBox(width: 10),
+          Text(categoria.nombre, style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w700, color: tc.textPrimary)),
+        ]),
+        const SizedBox(height: 8),
+        Text('Periodo: ${nombresMes[mes]} $anio', style: TextStyle(color: tc.textSecondary)),
+        const SizedBox(height: 4),
+        Text(
+          'Límite: ${monto != null ? formatCOP(monto!) : '—'}',
+          style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary),
+        ),
+      ],
     );
   }
 }
