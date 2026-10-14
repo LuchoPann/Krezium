@@ -799,7 +799,12 @@ class AppDatabase extends _$AppDatabase {
   Future<void> deleteFinanceAccountSafely(String id) async {
     final count = await countTransactionsForAccount(id);
     if (count > 0) throw AccountHasTransactionsException(count);
-    final reservations = await getFinanceReservations(id);
+    // Una meta 'finalizada'/'cancelada' ya cerró su reserva (Planificación
+    // v2, flujo de cierre) — solo una meta 'activa'/'pausada' sigue
+    // comprometiendo el saldo de esta cuenta y debe bloquear el borrado.
+    final reservations = (await getFinanceReservations(id))
+        .where((r) => r.estado == 'activa' || r.estado == 'pausada')
+        .toList();
     if (reservations.isNotEmpty) {
       throw AccountHasTransactionsException(reservations.length);
     }

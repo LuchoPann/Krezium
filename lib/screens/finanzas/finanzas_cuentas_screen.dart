@@ -132,6 +132,25 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
         await db.deleteFinanceAccountAndHistory(libro.id);
         if (context.mounted) ref.invalidate(financeAccountsProvider);
       }
+    } on AccountHasTransactionsException catch (_) {
+      if (!context.mounted) return;
+      // Puede ser por transacciones (el count==0 de arriba ya las
+      // descartó en este punto) o por una meta vinculada activa/pausada —
+      // si es lo segundo, ofrecer un atajo directo a resolverlo en vez de
+      // un mensaje genérico.
+      final metas = (await db.getFinanceReservations(libro.id))
+          .where((r) => r.estado == 'activa' || r.estado == 'pausada')
+          .toList();
+      if (metas.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo eliminar el registro.')),
+          );
+        }
+        return;
+      }
+      if (!context.mounted) return;
+      await _ofrecerResolverMetaVinculada(context, libro, metas);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -139,6 +158,77 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
         );
       }
     }
+  }
+
+  /// Un registro con una meta vinculada activa/pausada no se puede borrar
+  /// (onDelete: restrict) — en vez de un error genérico, ofrece resolverlo
+  /// directo: reasignar la meta a otra cuenta o convertirla a virtual.
+  Future<void> _ofrecerResolverMetaVinculada(
+    BuildContext context,
+    FinanceAccount libro,
+    List<FinanceReservationRow> metas,
+  ) async {
+    final meta = metas.first;
+    final accion = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('No se puede eliminar este registro'),
+        content: Text(
+          'Tiene la meta "${meta.nombre}" vinculada con dinero reservado. '
+          'Reasígnala a otra cuenta o conviértela a virtual antes de eliminar el registro.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, 'virtual'), child: const Text('Convertir a virtual')),
+          TextButton(onPressed: () => Navigator.pop(ctx, 'reasignar'), child: const Text('Reasignar')),
+        ],
+      ),
+    );
+    if (accion == null || !context.mounted) return;
+    final db = ref.read(databaseProvider);
+
+    if (accion == 'virtual') {
+      await db.upsertFinanceReservation(FinanceReservationsCompanion(
+        id: Value(meta.id), accountId: const Value(null), nombre: Value(meta.nombre),
+        monto: Value(meta.monto), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
+        fechaLimite: Value(meta.fechaLimite), estado: Value(meta.estado), modalidad: const Value('virtual'),
+      ));
+      ref.invalidate(allFinanceReservationsProvider);
+      return;
+    }
+
+    // Reasignar: elegir otra cuenta existente (distinta de la que se
+    // quiere borrar).
+    final rows = ref.read(financeAccountsProvider).valueOrNull ?? [];
+    final otras = rows.map(FinanceAccount.fromRow).where((c) => c.id != libro.id).toList();
+    if (otras.isEmpty || !context.mounted) return;
+    final destino = await showModalBottomSheet<FinanceAccount>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Material(
+        color: Theme.of(ctx).scaffoldBackgroundColor,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final c in otras)
+                ListTile(title: Text(c.nombre), onTap: () => Navigator.of(ctx).pop(c)),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (destino == null) return;
+    await db.upsertFinanceReservation(FinanceReservationsCompanion(
+      id: Value(meta.id), accountId: Value(destino.id), nombre: Value(meta.nombre),
+      monto: Value(meta.monto), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
+      fechaLimite: Value(meta.fechaLimite), estado: Value(meta.estado), modalidad: const Value('vinculada'),
+    ));
+    ref.invalidate(allFinanceReservationsProvider);
   }
 
   void _mostrarArchivadosSheet() {
