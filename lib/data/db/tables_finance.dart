@@ -90,6 +90,13 @@ class FinanceBudgets extends Table {
   RealColumn get montoLimite => real()();
 }
 
+/// Metas de ahorro (Fase 05): el dinero reservado vive dentro del saldo de
+/// [accountId] — nunca se mueve a otro registro ni crea un ingreso/gasto —
+/// así que una meta sigue descontando del "disponible" vía [totalReservado]
+/// mientras esté 'activa' o 'pausada'. [monto] es lo aportado hasta ahora;
+/// [montoObjetivo] es la meta. Cancelar libera el dinero (deja de contar
+/// como reservado); finalizar lo mantiene reservado hasta que el usuario lo
+/// retire explícitamente.
 @DataClassName('FinanceReservationRow')
 class FinanceReservations extends Table {
   TextColumn get id => text()();
@@ -98,6 +105,10 @@ class FinanceReservations extends Table {
   TextColumn get nombre => text()();
   RealColumn get monto => real()();
   TextColumn get creadaEn => text()(); // ISO8601
+  RealColumn get montoObjetivo => real().withDefault(const Constant(0))();
+  TextColumn get fechaLimite => text().nullable()(); // YYYY-MM-DD, opcional
+  // 'activa'|'pausada'|'finalizada'|'cancelada'
+  TextColumn get estado => text().withDefault(const Constant('activa'))();
 
   @override
   Set<Column> get primaryKey => {id};

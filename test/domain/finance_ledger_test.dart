@@ -1,6 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_ledger.dart';
+
+FinanceReservationRow _reserva(double monto, {String estado = 'activa'}) => FinanceReservationRow(
+      id: 'r-$monto-$estado',
+      accountId: 'A',
+      nombre: 'meta',
+      monto: monto,
+      creadaEn: '2026-10-01',
+      montoObjetivo: monto,
+      estado: estado,
+    );
 
 FinanceTransaction _tx({
   required String accountId,
@@ -96,6 +107,23 @@ void main() {
     });
     test('origen nulo: inválida', () {
       expect(esTransferenciaValida(origenId: null, destinoId: 'B'), false);
+    });
+  });
+
+  group('totalReservado', () {
+    test('suma reservas activas y pausadas', () {
+      final reservas = [_reserva(100), _reserva(50, estado: 'pausada')];
+      expect(totalReservado(reservas), 150);
+    });
+
+    test('las metas finalizadas siguen contando como reservadas hasta que el usuario retire el dinero', () {
+      final reservas = [_reserva(100, estado: 'finalizada')];
+      expect(totalReservado(reservas), 100);
+    });
+
+    test('las metas canceladas liberan el dinero: no cuentan como reservado', () {
+      final reservas = [_reserva(100), _reserva(80, estado: 'cancelada')];
+      expect(totalReservado(reservas), 100);
     });
   });
 

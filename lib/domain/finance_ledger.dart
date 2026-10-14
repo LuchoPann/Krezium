@@ -73,8 +73,12 @@ String? observacionPeriodo({required double ingresos, required double gastos}) {
   return 'Tus gastos superan tus ingresos en $pct% este mes.';
 }
 
-double totalReservado(List<FinanceReservationRow> reservas) =>
-    reservas.fold(0.0, (sum, r) => sum + r.monto);
+/// Cancelar una meta libera su dinero (deja de descontar del disponible);
+/// finalizarla no — sigue reservado hasta que el usuario lo retire
+/// explícitamente (ver [FinanceReservations] en tables_finance.dart).
+double totalReservado(List<FinanceReservationRow> reservas) => reservas
+    .where((r) => r.estado != 'cancelada')
+    .fold(0.0, (sum, r) => sum + r.monto);
 
 /// El disponible estimado nunca oculta una inconsistencia: si las reservas
 /// superan el saldo, [disponibleEstimado] queda negativo y

@@ -20,4 +20,11 @@ void main() {
     expect(txs, isEmpty); // solo confirma que la query no explota con la columna nueva
     await db.close();
   });
+
+  test('v20: columnas de metas (montoObjetivo/fechaLimite/estado) existen en DB nueva', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final reservas = await db.getAllFinanceReservations();
+    expect(reservas, isEmpty); // confirma que la query no explota con las columnas nuevas
+    await db.close();
+  });
 }

@@ -23,6 +23,14 @@ final financeBudgetsProvider =
   return db.getFinanceBudgets(anioMes.$1, anioMes.$2);
 });
 
+/// Todas las metas/reservas de todos los registros — alimenta la vista
+/// global de Planificación > Metas (no está anidada dentro de un registro).
+final allFinanceReservationsProvider =
+    FutureProvider<List<FinanceReservationRow>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db.getAllFinanceReservations();
+});
+
 final allFinanceCategoriesProvider =
     FutureProvider<List<CatalogoCategoria>>((ref) async {
   final db = ref.watch(databaseProvider);

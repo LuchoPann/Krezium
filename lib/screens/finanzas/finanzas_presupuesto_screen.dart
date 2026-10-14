@@ -17,6 +17,11 @@ final _presupuestoMesProvider = StateProvider<DateTime>((ref) => DateTime.now())
 /// consumo real (incluye subcategorías), estados vacío/cercano/agotado,
 /// y CRUD completo (antes la pantalla ni siquiera estaba enrutada y no
 /// existía forma de crear, editar o eliminar un presupuesto).
+///
+/// Sin Scaffold/AppBar propios — vive embebida como una pestaña de
+/// FinanzasPlanificacionScreen (junto a Metas), que es quien provee el
+/// único AppBar/FAB de esa pantalla. El FAB de esta pestaña se expone
+/// aparte como [PresupuestoFab].
 class FinanzasPresupuestoScreen extends ConsumerWidget {
   const FinanzasPresupuestoScreen({super.key});
 
@@ -30,36 +35,7 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
     final txAsync = ref.watch(financeTransactionsProvider(DateFormat('yyyy-MM').format(fecha)));
     final catsAsync = ref.watch(allFinanceCategoriesProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Presupuesto'),
-        centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            tooltip: 'Mes anterior',
-            onPressed: () => ref.read(_presupuestoMesProvider.notifier).state =
-                DateTime(anio, mes - 1),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Center(
-              child: Text(
-                _tituloMes(fecha),
-                style: TextStyle(fontWeight: FontWeight.w600, color: tc.textPrimary),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            tooltip: 'Mes siguiente',
-            onPressed: () => ref.read(_presupuestoMesProvider.notifier).state =
-                DateTime(anio, mes + 1),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: _combinarAsync(budgetsAsync, txAsync, catsAsync, (budgets, txRows, cats) {
+    return _combinarAsync(budgetsAsync, txAsync, catsAsync, (budgets, txRows, cats) {
         final transacciones = txRows.map(FinanceTransaction.fromRow).toList();
         final parentPorCategoria = {for (final c in cats) c.id: c.parentId};
         final catPorId = {for (final c in cats) c.id: c};
@@ -114,6 +90,32 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
             children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    tooltip: 'Mes anterior',
+                    onPressed: () => ref.read(_presupuestoMesProvider.notifier).state =
+                        DateTime(anio, mes - 1),
+                  ),
+                  SizedBox(
+                    width: 160,
+                    child: Text(
+                      _tituloMes(fecha),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.w600, color: tc.textPrimary),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    tooltip: 'Mes siguiente',
+                    onPressed: () => ref.read(_presupuestoMesProvider.notifier).state =
+                        DateTime(anio, mes + 1),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               if (items.isNotEmpty) ...[
                 _ResumenPresupuesto(limite: totalLimite, gasto: totalGasto, tc: tc),
                 const SizedBox(height: AppSpacing.section),
@@ -140,27 +142,7 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
             ],
           ),
         );
-      }),
-      floatingActionButton: catsAsync.maybeWhen(
-        data: (cats) {
-          return FloatingActionButton.extended(
-            onPressed: () => budgetsAsync.whenData((budgets) {
-              final idsConPresupuesto = budgets.map((b) => b.categoryId).toSet();
-              final padresDisponibles = cats
-                  .where((c) =>
-                      c.parentId == null &&
-                      (c.tipo == 'gasto' || c.tipo == 'ambos') &&
-                      !idsConPresupuesto.contains(c.id))
-                  .toList();
-              _abrirFormulario(context, ref, anio: anio, mes: mes, padresDisponibles: padresDisponibles);
-            }),
-            icon: const Icon(Icons.add),
-            label: const Text('Presupuesto'),
-          );
-        },
-        orElse: () => null,
-      ),
-    );
+      });
   }
 
   static String _tituloMes(DateTime fecha) {
@@ -669,6 +651,42 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// FAB de la pestaña Presupuestos — vive aparte porque FinanzasPresupuestoScreen
+/// ya no tiene Scaffold propio (ver comentario de clase); observa los mismos
+/// providers (cacheados por riverpod, no duplica trabajo real).
+class PresupuestoFab extends ConsumerWidget {
+  const PresupuestoFab({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fecha = ref.watch(_presupuestoMesProvider);
+    final anio = fecha.year;
+    final mes = fecha.month;
+    final catsAsync = ref.watch(allFinanceCategoriesProvider);
+    final budgetsAsync = ref.watch(financeBudgetsProvider((anio, mes)));
+
+    return catsAsync.maybeWhen(
+      data: (cats) => FloatingActionButton.extended(
+        onPressed: () => budgetsAsync.whenData((budgets) {
+          final idsConPresupuesto = budgets.map((b) => b.categoryId).toSet();
+          final padresDisponibles = cats
+              .where((c) =>
+                  c.parentId == null &&
+                  (c.tipo == 'gasto' || c.tipo == 'ambos') &&
+                  !idsConPresupuesto.contains(c.id))
+              .toList();
+          FinanzasPresupuestoScreen._abrirFormulario(
+            context, ref, anio: anio, mes: mes, padresDisponibles: padresDisponibles,
+          );
+        }),
+        icon: const Icon(Icons.add),
+        label: const Text('Presupuesto'),
+      ),
+      orElse: () => const SizedBox.shrink(),
     );
   }
 }

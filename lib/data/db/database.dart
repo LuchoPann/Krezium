@@ -58,7 +58,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 19;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -241,6 +241,18 @@ class AppDatabase extends _$AppDatabase {
             final txCols = await colsOf('finance_transactions');
             if (!txCols.contains('revision_nota')) {
               await m.addColumn(financeTransactions, financeTransactions.revisionNota);
+            }
+          }
+          if (from < 20) {
+            final resCols = await colsOf('finance_reservations');
+            if (!resCols.contains('monto_objetivo')) {
+              await m.addColumn(financeReservations, financeReservations.montoObjetivo);
+            }
+            if (!resCols.contains('fecha_limite')) {
+              await m.addColumn(financeReservations, financeReservations.fechaLimite);
+            }
+            if (!resCols.contains('estado')) {
+              await m.addColumn(financeReservations, financeReservations.estado);
             }
           }
         },
@@ -898,6 +910,11 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<FinanceReservationRow>> getFinanceReservations(String accountId) =>
       (select(financeReservations)..where((r) => r.accountId.equals(accountId))).get();
+
+  /// Todas las metas/reservas de todos los registros — para la vista global
+  /// de Planificación > Metas, que no está anidada dentro de un registro.
+  Future<List<FinanceReservationRow>> getAllFinanceReservations() =>
+      select(financeReservations).get();
 
   Future<void> upsertFinanceReservation(FinanceReservationsCompanion row) =>
       into(financeReservations).insertOnConflictUpdate(row);

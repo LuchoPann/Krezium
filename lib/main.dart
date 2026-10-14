@@ -33,7 +33,7 @@ import 'services/home_widget_service.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/finanzas/finanzas_cuentas_screen.dart';
-import 'screens/finanzas/finanzas_presupuesto_screen.dart';
+import 'screens/finanzas/finanzas_planificacion_screen.dart';
 import 'screens/finanzas/finanzas_estadisticas_screen.dart';
 import 'providers/entorno_provider.dart';
 
@@ -320,13 +320,13 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
       CreditsListScreen(),
       StatsScreen(),
     ];
-    // Índice 1: Planificación (hoy solo Presupuestos; Fase 05 añadirá Metas
-    // de ahorro al mismo destino, sin crear una pestaña nueva). Plantillas
-    // dejó de vivir aquí — se administra desde el sheet rápido de
-    // plantillas en el historial (ver _PlantillasSheet).
+    // Índice 1: Planificación — Presupuestos y Metas de ahorro bajo el mismo
+    // destino (selector de píldora interno), sin crear una pestaña de
+    // navegación nueva. Plantillas dejó de vivir aquí — se administra desde
+    // el sheet rápido de plantillas en el historial (ver _PlantillasSheet).
     final finanzasScreens = const [
       FinanzasCuentasScreen(),
-      FinanzasPresupuestoScreen(),
+      FinanzasPlanificacionScreen(),
       FinanzasEstadisticasScreen(),
     ];
     final screens = isCreditos ? creditosScreens : finanzasScreens;

@@ -9480,6 +9480,39 @@ class $FinanceReservationsTable extends FinanceReservations
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _montoObjetivoMeta = const VerificationMeta(
+    'montoObjetivo',
+  );
+  @override
+  late final GeneratedColumn<double> montoObjetivo = GeneratedColumn<double>(
+    'monto_objetivo',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _fechaLimiteMeta = const VerificationMeta(
+    'fechaLimite',
+  );
+  @override
+  late final GeneratedColumn<String> fechaLimite = GeneratedColumn<String>(
+    'fecha_limite',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _estadoMeta = const VerificationMeta('estado');
+  @override
+  late final GeneratedColumn<String> estado = GeneratedColumn<String>(
+    'estado',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('activa'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -9487,6 +9520,9 @@ class $FinanceReservationsTable extends FinanceReservations
     nombre,
     monto,
     creadaEn,
+    montoObjetivo,
+    fechaLimite,
+    estado,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -9537,6 +9573,30 @@ class $FinanceReservationsTable extends FinanceReservations
     } else if (isInserting) {
       context.missing(_creadaEnMeta);
     }
+    if (data.containsKey('monto_objetivo')) {
+      context.handle(
+        _montoObjetivoMeta,
+        montoObjetivo.isAcceptableOrUnknown(
+          data['monto_objetivo']!,
+          _montoObjetivoMeta,
+        ),
+      );
+    }
+    if (data.containsKey('fecha_limite')) {
+      context.handle(
+        _fechaLimiteMeta,
+        fechaLimite.isAcceptableOrUnknown(
+          data['fecha_limite']!,
+          _fechaLimiteMeta,
+        ),
+      );
+    }
+    if (data.containsKey('estado')) {
+      context.handle(
+        _estadoMeta,
+        estado.isAcceptableOrUnknown(data['estado']!, _estadoMeta),
+      );
+    }
     return context;
   }
 
@@ -9566,6 +9626,18 @@ class $FinanceReservationsTable extends FinanceReservations
         DriftSqlType.string,
         data['${effectivePrefix}creada_en'],
       )!,
+      montoObjetivo: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}monto_objetivo'],
+      )!,
+      fechaLimite: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}fecha_limite'],
+      ),
+      estado: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}estado'],
+      )!,
     );
   }
 
@@ -9582,12 +9654,18 @@ class FinanceReservationRow extends DataClass
   final String nombre;
   final double monto;
   final String creadaEn;
+  final double montoObjetivo;
+  final String? fechaLimite;
+  final String estado;
   const FinanceReservationRow({
     required this.id,
     required this.accountId,
     required this.nombre,
     required this.monto,
     required this.creadaEn,
+    required this.montoObjetivo,
+    this.fechaLimite,
+    required this.estado,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -9597,6 +9675,11 @@ class FinanceReservationRow extends DataClass
     map['nombre'] = Variable<String>(nombre);
     map['monto'] = Variable<double>(monto);
     map['creada_en'] = Variable<String>(creadaEn);
+    map['monto_objetivo'] = Variable<double>(montoObjetivo);
+    if (!nullToAbsent || fechaLimite != null) {
+      map['fecha_limite'] = Variable<String>(fechaLimite);
+    }
+    map['estado'] = Variable<String>(estado);
     return map;
   }
 
@@ -9607,6 +9690,11 @@ class FinanceReservationRow extends DataClass
       nombre: Value(nombre),
       monto: Value(monto),
       creadaEn: Value(creadaEn),
+      montoObjetivo: Value(montoObjetivo),
+      fechaLimite: fechaLimite == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fechaLimite),
+      estado: Value(estado),
     );
   }
 
@@ -9621,6 +9709,9 @@ class FinanceReservationRow extends DataClass
       nombre: serializer.fromJson<String>(json['nombre']),
       monto: serializer.fromJson<double>(json['monto']),
       creadaEn: serializer.fromJson<String>(json['creadaEn']),
+      montoObjetivo: serializer.fromJson<double>(json['montoObjetivo']),
+      fechaLimite: serializer.fromJson<String?>(json['fechaLimite']),
+      estado: serializer.fromJson<String>(json['estado']),
     );
   }
   @override
@@ -9632,6 +9723,9 @@ class FinanceReservationRow extends DataClass
       'nombre': serializer.toJson<String>(nombre),
       'monto': serializer.toJson<double>(monto),
       'creadaEn': serializer.toJson<String>(creadaEn),
+      'montoObjetivo': serializer.toJson<double>(montoObjetivo),
+      'fechaLimite': serializer.toJson<String?>(fechaLimite),
+      'estado': serializer.toJson<String>(estado),
     };
   }
 
@@ -9641,12 +9735,18 @@ class FinanceReservationRow extends DataClass
     String? nombre,
     double? monto,
     String? creadaEn,
+    double? montoObjetivo,
+    Value<String?> fechaLimite = const Value.absent(),
+    String? estado,
   }) => FinanceReservationRow(
     id: id ?? this.id,
     accountId: accountId ?? this.accountId,
     nombre: nombre ?? this.nombre,
     monto: monto ?? this.monto,
     creadaEn: creadaEn ?? this.creadaEn,
+    montoObjetivo: montoObjetivo ?? this.montoObjetivo,
+    fechaLimite: fechaLimite.present ? fechaLimite.value : this.fechaLimite,
+    estado: estado ?? this.estado,
   );
   FinanceReservationRow copyWithCompanion(FinanceReservationsCompanion data) {
     return FinanceReservationRow(
@@ -9655,6 +9755,13 @@ class FinanceReservationRow extends DataClass
       nombre: data.nombre.present ? data.nombre.value : this.nombre,
       monto: data.monto.present ? data.monto.value : this.monto,
       creadaEn: data.creadaEn.present ? data.creadaEn.value : this.creadaEn,
+      montoObjetivo: data.montoObjetivo.present
+          ? data.montoObjetivo.value
+          : this.montoObjetivo,
+      fechaLimite: data.fechaLimite.present
+          ? data.fechaLimite.value
+          : this.fechaLimite,
+      estado: data.estado.present ? data.estado.value : this.estado,
     );
   }
 
@@ -9665,13 +9772,25 @@ class FinanceReservationRow extends DataClass
           ..write('accountId: $accountId, ')
           ..write('nombre: $nombre, ')
           ..write('monto: $monto, ')
-          ..write('creadaEn: $creadaEn')
+          ..write('creadaEn: $creadaEn, ')
+          ..write('montoObjetivo: $montoObjetivo, ')
+          ..write('fechaLimite: $fechaLimite, ')
+          ..write('estado: $estado')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, accountId, nombre, monto, creadaEn);
+  int get hashCode => Object.hash(
+    id,
+    accountId,
+    nombre,
+    monto,
+    creadaEn,
+    montoObjetivo,
+    fechaLimite,
+    estado,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -9680,7 +9799,10 @@ class FinanceReservationRow extends DataClass
           other.accountId == this.accountId &&
           other.nombre == this.nombre &&
           other.monto == this.monto &&
-          other.creadaEn == this.creadaEn);
+          other.creadaEn == this.creadaEn &&
+          other.montoObjetivo == this.montoObjetivo &&
+          other.fechaLimite == this.fechaLimite &&
+          other.estado == this.estado);
 }
 
 class FinanceReservationsCompanion
@@ -9690,6 +9812,9 @@ class FinanceReservationsCompanion
   final Value<String> nombre;
   final Value<double> monto;
   final Value<String> creadaEn;
+  final Value<double> montoObjetivo;
+  final Value<String?> fechaLimite;
+  final Value<String> estado;
   final Value<int> rowid;
   const FinanceReservationsCompanion({
     this.id = const Value.absent(),
@@ -9697,6 +9822,9 @@ class FinanceReservationsCompanion
     this.nombre = const Value.absent(),
     this.monto = const Value.absent(),
     this.creadaEn = const Value.absent(),
+    this.montoObjetivo = const Value.absent(),
+    this.fechaLimite = const Value.absent(),
+    this.estado = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FinanceReservationsCompanion.insert({
@@ -9705,6 +9833,9 @@ class FinanceReservationsCompanion
     required String nombre,
     required double monto,
     required String creadaEn,
+    this.montoObjetivo = const Value.absent(),
+    this.fechaLimite = const Value.absent(),
+    this.estado = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        accountId = Value(accountId),
@@ -9717,6 +9848,9 @@ class FinanceReservationsCompanion
     Expression<String>? nombre,
     Expression<double>? monto,
     Expression<String>? creadaEn,
+    Expression<double>? montoObjetivo,
+    Expression<String>? fechaLimite,
+    Expression<String>? estado,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -9725,6 +9859,9 @@ class FinanceReservationsCompanion
       if (nombre != null) 'nombre': nombre,
       if (monto != null) 'monto': monto,
       if (creadaEn != null) 'creada_en': creadaEn,
+      if (montoObjetivo != null) 'monto_objetivo': montoObjetivo,
+      if (fechaLimite != null) 'fecha_limite': fechaLimite,
+      if (estado != null) 'estado': estado,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -9735,6 +9872,9 @@ class FinanceReservationsCompanion
     Value<String>? nombre,
     Value<double>? monto,
     Value<String>? creadaEn,
+    Value<double>? montoObjetivo,
+    Value<String?>? fechaLimite,
+    Value<String>? estado,
     Value<int>? rowid,
   }) {
     return FinanceReservationsCompanion(
@@ -9743,6 +9883,9 @@ class FinanceReservationsCompanion
       nombre: nombre ?? this.nombre,
       monto: monto ?? this.monto,
       creadaEn: creadaEn ?? this.creadaEn,
+      montoObjetivo: montoObjetivo ?? this.montoObjetivo,
+      fechaLimite: fechaLimite ?? this.fechaLimite,
+      estado: estado ?? this.estado,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -9765,6 +9908,15 @@ class FinanceReservationsCompanion
     if (creadaEn.present) {
       map['creada_en'] = Variable<String>(creadaEn.value);
     }
+    if (montoObjetivo.present) {
+      map['monto_objetivo'] = Variable<double>(montoObjetivo.value);
+    }
+    if (fechaLimite.present) {
+      map['fecha_limite'] = Variable<String>(fechaLimite.value);
+    }
+    if (estado.present) {
+      map['estado'] = Variable<String>(estado.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -9779,6 +9931,9 @@ class FinanceReservationsCompanion
           ..write('nombre: $nombre, ')
           ..write('monto: $monto, ')
           ..write('creadaEn: $creadaEn, ')
+          ..write('montoObjetivo: $montoObjetivo, ')
+          ..write('fechaLimite: $fechaLimite, ')
+          ..write('estado: $estado, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -16821,6 +16976,9 @@ typedef $$FinanceReservationsTableCreateCompanionBuilder =
       required String nombre,
       required double monto,
       required String creadaEn,
+      Value<double> montoObjetivo,
+      Value<String?> fechaLimite,
+      Value<String> estado,
       Value<int> rowid,
     });
 typedef $$FinanceReservationsTableUpdateCompanionBuilder =
@@ -16830,6 +16988,9 @@ typedef $$FinanceReservationsTableUpdateCompanionBuilder =
       Value<String> nombre,
       Value<double> monto,
       Value<String> creadaEn,
+      Value<double> montoObjetivo,
+      Value<String?> fechaLimite,
+      Value<String> estado,
       Value<int> rowid,
     });
 
@@ -16894,6 +17055,21 @@ class $$FinanceReservationsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<double> get montoObjetivo => $composableBuilder(
+    column: $table.montoObjetivo,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fechaLimite => $composableBuilder(
+    column: $table.fechaLimite,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get estado => $composableBuilder(
+    column: $table.estado,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$FinanceAccountsTableFilterComposer get accountId {
     final $$FinanceAccountsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -16947,6 +17123,21 @@ class $$FinanceReservationsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get montoObjetivo => $composableBuilder(
+    column: $table.montoObjetivo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fechaLimite => $composableBuilder(
+    column: $table.fechaLimite,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get estado => $composableBuilder(
+    column: $table.estado,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$FinanceAccountsTableOrderingComposer get accountId {
     final $$FinanceAccountsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -16991,6 +17182,19 @@ class $$FinanceReservationsTableAnnotationComposer
 
   GeneratedColumn<String> get creadaEn =>
       $composableBuilder(column: $table.creadaEn, builder: (column) => column);
+
+  GeneratedColumn<double> get montoObjetivo => $composableBuilder(
+    column: $table.montoObjetivo,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get fechaLimite => $composableBuilder(
+    column: $table.fechaLimite,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get estado =>
+      $composableBuilder(column: $table.estado, builder: (column) => column);
 
   $$FinanceAccountsTableAnnotationComposer get accountId {
     final $$FinanceAccountsTableAnnotationComposer composer = $composerBuilder(
@@ -17057,6 +17261,9 @@ class $$FinanceReservationsTableTableManager
                 Value<String> nombre = const Value.absent(),
                 Value<double> monto = const Value.absent(),
                 Value<String> creadaEn = const Value.absent(),
+                Value<double> montoObjetivo = const Value.absent(),
+                Value<String?> fechaLimite = const Value.absent(),
+                Value<String> estado = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FinanceReservationsCompanion(
                 id: id,
@@ -17064,6 +17271,9 @@ class $$FinanceReservationsTableTableManager
                 nombre: nombre,
                 monto: monto,
                 creadaEn: creadaEn,
+                montoObjetivo: montoObjetivo,
+                fechaLimite: fechaLimite,
+                estado: estado,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -17073,6 +17283,9 @@ class $$FinanceReservationsTableTableManager
                 required String nombre,
                 required double monto,
                 required String creadaEn,
+                Value<double> montoObjetivo = const Value.absent(),
+                Value<String?> fechaLimite = const Value.absent(),
+                Value<String> estado = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FinanceReservationsCompanion.insert(
                 id: id,
@@ -17080,6 +17293,9 @@ class $$FinanceReservationsTableTableManager
                 nombre: nombre,
                 monto: monto,
                 creadaEn: creadaEn,
+                montoObjetivo: montoObjetivo,
+                fechaLimite: fechaLimite,
+                estado: estado,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
