@@ -80,6 +80,14 @@ double totalReservado(List<FinanceReservationRow> reservas) => reservas
     .where((r) => r.estado != 'cancelada')
     .fold(0.0, (sum, r) => sum + r.monto);
 
+/// Suma de reservas con modalidad 'virtual' (sin cuenta propia) — se resta
+/// del disponible GLOBAL (todos los registros), nunca del de un registro
+/// puntual. Las reservas 'vinculada' nunca entran acá: ya se descuentan
+/// vía [totalReservado] sobre la lista de reservas de su propia cuenta.
+double totalReservadoVirtual(List<FinanceReservationRow> reservas) => reservas
+    .where((r) => r.modalidad == 'virtual' && r.estado != 'cancelada')
+    .fold(0.0, (sum, r) => sum + r.monto);
+
 /// El disponible estimado nunca oculta una inconsistencia: si las reservas
 /// superan el saldo, [disponibleEstimado] queda negativo y
 /// [reservasExcedenSaldo] en true — la UI decide cómo señalarlo, este

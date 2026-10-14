@@ -216,4 +216,26 @@ void main() {
       expect(obs, isNot(contains('%')));
     });
   });
+
+  group('totalReservadoVirtual', () {
+    test('suma solo reservas virtuales activas/pausadas', () {
+      final reservas = [
+        _reserva(500, accountId: null, modalidad: 'virtual', estado: 'activa'),
+        _reserva(300, accountId: null, modalidad: 'virtual', estado: 'cancelada'),
+        _reserva(100, accountId: 'cta1', modalidad: 'vinculada', estado: 'activa'),
+      ];
+      expect(totalReservadoVirtual(reservas), 500);
+    });
+
+    test('incluye pausadas, nunca canceladas', () {
+      final reservas = [
+        _reserva(200, accountId: null, modalidad: 'virtual', estado: 'pausada'),
+      ];
+      expect(totalReservadoVirtual(reservas), 200);
+    });
+
+    test('lista vacía da 0', () {
+      expect(totalReservadoVirtual([]), 0);
+    });
+  });
 }
