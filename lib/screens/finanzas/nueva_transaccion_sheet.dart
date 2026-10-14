@@ -2,7 +2,6 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/finance_icon_map.dart';
@@ -12,6 +11,7 @@ import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/categoria_selector_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/utils/monto_input_formatter.dart';
 import 'package:uuid/uuid.dart';
 
 // ─── Color tokens por tipo ────────────────────────────────────────────────────
@@ -653,7 +653,7 @@ class _Paso2 extends ConsumerWidget {
             focusNode: montoFocus,
             textAlign: TextAlign.center,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [_MontoFormatter()],
+            inputFormatters: [MontoInputFormatter()],
             style: TextStyle(
               fontSize: AppTextSize.hero,
               fontWeight: FontWeight.w800,
@@ -1024,37 +1024,6 @@ class _FlowFieldRow extends StatelessWidget {
           Expanded(child: child),
         ],
       ),
-    );
-  }
-}
-
-// Mismo NumberFormat (es_CO, sin decimales) que usa `formatCOP` en todo el
-// proyecto para mostrar montos ya guardados.
-final _milesFormat = NumberFormat.decimalPattern('es_CO');
-
-// Agrupa un entero en miles con '.' — "45000" → "45.000" — para que lo que
-// el usuario digita se vea igual a como luego aparece en el histórico.
-String agruparMiles(int value) => _milesFormat.format(value);
-
-// ─── Formatter: separa miles con "." mientras se digita (estilo peso
-// colombiano) y antepone "$ " al propio texto editable — así, con
-// textAlign.center, el "$" y el monto quedan centrados como un solo bloque
-// en vez de que el monto se centre solo en el espacio que deja un
-// prefixText fijo a la izquierda.
-class _MontoFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final soloDigitos = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-    if (soloDigitos.isEmpty) {
-      return const TextEditingValue(text: '');
-    }
-    final formatted = agruparMiles(int.parse(soloDigitos));
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

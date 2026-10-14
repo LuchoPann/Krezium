@@ -871,8 +871,28 @@ class AppDatabase extends _$AppDatabase {
             ..where((t) => t.anio.equals(anio) & t.mes.equals(mes)))
           .get();
 
-  Future<void> upsertFinanceBudget(FinanceBudgetsCompanion row) =>
-      into(financeBudgets).insertOnConflictUpdate(row);
+  Future<FinanceBudgetRow?> getFinanceBudgetFor(String categoryId, int anio, int mes) =>
+      (select(financeBudgets)
+            ..where((t) =>
+                t.categoryId.equals(categoryId) & t.anio.equals(anio) & t.mes.equals(mes)))
+          .getSingleOrNull();
+
+  // La identidad de negocio de un presupuesto es (categoryId, anio, mes), no
+  // `rowId` (autoincrement, nunca lo conoce la UI al crear/editar) —
+  // `insertOnConflictUpdate` por sí solo siempre insertaría una fila nueva.
+  // Por eso se busca primero la fila existente y se actualiza por su rowId.
+  Future<void> upsertFinanceBudget(FinanceBudgetsCompanion row) async {
+    final existente = await getFinanceBudgetFor(row.categoryId.value, row.anio.value, row.mes.value);
+    if (existente != null) {
+      await (update(financeBudgets)..where((t) => t.rowId.equals(existente.rowId)))
+          .write(FinanceBudgetsCompanion(montoLimite: row.montoLimite));
+    } else {
+      await into(financeBudgets).insert(row);
+    }
+  }
+
+  Future<void> deleteFinanceBudget(int rowId) =>
+      (delete(financeBudgets)..where((t) => t.rowId.equals(rowId))).go();
 
   // --- Finance Reservations ---
 
