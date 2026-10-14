@@ -12,8 +12,6 @@ import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/categoria_selector_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
-import 'package:krezium/widgets/app_pill_selector.dart';
-import 'package:krezium/widgets/krezium_section_card.dart';
 import 'package:uuid/uuid.dart';
 
 // ─── Color tokens por tipo ────────────────────────────────────────────────────
@@ -422,6 +420,7 @@ class _NuevaTransaccionSheetState
 
 // ─── Selector de libro ────────────────────────────────────────────────────────
 class _LibroSelector extends StatelessWidget {
+  final IconData icon;
   final String label;
   final List<FinanceAccount> libros;
   final String? libroId;
@@ -430,6 +429,7 @@ class _LibroSelector extends StatelessWidget {
   final String? excludeId;
 
   const _LibroSelector({
+    required this.icon,
     required this.label,
     required this.libros,
     required this.libroId,
@@ -453,40 +453,20 @@ class _LibroSelector extends StatelessWidget {
 
     final seleccionado = available.where((l) => l.id == libroId).firstOrNull;
 
-    // Fila táctil que abre un sheet de selección, en vez de un
-    // DropdownButtonFormField nativo — más rápido de escanear con pocas
-    // opciones y más "de app móvil" que un <select> de formulario web
-    // (boceto aprobado en el artifact de diseño).
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.tile),
+    // Misma fila _FlowRow (ícono + etiqueta a la izquierda, valor + chevron
+    // a la derecha) que Categoría/Fecha/Hora — antes tenía su propio diseño
+    // (etiqueta chica arriba, valor en negrita abajo, sin ícono) que
+    // desentonaba con el resto de la lista fluida.
+    return _FlowRow(
+      icon: icon,
+      label: label,
+      value: seleccionado?.nombre ?? 'Elegir registro',
       onTap: () async {
         final picked = await _elegirRegistro(context, available, tc, seleccionado?.id);
         if (picked != null) onChanged(picked);
       },
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary)),
-                const SizedBox(height: 2),
-                Text(
-                  seleccionado?.nombre ?? 'Elegir registro',
-                  style: TextStyle(
-                    fontSize: AppTextSize.body,
-                    fontWeight: FontWeight.w700,
-                    color: seleccionado != null ? tc.textPrimary : tc.textTertiary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          Icon(Icons.chevron_right, size: AppIconSize.small, color: tc.textTertiary),
-        ],
-      ),
+      tc: tc,
+      valueColor: seleccionado != null ? null : tc.textTertiary,
     );
   }
 
@@ -625,18 +605,15 @@ class _Paso2 extends ConsumerWidget {
     final places = placesAsync.valueOrNull ?? [];
     // Sort by usados DESC
     final placesSorted = [...places]..sort((a, b) => b.usados.compareTo(a.usados));
-    final asyncCats = ref.watch(allFinanceCategoriesProvider);
-    final tipoCat = tipo == 'transferencia' ? 'gasto' : tipo;
-    final categoriasRapidas = (asyncCats.valueOrNull ?? [])
-        .where((c) => c.parentId != null && (c.tipo == tipoCat || c.tipo == 'ambos'))
-        .take(4)
-        .toList();
-
+    // Diseño "v6" aprobado en el artifact de diseño: sin tarjetas con
+    // borde — pestañas reales arriba, monto suelto sin caja, y todo lo
+    // demás como una sola lista fluida separada por líneas finas.
     return ListView(
       controller: scrollCtrl,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
-        // Encabezado con botón volver
+        // Encabezado genérico — el título ya no cambia con el tipo, las
+        // pestañas de abajo ya comunican eso.
         Row(
           children: [
             IconButton(
@@ -647,13 +624,7 @@ class _Paso2 extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              isEditing
-                  ? 'Editar transacción'
-                  : switch (tipo) {
-                      'ingreso' => 'Nuevo Ingreso',
-                      'gasto' => 'Nuevo Gasto',
-                      _ => 'Transferencia',
-                    },
+              isEditing ? 'Editar transacción' : 'Nueva transacción',
               style: TextStyle(
                 fontFamily: 'SpaceGrotesk',
                 fontSize: AppTextSize.heading,
@@ -663,230 +634,134 @@ class _Paso2 extends ConsumerWidget {
             ),
           ],
         ),
+        const SizedBox(height: 4),
+
+        // Tipo como pestañas reales con subrayado — reemplaza la píldora:
+        // se siente como el primer paso del flujo, no un control flotante
+        // en medio del contenido.
+        _TipoTabs(tipo: tipo, onChanged: onTipoChanged, tc: tc),
         const SizedBox(height: 8),
 
-        // Ingreso/Gasto/Transferencia primero — ya no existe un paso previo
-        // aparte solo para elegir el tipo. Píldora compacta en vez de
-        // SegmentedButton grande — más cerca del mockup aprobado.
-        AppPillSelector<String>(
-          value: tipo,
-          onChanged: onTipoChanged,
-          options: [
-            PillOption(value: 'ingreso', label: 'Ingreso', color: _tipoColor('ingreso')),
-            PillOption(value: 'gasto', label: 'Gasto', color: _tipoColor('gasto')),
-            PillOption(value: 'transferencia', label: 'Transferir', color: _tipoColor('transferencia')),
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        // Registro (origen) y, si aplica, Destino — agrupados en una tarjeta
-        // con borde, igual que el resto del detalle (Fecha/Hora/Lugar/Nota)
-        // en vez de quedar sueltos con un subrayado propio: dos lenguajes
-        // visuales distintos en la misma pantalla se sentía como dos
-        // formularios pegados, no uno solo.
-        AppSectionCard(
-          children: [
-            Row(
-              children: [
-                Icon(Icons.account_balance_wallet_outlined, size: AppIconSize.small, color: tc.textSecondary),
-                const SizedBox(width: 12),
-                // Siempre visible, nunca desaparece al elegir uno. Si el
-                // formulario se abrió desde un registro específico (el
-                // flujo normal, vía el FAB de ese registro), ya viene
-                // preseleccionado acá — el usuario puede cambiarlo igual.
-                Expanded(
-                  child: _LibroSelector(
-                    label: 'Registro',
-                    libros: libros,
-                    libroId: libroId,
-                    onChanged: onLibroChanged,
-                    tc: tc,
-                  ),
-                ),
-              ],
+        // Monto: el verdadero protagonista, suelto (sin caja ni tarjeta),
+        // texto grande centrado — reemplaza tanto el hero con subrayado
+        // grueso de antes como el estilo "caption + campo a la izquierda"
+        // copiado de Créditos (tampoco convenció).
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: TextFormField(
+            controller: montoCtrl,
+            focusNode: montoFocus,
+            textAlign: TextAlign.center,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [_MontoFormatter()],
+            style: TextStyle(
+              fontSize: AppTextSize.hero,
+              fontWeight: FontWeight.w800,
+              color: color,
+              letterSpacing: -1,
             ),
-            // Destino: solo para transferencia. Sin esto tampoco había forma
-            // de corregir el destino de una transferencia dudosa al
-            // editarla.
-            if (tipo == 'transferencia') ...[
-              const Divider(height: 24),
-              Row(
-                children: [
-                  Icon(Icons.swap_horiz, size: AppIconSize.small, color: tc.textSecondary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _LibroSelector(
-                      label: 'Destino',
-                      libros: libros,
-                      libroId: libroDestinoId,
-                      onChanged: onLibroDestinoChanged,
-                      tc: tc,
-                      excludeId: libroId,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        // Monto: mismo lenguaje visual que Créditos (card_movement_sheet.dart)
-        // — etiqueta "MONTO" chica arriba, campo normal alineado a la
-        // izquierda con "$" como prefijo, tamaño de texto moderado. Antes
-        // era un número gigante centrado con subrayado propio, inconsistente
-        // con el resto de la app.
-        Text(
-          'MONTO',
-          style: TextStyle(
-            fontSize: AppTextSize.body,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.4,
-            color: tc.textTertiary,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: montoCtrl,
-          focusNode: montoFocus,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [_MontoFormatter()],
-          style: TextStyle(
-            fontSize: AppTextSize.emphasis,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-          decoration: const InputDecoration(
-            prefixText: '\$ ',
-            hintText: 'Ej. 80.000',
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // ── Categoría: chips rápidos en vez de un botón plano que esconde
-        // todo detrás de un tap — el paso completo con buscador sigue
-        // disponible tras el chip "Más".
-        if (tipo != 'transferencia') ...[
-          _SectionLabel('Categoría', tc),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 74,
-            // Center + SingleChildScrollView (no ListView): con pocos chips
-            // quedan centrados visualmente; si no caben, igual se puede
-            // deslizar — un ListView siempre arranca pegado a la izquierda.
-            child: Center(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final cat in categoriasRapidas) ...[
-                      _CategoriaChip(
-                        categoria: cat,
-                        seleccionada: categoriaSeleccionada?.id == cat.id,
-                        onTap: () => onCategoriaChip(cat),
-                        tc: tc,
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    // Si lo elegido no está entre los rápidos (vino del paso
-                    // completo), se agrega para que quede visible/resaltado.
-                    if (categoriaSeleccionada != null &&
-                        !categoriasRapidas.any((c) => c.id == categoriaSeleccionada!.id)) ...[
-                      _CategoriaChip(
-                        categoria: categoriaSeleccionada!,
-                        seleccionada: true,
-                        onTap: () {},
-                        tc: tc,
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    _CategoriaMasChip(onTap: onSeleccionarCategoria, tc: tc),
-                  ],
-                ),
-              ),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              hintText: '\$ 0',
+              isDense: true,
             ),
           ),
-          const SizedBox(height: 16),
+        ),
+        const SizedBox(height: 4),
+
+        // ── Lista fluida: Registro, (Destino), Categoría, Fecha, Hora,
+        // Lugar, Nota — todas con el mismo ritmo visual, separadas por
+        // líneas finas, sin agruparlas en tarjetas con borde propio.
+        _LibroSelector(
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'Registro',
+          libros: libros,
+          libroId: libroId,
+          onChanged: onLibroChanged,
+          tc: tc,
+        ),
+        const Divider(height: 1),
+        // Destino: solo para transferencia. Sin esto tampoco había forma
+        // de corregir el destino de una transferencia dudosa al editarla.
+        if (tipo == 'transferencia') ...[
+          _LibroSelector(
+            icon: Icons.account_balance_outlined,
+            label: 'Destino',
+            libros: libros,
+            libroId: libroDestinoId,
+            onChanged: onLibroDestinoChanged,
+            tc: tc,
+            excludeId: libroId,
+          ),
+          const Divider(height: 1),
         ],
-
-        // ── Detalle: fecha y hora independientes (cada una abre su propio
-        // selector), lugar y nota — agrupados en una sola tarjeta neutra.
-        AppSectionCard(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _FechaHoraTap(
-                    icono: Icons.event_outlined,
-                    texto: _fechaCorta(),
-                    onTap: onPickFecha,
-                    tc: tc,
-                  ),
-                ),
-                Container(width: 1, height: 32, color: tc.borderCard),
-                Expanded(
-                  child: _FechaHoraTap(
-                    icono: Icons.schedule_outlined,
-                    texto: formatHora(hora),
-                    onTap: onPickHora,
-                    tc: tc,
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            // Sin caption propia arriba: el labelText del campo ya hace de
-            // título flotante al enfocarlo — ponerle un texto fijo encima
-            // además del label repetía la misma palabra dos veces.
-            Row(
-              children: [
-                // Un solo ícono para "lugar o persona" (ni solo mapa ni
-                // solo gente) — un comercio cubre ambos sentidos mejor que
-                // un pin de ubicación.
-                Icon(Icons.storefront_outlined, size: AppIconSize.small, color: tc.textSecondary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _OrdenanteField(
-                    ordenanteCtrl: ordenanteCtrl,
-                    placesSorted: placesSorted,
-                    tc: tc,
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            // Nota: sin maxLines fijo — crece hacia abajo si el usuario
-            // escribe más de una línea, en vez de recortar el texto.
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 14),
-                  child: Icon(Icons.edit_note_outlined, size: AppIconSize.small, color: tc.textSecondary),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: notaCtrl,
-                    minLines: 1,
-                    maxLines: null,
-                    decoration: const InputDecoration(
-                      labelText: 'Nota (opcional)',
-                      hintText: 'Descripción adicional…',
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+        // Categoría: una fila que abre el selector completo (acordeón con
+        // píldoras de ícono) directamente — ya no hay chips rápidos acá,
+        // el acordeón quedó bien resuelto y no hace falta un atajo previo.
+        if (tipo != 'transferencia') ...[
+          _FlowRow(
+            icon: categoriaSeleccionada != null ? categoriaSeleccionada!.icono : Icons.category_outlined,
+            label: 'Categoría',
+            value: categoriaSeleccionada?.nombre ?? 'Elegir categoría',
+            onTap: onSeleccionarCategoria,
+            tc: tc,
+            valueColor: categoriaSeleccionada != null ? null : tc.textTertiary,
+          ),
+          const Divider(height: 1),
+        ],
+        _FlowRow(
+          icon: Icons.event_outlined,
+          label: 'Fecha',
+          value: _fechaCorta(),
+          onTap: onPickFecha,
+          tc: tc,
         ),
-        const SizedBox(height: 20),
+        const Divider(height: 1),
+        _FlowRow(
+          icon: Icons.schedule_outlined,
+          label: 'Hora',
+          value: formatHora(hora),
+          onTap: onPickHora,
+          tc: tc,
+        ),
+        const Divider(height: 1),
+        _FlowFieldRow(
+          icon: Icons.storefront_outlined,
+          label: 'Lugar',
+          tc: tc,
+          child: _OrdenanteField(
+            ordenanteCtrl: ordenanteCtrl,
+            placesSorted: placesSorted,
+            tc: tc,
+          ),
+        ),
+        const Divider(height: 1),
+        _FlowFieldRow(
+          icon: Icons.edit_note_outlined,
+          label: 'Nota',
+          tc: tc,
+          child: TextField(
+            controller: notaCtrl,
+            minLines: 1,
+            maxLines: null,
+            textAlign: TextAlign.right,
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              hintText: 'Opcional',
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
 
-        // Botón Guardar
+        // Botón Guardar — plano, sin ícono, mismo lenguaje que el
+        // "Guardar Movimiento" de Créditos.
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 50,
           child: FilledButton(
             onPressed: guardando || !montoValido ? null : onGuardar,
             style: FilledButton.styleFrom(backgroundColor: color, foregroundColor: legibleForegroundOn(color)),
@@ -896,20 +771,13 @@ class _Paso2 extends ConsumerWidget {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2, color: legibleForegroundOn(color)),
                   )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.check, size: AppIconSize.small),
-                      const SizedBox(width: 8),
-                      Text(
-                        isEditing ? 'Guardar cambios' : 'Guardar',
-                        style: const TextStyle(
-                          fontFamily: 'SpaceGrotesk',
-                          fontWeight: FontWeight.w700,
-                          fontSize: AppTextSize.body,
-                        ),
-                      ),
-                    ],
+                : Text(
+                    isEditing ? 'Guardar cambios' : 'Guardar',
+                    style: const TextStyle(
+                      fontFamily: 'SpaceGrotesk',
+                      fontWeight: FontWeight.w700,
+                      fontSize: AppTextSize.body,
+                    ),
                   ),
           ),
         ),
@@ -919,156 +787,14 @@ class _Paso2 extends ConsumerWidget {
 }
 
 // ─── Widgets auxiliares ───────────────────────────────────────────────────────
-// ─── Chip de categoría rápida ─────────────────────────────────────────────────
-class _CategoriaChip extends StatelessWidget {
-  final CatalogoCategoria categoria;
-  final bool seleccionada;
-  final VoidCallback onTap;
-  final AppThemeColors tc;
-
-  const _CategoriaChip({
-    required this.categoria,
-    required this.seleccionada,
-    required this.onTap,
-    required this.tc,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: SizedBox(
-        width: 58,
-        child: Column(
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: _tipoColor(categoria.tipo).withValues(alpha: seleccionada ? 0.18 : 0.1),
-                borderRadius: BorderRadius.circular(15),
-                border: seleccionada ? Border.all(color: _tipoColor(categoria.tipo), width: 2) : null,
-              ),
-              child: Icon(categoria.icono, size: AppIconSize.medium, color: _tipoColor(categoria.tipo)),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              categoria.nombre,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: AppTextSize.caption,
-                fontWeight: seleccionada ? FontWeight.w700 : FontWeight.w500,
-                color: seleccionada ? tc.textPrimary : tc.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoriaMasChip extends StatelessWidget {
-  final VoidCallback onTap;
-  final AppThemeColors tc;
-
-  const _CategoriaMasChip({required this.onTap, required this.tc});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: SizedBox(
-        width: 58,
-        child: Column(
-          children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: tc.borderCard, style: BorderStyle.solid),
-              ),
-              child: Icon(Icons.add, size: AppIconSize.small, color: tc.textSecondary),
-            ),
-            const SizedBox(height: 6),
-            Text('Más', style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Fecha u hora, cada una tocable por separado ──────────────────────────────
-// Antes una sola fila abría los dos diálogos en secuencia (fecha, luego
-// hora); el usuario pidió volver a poder elegir cuál de los dos cambiar sin
-// tener que pasar por el otro.
-class _FechaHoraTap extends StatelessWidget {
-  final IconData icono;
-  final String texto;
-  final Future<void> Function() onTap;
-  final AppThemeColors tc;
-
-  const _FechaHoraTap({
-    required this.icono,
-    required this.texto,
-    required this.onTap,
-    required this.tc,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.tile),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icono, size: AppIconSize.small, color: tc.textSecondary),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                texto,
-                style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w600, color: tc.textPrimary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  final AppThemeColors tc;
-
-  const _SectionLabel(this.text, this.tc);
-
-  @override
-  Widget build(BuildContext context) => Text(
-        text,
-        style: TextStyle(
-          fontFamily: 'Outfit',
-          fontSize: AppTextSize.caption,
-          fontWeight: FontWeight.w600,
-          color: tc.textSecondary,
-          letterSpacing: 0.8,
-        ),
-      );
-}
-
-// ─── Ordenante autocomplete ───────────────────────────────────────────────────
-// Stateless: el Autocomplete mantiene su propio controller; el valor inicial
-// se siembra con initialValue y los cambios se propagan a ordenanteCtrl.
-class _OrdenanteField extends StatelessWidget {
+// ─── Ordenante con sugerencias inline ────────────────────────────────────────
+// Antes usaba el `Autocomplete` de Flutter, que superpone sus opciones en un
+// overlay flotante posicionado por un CompositedTransformFollower — dentro
+// de un bottom sheet modal eso dejaba un hueco grande entre el campo y la
+// lista, e invadía visualmente el espacio de escritura. Ahora las
+// sugerencias se muestran dentro del propio flujo (debajo del campo, dentro
+// de la misma Column), sin overlay ni posicionamiento calculado aparte.
+class _OrdenanteField extends StatefulWidget {
   final TextEditingController ordenanteCtrl;
   final List<FinancePlace> placesSorted;
   final AppThemeColors tc;
@@ -1080,53 +806,223 @@ class _OrdenanteField extends StatelessWidget {
   });
 
   @override
+  State<_OrdenanteField> createState() => _OrdenanteFieldState();
+}
+
+class _OrdenanteFieldState extends State<_OrdenanteField> {
+  final _focusNode = FocusNode();
+  bool _mostrarSugerencias = false;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  List<FinancePlace> get _sugerencias {
+    final texto = widget.ordenanteCtrl.text.toLowerCase();
+    final candidatas = texto.isEmpty
+        ? widget.placesSorted
+        : widget.placesSorted.where((p) => p.nombre.toLowerCase().contains(texto));
+    return candidatas.take(5).toList();
+  }
+
+  void _elegir(FinancePlace p) {
+    widget.ordenanteCtrl.text = p.nombre;
+    setState(() => _mostrarSugerencias = false);
+    _focusNode.unfocus();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Autocomplete<FinancePlace>(
-      initialValue: TextEditingValue(text: ordenanteCtrl.text),
-      optionsBuilder: (textEditingValue) {
-        if (textEditingValue.text.isEmpty) return placesSorted;
-        return placesSorted.where((p) => p.nombre
-            .toLowerCase()
-            .contains(textEditingValue.text.toLowerCase()));
-      },
-      displayStringForOption: (p) => p.nombre,
-      fieldViewBuilder: (ctx, ctrl, focusNode, onSubmit) {
-        return TextField(
-          controller: ctrl,
-          focusNode: focusNode,
-          onEditingComplete: onSubmit,
-          onChanged: (val) => ordenanteCtrl.text = val,
+    final tc = widget.tc;
+    final sugerencias = _mostrarSugerencias ? _sugerencias : const <FinancePlace>[];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: widget.ordenanteCtrl,
+          focusNode: _focusNode,
+          onTap: () => setState(() => _mostrarSugerencias = true),
+          onChanged: (_) => setState(() {}),
+          onEditingComplete: () => setState(() => _mostrarSugerencias = false),
+          textAlign: TextAlign.right,
           decoration: const InputDecoration(
-            labelText: 'Lugar / Ordenante',
+            border: InputBorder.none,
+            isDense: true,
             hintText: 'Tienda, persona, lugar…',
-          ),
-        );
-      },
-      onSelected: (p) => ordenanteCtrl.text = p.nombre,
-      // Solo el nombre — el conteo de usos no le aporta nada al usuario
-      // viendo su propia lista de lugares/personas, solo ruido.
-      optionsViewBuilder: (ctx, onSelected, options) => Align(
-        alignment: Alignment.topLeft,
-        child: Material(
-          color: tc.bgCard,
-          borderRadius: BorderRadius.circular(AppRadius.tile),
-          elevation: 4,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 200, maxWidth: 320),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: options.length,
-              itemBuilder: (_, i) {
-                final p = options.elementAt(i);
-                return ListTile(
-                  dense: true,
-                  title: Text(p.nombre, style: TextStyle(color: tc.textPrimary, fontSize: AppTextSize.body)),
-                  onTap: () => onSelected(p),
-                );
-              },
-            ),
+            contentPadding: EdgeInsets.zero,
           ),
         ),
+        if (sugerencias.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final p in sugerencias)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.tile),
+                      onTap: () => _elegir(p),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: tc.bgCard,
+                          borderRadius: BorderRadius.circular(AppRadius.tile),
+                        ),
+                        child: Text(
+                          p.nombre,
+                          style: TextStyle(fontSize: AppTextSize.caption, color: tc.textPrimary),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// Pestañas reales (con subrayado en la seleccionada) para elegir el tipo
+// de transacción — reemplaza la píldora flotante en este formulario, que
+// se sentía como un control más entre el contenido en vez del primer paso.
+class _TipoTabs extends StatelessWidget {
+  final String tipo;
+  final ValueChanged<String> onChanged;
+  final AppThemeColors tc;
+
+  const _TipoTabs({required this.tipo, required this.onChanged, required this.tc});
+
+  @override
+  Widget build(BuildContext context) {
+    const opciones = [
+      ('ingreso', 'Ingreso'),
+      ('gasto', 'Gasto'),
+      ('transferencia', 'Transferir'),
+    ];
+    return Row(
+      children: [
+        for (final (valor, etiqueta) in opciones)
+          Expanded(
+            child: InkWell(
+              onTap: () => onChanged(valor),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: tipo == valor ? _tipoColor(valor) : tc.borderCard,
+                      width: tipo == valor ? 3 : 1,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  etiqueta,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: tipo == valor ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: AppTextSize.body,
+                    color: tipo == valor ? _tipoColor(valor) : tc.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// Fila fluida tap-to-edit: ícono + etiqueta a la izquierda, valor + chevron
+// a la derecha — el lenguaje visual compartido por Registro/Destino/
+// Categoría/Fecha/Hora en el diseño v6, sin tarjeta ni borde propio.
+class _FlowRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+  final AppThemeColors tc;
+  final Color? valueColor;
+
+  const _FlowRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    required this.tc,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: AppIconSize.small, color: tc.textSecondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(label, style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary)),
+            ),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: AppTextSize.body,
+                fontWeight: FontWeight.w600,
+                color: valueColor ?? tc.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, size: AppIconSize.small, color: tc.textTertiary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Variante de _FlowRow para campos editables en línea (Lugar, Nota) en vez
+// de un valor que abre un selector aparte — mismo ícono+etiqueta a la
+// izquierda, pero el valor es un widget de entrada real alineado a la
+// derecha.
+class _FlowFieldRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Widget child;
+  final AppThemeColors tc;
+
+  const _FlowFieldRow({
+    required this.icon,
+    required this.label,
+    required this.child,
+    required this.tc,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Misma estructura que _FlowRow (ícono + etiqueta a la izquierda) pero
+    // el valor de la derecha es un campo editable en vez de texto fijo —
+    // antes Lugar traía su propio labelText flotante y Nota no mostraba
+    // ninguna etiqueta, dos estilos distintos para la misma fila.
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, size: AppIconSize.small, color: tc.textSecondary),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary)),
+          const SizedBox(width: 12),
+          Expanded(child: child),
+        ],
       ),
     );
   }
