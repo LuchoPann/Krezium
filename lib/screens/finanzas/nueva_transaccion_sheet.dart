@@ -115,12 +115,15 @@ class _NuevaTransaccionSheetState
       if (t.monto != null) {
         _montoCtrl.text = agruparMiles(t.monto!.round());
       }
-      // Buscar categoría del template en el catálogo
-      try {
-        _categoriaSeleccionada = catalogoFinanzas.firstWhere(
-          (c) => c.id == t.categoryId,
-        );
-      } catch (_) {}
+      // Buscar categoría del template en el catálogo fijo — si es una
+      // categoría personalizada no aparece acá; se resuelve en build() en
+      // cuanto el catálogo completo (fijo + personalizado) esté disponible
+      // (ver _resolverCategoriaPendiente). Sin esto, editar/usar una
+      // plantilla con categoría propia dejaba el campo "Elegir categoría"
+      // vacío en silencio — y si el usuario no lo notaba y guardaba, el
+      // categoryId real se perdía al sobrescribirse con el placeholder.
+      _categoriaIdPendiente = t.categoryId;
+      _categoriaSeleccionada = catalogoFinanzas.where((c) => c.id == t.categoryId).firstOrNull;
       // Ir directo al paso 2 si hay template
       _paso = 2;
     }
@@ -137,11 +140,25 @@ class _NuevaTransaccionSheetState
       _fecha = DateTime(int.parse(fParts[0]), int.parse(fParts[1]), int.parse(fParts[2]));
       final hParts = (e.hora ?? '00:00').split(':');
       _hora = TimeOfDay(hour: int.parse(hParts[0]), minute: int.parse(hParts[1]));
-      try {
-        _categoriaSeleccionada = catalogoFinanzas.firstWhere((c) => c.id == e.categoryId);
-      } catch (_) {}
+      _categoriaIdPendiente = e.categoryId;
+      _categoriaSeleccionada = catalogoFinanzas.where((c) => c.id == e.categoryId).firstOrNull;
       _paso = 2;
     }
+  }
+
+  // Fase 08: ver comentario en initState — categoryId de un template/edición
+  // cuya categoría es personalizada (no vive en el catálogo fijo estático).
+  String? _categoriaIdPendiente;
+
+  void _resolverCategoriaPendiente(List<CatalogoCategoria> catalogoCompleto) {
+    final pendienteId = _categoriaIdPendiente;
+    if (pendienteId == null || _categoriaSeleccionada != null) return;
+    final encontrada = catalogoCompleto.where((c) => c.id == pendienteId).firstOrNull;
+    if (encontrada == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _categoriaSeleccionada = encontrada);
+    });
+    _categoriaIdPendiente = null;
   }
 
   void _onMontoChanged() {
@@ -296,6 +313,10 @@ class _NuevaTransaccionSheetState
     final tc = Theme.of(context).extension<AppThemeColors>()!;
     final librosAsync = ref.watch(financeAccountsProvider);
     final libros = librosAsync.valueOrNull?.map(FinanceAccount.fromRow).toList() ?? [];
+    final catsAsyncGlobal = ref.watch(allFinanceCategoriesProvider);
+    if (catsAsyncGlobal.valueOrNull != null) {
+      _resolverCategoriaPendiente(catsAsyncGlobal.value!);
+    }
 
     // Padding(bottom: viewInsets): un DraggableScrollableSheet no se
     // reacomoda solo con el teclado (a diferencia de un Scaffold con

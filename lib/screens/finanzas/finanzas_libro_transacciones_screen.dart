@@ -129,9 +129,13 @@ class _FinanzasLibroTransaccionesScreenState
       isScrollControlled: true,
       builder: (ctx) => _BusquedaSheet(
         txs: txs,
+        catMap: {for (final c in ref.read(allFinanceCategoriesProvider).valueOrNull ?? <CatalogoCategoria>[]) c.id: c},
         onTap: (tx) {
+          // Antes abría un formulario en blanco, ignorando por completo la
+          // transacción tocada — un resultado de búsqueda debe abrir esa
+          // transacción para editarla, no crear una nueva sin relación.
           Navigator.pop(ctx);
-          showNuevaTransaccionSheet(context, libroId: _libroActual.id);
+          showNuevaTransaccionSheet(context, libroId: tx.accountId, editar: tx);
         },
       ),
     );
@@ -427,6 +431,11 @@ class _FinanzasLibroTransaccionesScreenState
                             tx: grupoTxs[i],
                             libroActualId: _libroActual.id,
                             cat: catMap[grupoTxs[i].categoryId],
+                            // catMap ya es el catálogo combinado (fijo +
+                            // personalizado) — resolverlo acá en vez de
+                            // dentro de _TxRow evita que esa fila busque el
+                            // padre solo en el catálogo fijo estático.
+                            catPadre: catMap[catMap[grupoTxs[i].categoryId]?.parentId],
                             onConfirmDismiss: () =>
                                 _confirmarEliminar(context, grupoTxs[i]),
                             onDismissed: () => _eliminar(grupoTxs[i]),
@@ -650,6 +659,7 @@ class _TxRow extends StatelessWidget {
   final FinanceTransaction tx;
   final String libroActualId;
   final CatalogoCategoria? cat;
+  final CatalogoCategoria? catPadre;
   final Future<bool> Function() onConfirmDismiss;
   final VoidCallback onDismissed;
   final VoidCallback onEditar;
@@ -659,6 +669,7 @@ class _TxRow extends StatelessWidget {
     required this.tx,
     required this.libroActualId,
     required this.cat,
+    required this.catPadre,
     required this.onConfirmDismiss,
     required this.onDismissed,
     required this.onEditar,
@@ -683,15 +694,12 @@ class _TxRow extends StatelessWidget {
         : (cat?.nombre ?? tx.categoryId);
 
     // La subcategoría es el título (protagonista de la fila); la categoría
-    // padre pasa al subtítulo junto con nota y ordenante.
-    final padre = cat?.parentId != null
-        ? catalogoCategoriaPadres
-            .where((p) => p.id == cat!.parentId)
-            .firstOrNull
-        : null;
-
+    // padre pasa al subtítulo junto con nota y ordenante. catPadre viene
+    // resuelto desde el catálogo combinado (fijo + personalizado) — antes
+    // esto se buscaba acá mismo solo en catalogoCategoriaPadres (fijo), así
+    // que una categoría padre personalizada nunca aparecía en el subtítulo.
     final detalle = [
-      if (padre != null) padre.nombre,
+      if (catPadre != null) catPadre!.nombre,
       if (tx.nota.isNotEmpty) tx.nota,
       if (tx.personaSitio != null && tx.personaSitio!.isNotEmpty)
         tx.personaSitio!,
@@ -936,9 +944,10 @@ class _FiltrosPopupContentState extends State<_FiltrosPopupContent> {
 // ─── Búsqueda sheet ───────────────────────────────────────────────────────────
 class _BusquedaSheet extends StatefulWidget {
   final List<FinanceTransaction> txs;
+  final Map<String, CatalogoCategoria> catMap;
   final void Function(FinanceTransaction) onTap;
 
-  const _BusquedaSheet({required this.txs, required this.onTap});
+  const _BusquedaSheet({required this.txs, required this.catMap, required this.onTap});
 
   @override
   State<_BusquedaSheet> createState() => _BusquedaSheetState();
@@ -966,10 +975,12 @@ class _BusquedaSheetState extends State<_BusquedaSheet> {
     final q = _ctrl.text.toLowerCase();
     setState(() {
       _results = widget.txs.where((t) {
+        final nombreCategoria = widget.catMap[t.categoryId]?.nombre.toLowerCase() ?? '';
         return t.nota.toLowerCase().contains(q) ||
             (t.personaSitio?.toLowerCase().contains(q) ?? false) ||
             t.monto.toString().contains(q) ||
-            t.fecha.contains(q);
+            t.fecha.contains(q) ||
+            nombreCategoria.contains(q);
       }).toList();
     });
   }

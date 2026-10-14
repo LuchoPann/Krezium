@@ -54,13 +54,28 @@ class _EditarPlantillaSheetState extends State<_EditarPlantillaSheet> {
     _notasCtrl = TextEditingController(text: t?.nota ?? '');
     _tipo = t?.tipo ?? 'gasto';
 
+    // Fase 08: `todoCatalogo` es solo el catálogo fijo — si la plantilla usa
+    // una categoría personalizada, esto deja _categoria en null en silencio
+    // y, sin arreglarlo, "Guardar" mandaría categoryId: '' sobrescribiendo
+    // la categoría real de la plantilla. Se resuelve en build() en cuanto
+    // el catálogo completo (fijo + personalizado) esté disponible.
     if (t != null) {
-      try {
-        _categoria = todoCatalogo.firstWhere((c) => c.id == t.categoryId);
-      } catch (_) {
-        _categoria = null;
-      }
+      _categoriaIdPendiente = t.categoryId;
+      _categoria = todoCatalogo.where((c) => c.id == t.categoryId).firstOrNull;
     }
+  }
+
+  String? _categoriaIdPendiente;
+
+  void _resolverCategoriaPendiente(List<CatalogoCategoria> catalogoCompleto) {
+    final pendienteId = _categoriaIdPendiente;
+    if (pendienteId == null || _categoria != null) return;
+    final encontrada = catalogoCompleto.where((c) => c.id == pendienteId).firstOrNull;
+    if (encontrada == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _categoria = encontrada);
+    });
+    _categoriaIdPendiente = null;
   }
 
   @override
@@ -112,6 +127,15 @@ class _EditarPlantillaSheetState extends State<_EditarPlantillaSheet> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<AppThemeColors>()!;
     final isEdit = widget.template != null;
+    // .read (no .watch): este sheet recibe un WidgetRef prestado de la
+    // pantalla que lo abrió, no es un ConsumerState propio — .watch acá no
+    // reconstruiría este widget de todos modos. El catálogo ya está casi
+    // siempre cacheado (la pantalla de Plantillas lo observa antes de que
+    // el usuario pueda abrir este sheet), así que una lectura única basta.
+    final catsAsync = widget.ref.read(allFinanceCategoriesProvider);
+    if (catsAsync.valueOrNull != null) {
+      _resolverCategoriaPendiente(catsAsync.value!);
+    }
 
     // Padding(bottom: viewInsets) en el nivel más externo: un
     // DraggableScrollableSheet NO se reacomoda solo cuando aparece el

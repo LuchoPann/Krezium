@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/finance_icon_map.dart';
 import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/providers/database_provider.dart';
@@ -131,31 +130,17 @@ class _PlantillaTile extends ConsumerWidget {
     }
   }
 
-  String? _nombreCategoria(String categoryId) {
-    try {
-      return todoCatalogo
-          .firstWhere((c) => c.id == categoryId)
-          .nombre;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  String? _iconoKeyCategoria(String categoryId) {
-    try {
-      return todoCatalogo
-          .firstWhere((c) => c.id == categoryId)
-          .iconoKey;
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final color = _colorForTipo(template.tipo);
-    final nombreCat = _nombreCategoria(template.categoryId);
-    final iconoKey = _iconoKeyCategoria(template.categoryId);
+    // Fase 08: antes buscaba solo en `todoCatalogo` (catálogo fijo) — una
+    // plantilla con categoría personalizada se mostraba sin nombre ni
+    // ícono de categoría. allFinanceCategoriesProvider es el catálogo
+    // combinado (fijo + personalizado) que ya usa el resto del módulo.
+    final cats = ref.watch(allFinanceCategoriesProvider).valueOrNull ?? const [];
+    final categoria = cats.where((c) => c.id == template.categoryId).firstOrNull;
+    final nombreCat = categoria?.nombre;
+    final iconoKey = categoria?.iconoKey;
     final montoStr = template.monto != null
         ? formatCOP(template.monto!)
         : 'Sin monto fijo';
