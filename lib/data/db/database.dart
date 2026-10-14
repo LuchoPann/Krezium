@@ -49,7 +49,7 @@ class AccountHasTransactionsException implements Exception {
   Credits, Installments, CardMovements, CardStatements,
   InstallmentPurchases, LoanAbonos, CommercialQuotas, PagosRealizados,
   FinanceAccounts, FinanceCategories, FinanceTransactions, FinanceBudgets,
-  FinancePlaces, FinanceTemplates, FinanceReservations,
+  FinancePlaces, FinanceTemplates, FinanceReservations, FinanceGoalMovements,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(openConnection());
@@ -58,7 +58,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 20;
+  int get schemaVersion => 21;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -253,6 +253,52 @@ class AppDatabase extends _$AppDatabase {
             }
             if (!resCols.contains('estado')) {
               await m.addColumn(financeReservations, financeReservations.estado);
+            }
+          }
+          if (from < 21) {
+            if (!await tableExists('finance_goal_movements')) {
+              await m.createTable(financeGoalMovements);
+            }
+            final resCols = await colsOf('finance_reservations');
+            if (!resCols.contains('modalidad')) {
+              await m.addColumn(financeReservations, financeReservations.modalidad);
+            }
+            // accountId pasa a nullable: SQLite no soporta ALTER COLUMN
+            // para quitar NOT NULL, así que se reconstruye la tabla
+            // (crear nueva con el schema correcto, copiar datos, borrar
+            // vieja, renombrar) — patrón estándar de migración SQLite.
+            // Se detecta si ya quedó nullable (dispositivos que ya
+            // pasaron por esto) leyendo PRAGMA table_info: notnull == 0
+            // en la fila de account_id.
+            final infoRows =
+                await customSelect('PRAGMA table_info(finance_reservations)')
+                    .get();
+            final accountIdRow = infoRows
+                .firstWhere((r) => r.read<String>('name') == 'account_id');
+            final accountIdEsNullable = accountIdRow.read<int>('notnull') == 0;
+            if (!accountIdEsNullable) {
+              await customStatement('''
+                CREATE TABLE finance_reservations_new (
+                  id TEXT NOT NULL PRIMARY KEY,
+                  account_id TEXT NULL REFERENCES finance_accounts(id),
+                  nombre TEXT NOT NULL,
+                  monto REAL NOT NULL,
+                  creada_en TEXT NOT NULL,
+                  monto_objetivo REAL NOT NULL DEFAULT 0,
+                  fecha_limite TEXT NULL,
+                  estado TEXT NOT NULL DEFAULT 'activa',
+                  modalidad TEXT NOT NULL DEFAULT 'vinculada'
+                )
+              ''');
+              await customStatement('''
+                INSERT INTO finance_reservations_new
+                SELECT id, account_id, nombre, monto, creada_en,
+                       monto_objetivo, fecha_limite, estado, modalidad
+                FROM finance_reservations
+              ''');
+              await customStatement('DROP TABLE finance_reservations');
+              await customStatement(
+                  'ALTER TABLE finance_reservations_new RENAME TO finance_reservations');
             }
           }
         },

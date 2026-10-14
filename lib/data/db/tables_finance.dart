@@ -100,8 +100,12 @@ class FinanceBudgets extends Table {
 @DataClassName('FinanceReservationRow')
 class FinanceReservations extends Table {
   TextColumn get id => text()();
-  TextColumn get accountId =>
-      text().references(FinanceAccounts, #id, onDelete: KeyAction.restrict)();
+  // Nullable desde Planificación v2: una meta 'virtual' no vive dentro de
+  // ningún registro — descuenta del disponible global, no del de una
+  // cuenta puntual. Una meta 'vinculada' sigue requiriendo accountId.
+  TextColumn get accountId => text()
+      .nullable()
+      .references(FinanceAccounts, #id, onDelete: KeyAction.restrict)();
   TextColumn get nombre => text()();
   RealColumn get monto => real()();
   TextColumn get creadaEn => text()(); // ISO8601
@@ -109,6 +113,26 @@ class FinanceReservations extends Table {
   TextColumn get fechaLimite => text().nullable()(); // YYYY-MM-DD, opcional
   // 'activa'|'pausada'|'finalizada'|'cancelada'
   TextColumn get estado => text().withDefault(const Constant('activa'))();
+  // 'virtual' (sin cuenta, descuenta del disponible global) |
+  // 'vinculada' (accountId fijo, descuenta del disponible de esa cuenta).
+  TextColumn get modalidad => text().withDefault(const Constant('vinculada'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Historial de aportes/retiros de una meta (Planificación v2) — antes
+/// solo existía el acumulado en FinanceReservations.monto, sin forma de
+/// reconstruir qué pasó y cuándo.
+@DataClassName('FinanceGoalMovementRow')
+class FinanceGoalMovements extends Table {
+  TextColumn get id => text()();
+  TextColumn get goalId => text()
+      .references(FinanceReservations, #id, onDelete: KeyAction.cascade)();
+  TextColumn get tipo => text()(); // 'aporte' | 'retiro'
+  RealColumn get monto => real()();
+  TextColumn get fecha => text()(); // ISO8601
+  RealColumn get saldoResultante => real()();
 
   @override
   Set<Column> get primaryKey => {id};

@@ -3,14 +3,20 @@ import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_ledger.dart';
 
-FinanceReservationRow _reserva(double monto, {String estado = 'activa'}) => FinanceReservationRow(
+FinanceReservationRow _reserva(
+  double monto, {
+  String estado = 'activa',
+  String? accountId = 'A',
+  String modalidad = 'vinculada',
+}) => FinanceReservationRow(
       id: 'r-$monto-$estado',
-      accountId: 'A',
+      accountId: accountId,
       nombre: 'meta',
       monto: monto,
       creadaEn: '2026-10-01',
       montoObjetivo: monto,
       estado: estado,
+      modalidad: modalidad,
     );
 
 FinanceTransaction _tx({

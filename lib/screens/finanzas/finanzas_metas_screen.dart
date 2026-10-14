@@ -187,7 +187,11 @@ class FinanzasMetasScreen extends ConsumerWidget {
             fechaLimite: Value(meta.fechaLimite), estado: const Value('cancelada'),
           ));
           ref.invalidate(allFinanceReservationsProvider);
-          ref.invalidate(financeAccountBalanceProvider(meta.accountId));
+          // Meta virtual (accountId null) no descuenta de ningún registro
+          // puntual — no hay balance de cuenta que invalidar.
+          if (meta.accountId != null) {
+            ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
+          }
         }
       case 'eliminar':
         final confirmado = await showDialog<bool>(
@@ -204,7 +208,9 @@ class FinanzasMetasScreen extends ConsumerWidget {
         if (confirmado == true) {
           await db.deleteFinanceReservation(meta.id);
           ref.invalidate(allFinanceReservationsProvider);
-          ref.invalidate(financeAccountBalanceProvider(meta.accountId));
+          if (meta.accountId != null) {
+            ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
+          }
         }
     }
   }
@@ -406,7 +412,7 @@ class _MetaFormSheetState extends ConsumerState<_MetaFormSheet> {
     final id = widget.editando?.id ?? const Uuid().v4();
     await db.upsertFinanceReservation(FinanceReservationsCompanion.insert(
       id: id,
-      accountId: cuenta.id,
+      accountId: Value(cuenta.id),
       nombre: nombre,
       monto: widget.editando?.monto ?? 0,
       creadaEn: widget.editando?.creadaEn ?? DateTime.now().toIso8601String(),
@@ -627,7 +633,9 @@ class _AportarRetirarSheetState extends ConsumerState<_AportarRetirarSheet> {
           fechaLimite: Value(meta.fechaLimite), estado: Value(meta.estado),
         ));
     ref.invalidate(allFinanceReservationsProvider);
-    ref.invalidate(financeAccountBalanceProvider(meta.accountId));
+    if (meta.accountId != null) {
+      ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
+    }
     if (mounted) Navigator.of(context).pop();
   }
 

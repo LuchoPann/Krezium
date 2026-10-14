@@ -68,7 +68,7 @@ void main() {
     expect(reservas, isEmpty);
     await migrated.upsertFinanceReservation(FinanceReservationsCompanion.insert(
       id: 'res-1',
-      accountId: 'acc-1',
+      accountId: Value('acc-1'),
       nombre: 'Vacaciones',
       monto: 100,
       creadaEn: '2026-10-01',

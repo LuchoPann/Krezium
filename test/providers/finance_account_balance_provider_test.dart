@@ -18,7 +18,7 @@ void main() {
       monto: 200, fecha: '2026-10-01',
     ));
     await db.upsertFinanceReservation(FinanceReservationsCompanion.insert(
-      id: 'r1', accountId: 'A', nombre: 'Vacaciones', monto: 50, creadaEn: '2026-10-01',
+      id: 'r1', accountId: Value('A'), nombre: 'Vacaciones', monto: 50, creadaEn: '2026-10-01',
     ));
 
     final container = ProviderContainer(overrides: [

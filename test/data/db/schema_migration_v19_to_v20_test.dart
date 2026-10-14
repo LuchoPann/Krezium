@@ -24,7 +24,7 @@ void main() {
       id: 'acc-1', nombre: 'Efectivo', tipo: 'efectivo', icono: 'wallet', color: '#000000',
     ));
     await fresh.upsertFinanceReservation(FinanceReservationsCompanion.insert(
-      id: 'res-1', accountId: 'acc-1', nombre: 'Vacaciones', monto: 100, creadaEn: '2026-10-01',
+      id: 'res-1', accountId: Value('acc-1'), nombre: 'Vacaciones', monto: 100, creadaEn: '2026-10-01',
     ));
     await fresh.close();
 
@@ -52,7 +52,7 @@ void main() {
 
     // Las columnas nuevas son usables de inmediato (crear una meta completa).
     await migrated.upsertFinanceReservation(FinanceReservationsCompanion.insert(
-      id: 'res-2', accountId: 'acc-1', nombre: 'Fondo de emergencia', monto: 0, creadaEn: '2026-10-01',
+      id: 'res-2', accountId: Value('acc-1'), nombre: 'Fondo de emergencia', monto: 0, creadaEn: '2026-10-01',
       montoObjetivo: const Value(2000000), fechaLimite: const Value('2027-01-01'),
     ));
     final reservasTrasInsertar = await migrated.getFinanceReservations('acc-1');
