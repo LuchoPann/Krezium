@@ -16,10 +16,12 @@ la siguiente. Ninguna fase toca código sin spec aprobada primero.
 
 ## Fases
 
-- [ ] **Fase A — Spec de Planificación** (presupuestos guiados + metas
-      con 2 modalidades: virtual y vinculada a cuenta). En curso.
-- [ ] **Fase B — Plan + implementación de Planificación** (solo tras
-      aprobar la spec de Fase A).
+- [x] **Fase A — Spec de Planificación** (presupuestos guiados + metas
+      con 2 modalidades: virtual y vinculada a cuenta) — cerrada
+      2026-10-14. Ver `docs/superpowers/specs/2026-10-14-planificacion-v2-design.md`.
+- [x] **Fase B — Plan + implementación de Planificación** — cerrada
+      2026-10-14, 7/7 tareas, suite 357/357 verde en cada commit. Ver
+      `docs/superpowers/plans/2026-10-14-planificacion-v2.md`.
 - [ ] **Fase C — Spec de conexión Registros ↔ Planificación** (accesos
       contextuales al registrar/editar/eliminar un movimiento, navegación
       bidireccional).
