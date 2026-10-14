@@ -91,6 +91,7 @@ class FinanzasMetasScreen extends ConsumerWidget {
     final tc = Theme.of(context).extension<AppThemeColors>()!;
     final accion = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Material(
         color: Theme.of(ctx).scaffoldBackgroundColor,
@@ -101,6 +102,8 @@ class FinanzasMetasScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              _HistorialMeta(goalId: meta.id, tc: tc),
+              const Divider(height: 1),
               ListTile(leading: const Icon(Icons.add_circle_outline), title: const Text('Aportar'), onTap: () => Navigator.pop(ctx, 'aportar')),
               ListTile(leading: const Icon(Icons.remove_circle_outline), title: const Text('Retirar'), onTap: () => Navigator.pop(ctx, 'retirar')),
               ListTile(leading: const Icon(Icons.edit_outlined), title: const Text('Editar'), onTap: () => Navigator.pop(ctx, 'editar')),
@@ -315,16 +318,21 @@ class _MetaCard extends StatelessWidget {
                               ),
                           ],
                         ),
-                        if (cuenta != null) ...[
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Icon(iconFromKey(cuenta!.icono), size: AppIconSize.micro, color: tc.textTertiary),
-                              const SizedBox(width: 4),
-                              Text(cuenta!.nombre, style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary)),
-                            ],
-                          ),
-                        ],
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(
+                              cuenta != null ? iconFromKey(cuenta!.icono) : Icons.public,
+                              size: AppIconSize.micro,
+                              color: tc.textTertiary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              cuenta?.nombre ?? 'Virtual · disponible global',
+                              style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 8),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(AppRadius.chip),
@@ -364,6 +372,64 @@ class _MetaCard extends StatelessWidget {
   }
 }
 
+/// Historial de aportes/retiros de solo lectura — Planificación v2, la
+/// tabla FinanceGoalMovements es lo que lo hace posible (antes solo
+/// existía el acumulado, sin forma de reconstruir qué pasó y cuándo).
+class _HistorialMeta extends ConsumerWidget {
+  final String goalId;
+  final AppThemeColors tc;
+
+  const _HistorialMeta({required this.goalId, required this.tc});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final movimientosAsync = ref.watch(financeGoalMovementsProvider(goalId));
+    return movimientosAsync.maybeWhen(
+      data: (movimientos) {
+        if (movimientos.isEmpty) return const SizedBox.shrink();
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 180),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Historial', style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w700, color: tc.textTertiary)),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: movimientos.length,
+                  itemBuilder: (ctx, i) {
+                    final m = movimientos[i];
+                    final esAporte = m.tipo == 'aporte';
+                    final fecha = DateTime.tryParse(m.fecha);
+                    return ListTile(
+                      dense: true,
+                      leading: Icon(
+                        esAporte ? Icons.add_circle_outline : Icons.remove_circle_outline,
+                        color: esAporte ? Colors.green : Colors.red.shade400,
+                        size: AppIconSize.small,
+                      ),
+                      title: Text('${esAporte ? 'Aporte' : 'Retiro'} de ${formatCOP(m.monto)}'),
+                      subtitle: fecha != null ? Text(DateFormat('d MMM yyyy, HH:mm', 'es').format(fecha)) : null,
+                      trailing: Text('= ${formatCOP(m.saldoResultante)}', style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary)),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
+    );
+  }
+}
+
 class _MetaFormSheet extends ConsumerStatefulWidget {
   final List<FinanceAccount> cuentas;
   final FinanceReservationRow? editando;
@@ -379,6 +445,9 @@ class _MetaFormSheetState extends ConsumerState<_MetaFormSheet> {
   late final _objetivoCtrl = TextEditingController(
     text: widget.editando != null ? agruparMiles(widget.editando!.montoObjetivo.round()) : '',
   );
+  // Modalidad: identidad de la meta, no editable una vez creada — igual
+  // criterio que la categoría de un presupuesto (ver spec Planificación v2).
+  late String _modalidad = widget.editando?.modalidad ?? 'vinculada';
   late FinanceAccount? _cuenta = widget.editando != null
       ? widget.cuentas.where((c) => c.id == widget.editando!.accountId).firstOrNull
       : (widget.cuentas.length == 1 ? widget.cuentas.first : null);
@@ -387,6 +456,7 @@ class _MetaFormSheetState extends ConsumerState<_MetaFormSheet> {
   bool _guardando = false;
 
   bool get _editando => widget.editando != null;
+  bool get _esVirtual => _modalidad == 'virtual';
 
   @override
   void dispose() {
@@ -402,23 +472,29 @@ class _MetaFormSheetState extends ConsumerState<_MetaFormSheet> {
     return (v != null && v > 0) ? v : null;
   }
 
+  bool get _puedeGuardar {
+    if (_objetivoValido == null || _nombreCtrl.text.trim().isEmpty) return false;
+    if (!_esVirtual && _cuenta == null) return false;
+    return true;
+  }
+
   Future<void> _guardar() async {
-    final cuenta = _cuenta;
     final objetivo = _objetivoValido;
     final nombre = _nombreCtrl.text.trim();
-    if (cuenta == null || objetivo == null || nombre.isEmpty) return;
+    if (!_puedeGuardar || objetivo == null || nombre.isEmpty) return;
     setState(() => _guardando = true);
     final db = ref.read(databaseProvider);
     final id = widget.editando?.id ?? const Uuid().v4();
     await db.upsertFinanceReservation(FinanceReservationsCompanion.insert(
       id: id,
-      accountId: Value(cuenta.id),
+      accountId: Value(_esVirtual ? null : _cuenta?.id),
       nombre: nombre,
       monto: widget.editando?.monto ?? 0,
       creadaEn: widget.editando?.creadaEn ?? DateTime.now().toIso8601String(),
       montoObjetivo: Value(objetivo),
       fechaLimite: Value(_fechaLimite != null ? DateFormat('yyyy-MM-dd').format(_fechaLimite!) : null),
       estado: Value(widget.editando?.estado ?? 'activa'),
+      modalidad: Value(_modalidad),
     ));
     ref.invalidate(allFinanceReservationsProvider);
     if (mounted) Navigator.of(context).pop();
@@ -462,29 +538,61 @@ class _MetaFormSheetState extends ConsumerState<_MetaFormSheet> {
                   decoration: const InputDecoration(labelText: 'Nombre', hintText: 'Ej. Vacaciones, Fondo de emergencia'),
                 ),
                 const SizedBox(height: 16),
-                InkWell(
-                  borderRadius: BorderRadius.circular(AppRadius.tile),
-                  // La cuenta es donde vive el dinero reservado — cambiarla
-                  // en una meta existente movería la reserva de saldo entre
-                  // registros sin que el usuario lo pida explícitamente.
-                  onTap: _editando ? null : () => _elegirCuenta(context),
-                  child: Row(
-                    children: [
-                      Icon(_cuenta != null ? iconFromKey(_cuenta!.icono) : Icons.account_balance_wallet_outlined,
-                          size: AppIconSize.small, color: tc.textSecondary),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text('Registro', style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary))),
-                      Text(
-                        _cuenta?.nombre ?? 'Elegir registro',
-                        style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w600, color: _cuenta != null ? tc.textPrimary : tc.textTertiary),
+                Text('CÓMO RESERVAR', style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w700, color: tc.textTertiary)),
+                const SizedBox(height: 6),
+                // Modalidad: identidad de la meta, no editable una vez creada.
+                Row(
+                  children: [
+                    Expanded(
+                      child: ChoiceChip(
+                        label: const Text('Vinculada a una cuenta'),
+                        selected: _modalidad == 'vinculada',
+                        onSelected: _editando ? null : (_) => setState(() => _modalidad = 'vinculada'),
                       ),
-                      if (!_editando) ...[
-                        const SizedBox(width: 4),
-                        Icon(Icons.chevron_right, size: AppIconSize.small, color: tc.textTertiary),
-                      ],
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ChoiceChip(
+                        label: const Text('Virtual (sin cuenta)'),
+                        selected: _esVirtual,
+                        onSelected: _editando ? null : (_) => setState(() => _modalidad = 'virtual'),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  _esVirtual
+                      ? 'Descuenta del disponible global (todas las cuentas), no de un registro puntual.'
+                      : 'Descuenta del disponible del registro elegido.',
+                  style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary),
+                ),
+                if (!_esVirtual) ...[
+                  const SizedBox(height: 12),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(AppRadius.tile),
+                    // La cuenta es donde vive el dinero reservado — cambiarla
+                    // en una meta existente movería la reserva de saldo entre
+                    // registros sin que el usuario lo pida explícitamente.
+                    onTap: _editando ? null : () => _elegirCuenta(context),
+                    child: Row(
+                      children: [
+                        Icon(_cuenta != null ? iconFromKey(_cuenta!.icono) : Icons.account_balance_wallet_outlined,
+                            size: AppIconSize.small, color: tc.textSecondary),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text('Registro', style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary))),
+                        Text(
+                          _cuenta?.nombre ?? 'Elegir registro',
+                          style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w600, color: _cuenta != null ? tc.textPrimary : tc.textTertiary),
+                        ),
+                        if (!_editando) ...[
+                          const SizedBox(width: 4),
+                          Icon(Icons.chevron_right, size: AppIconSize.small, color: tc.textTertiary),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
                 const Divider(height: 24),
                 Text('MONTO OBJETIVO', style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w700, color: tc.textTertiary)),
                 const SizedBox(height: 6),
@@ -524,9 +632,7 @@ class _MetaFormSheetState extends ConsumerState<_MetaFormSheet> {
                   width: double.infinity,
                   height: 50,
                   child: FilledButton(
-                    onPressed: (_guardando || _cuenta == null || _objetivoValido == null || _nombreCtrl.text.trim().isEmpty)
-                        ? null
-                        : _guardar,
+                    onPressed: (_guardando || !_puedeGuardar) ? null : _guardar,
                     child: _guardando
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                         : Text(_editando ? 'Guardar cambios' : 'Crear meta'),
@@ -627,12 +733,24 @@ class _AportarRetirarSheetState extends ConsumerState<_AportarRetirarSheet> {
     setState(() => _guardando = true);
     final meta = widget.meta;
     final nuevoMonto = widget.esAporte ? meta.monto + m : meta.monto - m;
-    await ref.read(databaseProvider).upsertFinanceReservation(FinanceReservationsCompanion(
+    final db = ref.read(databaseProvider);
+    await db.upsertFinanceReservation(FinanceReservationsCompanion(
           id: Value(meta.id), accountId: Value(meta.accountId), nombre: Value(meta.nombre),
           monto: Value(nuevoMonto), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
           fechaLimite: Value(meta.fechaLimite), estado: Value(meta.estado),
         ));
+    // Historial de aportes/retiros (Planificación v2) — permite reconstruir
+    // qué pasó y cuándo, el acumulado solo no alcanzaba para eso.
+    await db.insertFinanceGoalMovement(FinanceGoalMovementsCompanion.insert(
+      id: const Uuid().v4(),
+      goalId: meta.id,
+      tipo: widget.esAporte ? 'aporte' : 'retiro',
+      monto: m,
+      fecha: DateTime.now().toIso8601String(),
+      saldoResultante: nuevoMonto,
+    ));
     ref.invalidate(allFinanceReservationsProvider);
+    ref.invalidate(financeGoalMovementsProvider(meta.id));
     if (meta.accountId != null) {
       ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
     }

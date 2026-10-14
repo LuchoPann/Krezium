@@ -968,6 +968,17 @@ class AppDatabase extends _$AppDatabase {
   Future<void> deleteFinanceReservation(String id) =>
       (delete(financeReservations)..where((r) => r.id.equals(id))).go();
 
+  // --- Historial de movimientos de meta (Planificación v2) ---
+
+  Future<void> insertFinanceGoalMovement(FinanceGoalMovementsCompanion row) =>
+      into(financeGoalMovements).insert(row);
+
+  Future<List<FinanceGoalMovementRow>> getFinanceGoalMovements(String goalId) =>
+      (select(financeGoalMovements)
+            ..where((t) => t.goalId.equals(goalId))
+            ..orderBy([(t) => OrderingTerm.desc(t.fecha)]))
+          .get();
+
   // -------------------------------------------------------------------------
 
   /// Deletes [creditId] and (via FK cascade) all its installments/movements.

@@ -31,6 +31,15 @@ final allFinanceReservationsProvider =
   return db.getAllFinanceReservations();
 });
 
+/// Historial de aportes/retiros de una meta (Planificación v2) — permite
+/// reconstruir qué pasó y cuándo, cosa que el solo acumulado de
+/// FinanceReservations.monto no permitía.
+final financeGoalMovementsProvider =
+    FutureProvider.family<List<FinanceGoalMovementRow>, String>((ref, goalId) {
+  final db = ref.watch(databaseProvider);
+  return db.getFinanceGoalMovements(goalId);
+});
+
 final allFinanceCategoriesProvider =
     FutureProvider<List<CatalogoCategoria>>((ref) async {
   final db = ref.watch(databaseProvider);
