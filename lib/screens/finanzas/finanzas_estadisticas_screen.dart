@@ -375,67 +375,23 @@ class _FinanzasEstadisticasScreenState
                 ),
                 const SizedBox(height: 24),
 
-                // ── Sección 1: Resumen cards ──────────────────────────────────
-                Text(
-                  'Resumen',
-                  style: Theme.of(context).textTheme.titleMedium,
+                // ── Sección 1: Resumen hero ────────────────────────────────────
+                _ResumenHero(
+                  balance: balanceTarjeta,
+                  ingresos: tot.ingresos,
+                  gastos: tot.gastos,
+                  colors: colors,
+                  // Comparación con el mes anterior — solo para "Este mes"
+                  // (único periodo donde comparar contra "el bloque
+                  // anterior" es inequívoco) y solo si ese mes anterior
+                  // tiene datos (ver comparacionPeriodoAnterior).
+                  comparacion: _periodo == _Periodo.esteMes
+                      ? comparacionPeriodoAnterior(
+                          actual: tot.gastos,
+                          anterior: _gastosMesAnterior(allTxs),
+                        )
+                      : null,
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _ResumenCard(
-                      label: 'Ingresos',
-                      monto: tot.ingresos,
-                      color: _kIngresos,
-                      colors: colors,
-                    ),
-                    const SizedBox(width: 8),
-                    _ResumenCard(
-                      label: 'Gastos',
-                      monto: tot.gastos,
-                      color: _kGastos,
-                      colors: colors,
-                    ),
-                    const SizedBox(width: 8),
-                    _ResumenCard(
-                      label: 'Balance',
-                      monto: balanceTarjeta,
-                      color: balanceTarjeta >= 0 ? _kIngresos : _kGastos,
-                      colors: colors,
-                    ),
-                  ],
-                ),
-                // Comparación con el mes anterior — solo para "Este mes" (el
-                // único periodo donde comparar contra "el bloque anterior"
-                // es inequívoco) y solo si ese mes anterior tiene datos
-                // (si no, no hay base real para un %, ver comparacionPeriodoAnterior).
-                if (_periodo == _Periodo.esteMes) ...[
-                  Builder(builder: (context) {
-                    final comparacion = comparacionPeriodoAnterior(
-                      actual: tot.gastos,
-                      anterior: _gastosMesAnterior(allTxs),
-                    );
-                    if (comparacion == null) return const SizedBox.shrink();
-                    final ahora = DateTime.now();
-                    final mesAnterior = DateTime(ahora.year, ahora.month - 1);
-                    final subio = comparacion.deltaPct > 0;
-                    final pct = comparacion.deltaPct.abs().round();
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        comparacion.deltaPct == 0
-                            ? 'Gastaste igual que en ${_kMesesCortos[mesAnterior.month]}: ${formatCOP(tot.gastos)}.'
-                            : 'Gastaste $pct% ${subio ? 'más' : 'menos'} que en '
-                                '${_kMesesCortos[mesAnterior.month]} '
-                                '(${formatCOP(comparacion.anterior)} → ${formatCOP(comparacion.actual)}).',
-                        style: TextStyle(
-                          fontSize: AppTextSize.caption,
-                          color: subio ? _kGastos : colors.textSecondary,
-                        ),
-                      ),
-                    );
-                  }),
-                ],
                 const SizedBox(height: 24),
 
                 // ── Sección Observaciones (Fase 07) ───────────────────────
@@ -496,47 +452,9 @@ class _FinanzasEstadisticasScreenState
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 12),
-                  _BarTendencia(tendencia: tendencia, fmt: _fmt),
+                  _BarTendencia(tendencia: tendencia, fmt: _fmt, colors: colors),
                   const SizedBox(height: 24),
                 ],
-
-                // ── Sección 4: Balance por libros ─────────────────────────
-                asyncLibros.maybeWhen(
-                  data: (rows) {
-                    final libros = rows.map(FinanceAccount.fromRow).toList();
-                    if (libros.length <= 1) return const SizedBox.shrink();
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Balance por libro',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 100,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: libros.length,
-                            separatorBuilder: (ctx2, i2) =>
-                                const SizedBox(width: 12),
-                            itemBuilder: (ctx, i) {
-                              final l = libros[i];
-                              final lColor = _colorFromHex(l.color);
-                              return _LibroBalanceCard(
-                                libro: l,
-                                libroColor: lColor,
-                                colors: colors,
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-                    );
-                  },
-                  orElse: () => const SizedBox.shrink(),
-                ),
 
                 const SizedBox(height: 32),
               ],
@@ -723,32 +641,143 @@ class _ObservacionCard extends ConsumerWidget {
   }
 }
 
-class _ResumenCard extends StatelessWidget {
-  final String label;
-  final double monto;
-  final Color color;
+// ─── Resumen hero ─────────────────────────────────────────────────────────────
+// Una sola tarjeta: el Balance es el número protagonista; la barra visualiza
+// la proporción ingresos/gastos (sustituye la lectura mental del pastel para
+// esto); Ingresos/Gastos abajo son soporte de la misma barra, no una
+// repetición — cada monto solo aparece una vez en toda la sección.
+class _ResumenHero extends StatelessWidget {
+  final double balance;
+  final double ingresos;
+  final double gastos;
   final AppThemeColors colors;
+  final ({double actual, double anterior, double deltaPct})? comparacion;
 
-  const _ResumenCard({
-    required this.label,
-    required this.monto,
-    required this.color,
+  const _ResumenHero({
+    required this.balance,
+    required this.ingresos,
+    required this.gastos,
     required this.colors,
+    this.comparacion,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        decoration: BoxDecoration(
-          color: colors.bgCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final total = ingresos + gastos;
+    final fracIngresos = total > 0 ? ingresos / total : 0.5;
+    final balanceColor = balance >= 0 ? _kIngresos : _kGastos;
+    final subio = (comparacion?.deltaPct ?? 0) > 0;
+    final pct = comparacion?.deltaPct.abs().round();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.card),
+      decoration: BoxDecoration(
+        color: colors.bgCard,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: colors.borderCard.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Balance',
+            style: TextStyle(
+              fontSize: AppTextSize.caption,
+              color: colors.textSecondary,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            formatCOP(balance),
+            style: TextStyle(
+              color: balanceColor,
+              fontWeight: FontWeight.bold,
+              fontSize: AppTextSize.emphasis,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 16),
+          // Barra ingresos/gastos — única fuente visual de la proporción.
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              height: 10,
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: (fracIngresos * 1000).round().clamp(1, 999),
+                    child: Container(color: _kIngresos),
+                  ),
+                  Expanded(
+                    flex: ((1 - fracIngresos) * 1000).round().clamp(1, 999),
+                    child: Container(color: _kGastos),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _HeroDato(
+                  icono: Icons.arrow_downward,
+                  label: 'Ingresos',
+                  monto: ingresos,
+                  color: _kIngresos,
+                  colors: colors,
+                ),
+              ),
+              Expanded(
+                child: _HeroDato(
+                  icono: Icons.arrow_upward,
+                  label: 'Gastos',
+                  monto: gastos,
+                  color: _kGastos,
+                  colors: colors,
+                  badge: (comparacion != null && pct != null)
+                      ? (subio: subio, pct: pct)
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroDato extends StatelessWidget {
+  final IconData icono;
+  final String label;
+  final double monto;
+  final Color color;
+  final AppThemeColors colors;
+  final ({bool subio, int pct})? badge;
+
+  const _HeroDato({
+    required this.icono,
+    required this.label,
+    required this.monto,
+    required this.color,
+    required this.colors,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
+            Icon(icono, size: AppIconSize.small, color: color),
+            const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
@@ -756,21 +785,42 @@ class _ResumenCard extends StatelessWidget {
                 color: colors.textSecondary,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              formatCOP(monto),
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-                fontSize: AppTextSize.body,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
           ],
         ),
-      ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                formatCOP(monto),
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: AppTextSize.body,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (badge != null) ...[
+              const SizedBox(width: 4),
+              Icon(
+                badge!.subio ? Icons.arrow_upward : Icons.arrow_downward,
+                size: 12,
+                color: badge!.subio ? _kGastos : colors.textSecondary,
+              ),
+              Text(
+                '${badge!.pct}%',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: badge!.subio ? _kGastos : colors.textSecondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
     );
   }
 }
@@ -796,6 +846,7 @@ class _PieDonutSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<AppThemeColors>()!;
     final sections = <PieChartSectionData>[];
     for (int i = 0; i < data.length; i++) {
       final item = data[i];
@@ -825,13 +876,17 @@ class _PieDonutSection extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.9),
+                  // Fondo de la tarjeta del tema (no el color rojo/verde de
+                  // la porción) — el color de la categoría queda solo como
+                  // borde, el texto sigue el tema (textPrimary).
+                  color: colors.bgCard,
                   borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: color, width: 1.5),
                 ),
                 child: Text(
                   '$label\n${formatCOP(item.monto)}',
                   style: TextStyle(
-                    color: legibleForegroundOn(color),
+                    color: colors.textPrimary,
                     fontSize: AppTextSize.caption,
                     fontWeight: FontWeight.bold,
                   ),
@@ -936,8 +991,9 @@ class _PieLegendItem extends StatelessWidget {
 class _BarTendencia extends StatelessWidget {
   final List<({int year, int month, double ingresos, double gastos})> tendencia;
   final String Function(double) fmt;
+  final AppThemeColors colors;
 
-  const _BarTendencia({required this.tendencia, required this.fmt});
+  const _BarTendencia({required this.tendencia, required this.fmt, required this.colors});
 
   @override
   Widget build(BuildContext context) {
@@ -1014,6 +1070,10 @@ class _BarTendencia extends StatelessWidget {
           ),
           barTouchData: BarTouchData(
             touchTooltipData: BarTouchTooltipData(
+              // Fondo de la tarjeta del tema (no un color fijo) y texto en
+              // textPrimary — ya es blanco en tema oscuro y negro en tema
+              // claro, así siempre legible sin depender del color de la serie.
+              getTooltipColor: (_) => colors.bgCard,
               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                 final t = tendencia[groupIndex];
                 final isIng = rodIndex == 0;
@@ -1021,7 +1081,7 @@ class _BarTendencia extends StatelessWidget {
                   '${_kMesesCortos[t.month]}\n'
                   '${isIng ? "Ingresos" : "Gastos"}: ${formatCOP(rod.toY)}',
                   TextStyle(
-                    color: isIng ? _kIngresos : _kGastos,
+                    color: colors.textPrimary,
                     fontWeight: FontWeight.bold,
                     fontSize: AppTextSize.caption,
                   ),
@@ -1035,82 +1095,3 @@ class _BarTendencia extends StatelessWidget {
   }
 }
 
-// ─── Libro balance card ───────────────────────────────────────────────────────
-
-class _LibroBalanceCard extends ConsumerWidget {
-  final FinanceAccount libro;
-  final Color libroColor;
-  final AppThemeColors colors;
-
-  const _LibroBalanceCard({
-    required this.libro,
-    required this.libroColor,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final balanceAsync = ref.watch(financeAccountBalanceProvider(libro.id));
-    return balanceAsync.when(
-      loading: () => _buildCard(libro.saldoInicial),
-      error: (e, st) => _buildCard(libro.saldoInicial),
-      data: (b) => _buildCard(b.saldo),
-    );
-  }
-
-  Widget _buildCard(double balance) {
-    final balanceColor = balance >= 0 ? _kIngresos : _kGastos;
-    return Container(
-          width: 140,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: colors.bgCard,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: libroColor.withValues(alpha: 0.4)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 10,
-                    backgroundColor: libroColor.withValues(alpha: 0.2),
-                    child: Text(
-                      libro.nombre.isNotEmpty
-                          ? libro.nombre[0].toUpperCase()
-                          : '?',
-                      style: TextStyle(
-                          color: libroColor,
-                          fontSize: AppTextSize.caption,
-                          fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      libro.nombre,
-                      style: const TextStyle(
-                          fontSize: AppTextSize.caption, fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                formatCOP(balance),
-                style: TextStyle(
-                  color: balanceColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: AppTextSize.body,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        );
-  }
-}
