@@ -22,17 +22,28 @@ la siguiente. Ninguna fase toca código sin spec aprobada primero.
 - [x] **Fase B — Plan + implementación de Planificación** — cerrada
       2026-10-14, 7/7 tareas, suite 357/357 verde en cada commit. Ver
       `docs/superpowers/plans/2026-10-14-planificacion-v2.md`.
-- [ ] **Fase C — Spec de conexión Registros ↔ Planificación** (accesos
-      contextuales al registrar/editar/eliminar un movimiento, navegación
-      bidireccional).
-- [ ] **Fase D — Plan + implementación de Fase C.**
-- [ ] **Fase E — Spec de rediseño de Estadísticas** (resumen de periodo,
-      evolución, distribución de gasto, sección de hallazgos accionables
-      conectada con presupuestos/metas).
-- [ ] **Fase F — Plan + implementación de Fase E.**
-- [ ] **Fase G — Pulido y pruebas integrales** (migraciones, categorías
-      personalizadas, estados vacíos, datos incompletos).
+- [x] **Fase C — Conexión Registros ↔ Planificación** — cerrada
+      2026-10-16: resumen de presupuesto en Nueva Transacción, drill-down
+      presupuesto→movimientos, atajo ingreso→meta, recálculo verificado.
+      Ver `docs/superpowers/specs/2026-10-16-fases-c-e-g-design.md`.
+- [x] **Fase D — (fusionada con C):** se implementó directo tras la spec,
+      sin plan separado — mismo criterio dosificado, tareas chicas.
+- [x] **Fase E — Estadísticas: tasa de ahorro, variación por categoría,
+      acceso a presupuesto** — cerrada 2026-10-16.
+- [x] **Fase F — (fusionada con E).**
+- [x] **Fase G — Pulido y pruebas integrales** — cerrada 2026-10-16:
+      estados vacíos ya cubiertos por diseño en cada tarea, `dart analyze`
+      limpio (sin warnings nuevos sobre el baseline pre-existente),
+      suite completa 362/362 verde. Roadmap de testeo manual entregado en
+      `docs/finanzas-v2-roadmap-testeo.md`.
 
-Pendientes transversales a resolver en algún punto (no bloquean Fase A):
-backup del módulo Finanzas (fuera del alcance de este roadmap, abierto
-desde Fase 04 original), dismiss/seen de observaciones.
+## Roadmap v2 completo
+
+Las 7 fases (A-G) quedan cerradas. Pendiente: validación manual del
+usuario siguiendo `docs/finanzas-v2-roadmap-testeo.md`.
+
+Pendientes transversales a resolver en algún punto (fuera de este
+roadmap): backup del módulo Finanzas completo (abierto desde Fase 04 del
+roadmap original de 9 fases), dismiss/seen de observaciones (Fase 07),
+presupuestos de dos niveles (general+específico, descartado a propósito
+en la spec de Fase A).
