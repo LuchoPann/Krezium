@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_budget.dart';
@@ -248,6 +249,11 @@ class _FinanzasEstadisticasScreenState
     final asyncLibros = ref.watch(financeAccountsProvider);
     final asyncCats   = ref.watch(allFinanceCategoriesProvider);
     final colors      = Theme.of(context).extension<AppThemeColors>()!;
+    // Fase E3: presupuestos del mes en curso — para el acceso directo a
+    // Planificación desde la leyenda del pastel cuando esa categoría ya
+    // tiene presupuesto asignado.
+    final budgetsAsync = ref.watch(
+        financeBudgetsProvider((DateTime.now().year, DateTime.now().month)));
     // Balance "oficial" (transfer-aware) del libro activo — la tarjeta
     // "Balance" de la fila Resumen lo usa en vez del balance period-scoped
     // de _totales, que viene de una query solo-origen y no refleja
@@ -442,6 +448,24 @@ class _FinanzasEstadisticasScreenState
                       },
                       totalGastos: pieData.fold(0, (s, e) => s + e.monto),
                       onCategoriaTap: _irAMovimientosDeCategoria,
+                      // Fase E2: variación vs. mes anterior por categoría —
+                      // mismo criterio que la comparación de totales (Fase
+                      // 06): solo tiene sentido comparar "Este mes" contra
+                      // "el mes anterior completo", nunca contra un bloque
+                      // de 3/6 meses de distinta duración.
+                      gastoPorCategoriaAnterior: _periodo == _Periodo.esteMes
+                          ? _gastoPorCategoriaEnMes(
+                              allTxs,
+                              DateTime(DateTime.now().year, DateTime.now().month - 1),
+                            )
+                          : null,
+                      budgetsPorCategoria: budgetsAsync.valueOrNull != null
+                          ? {for (final b in budgetsAsync.value!) b.categoryId: b}
+                          : const {},
+                      onPresupuestoTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const FinanzasPlanificacionScreen()),
+                      ),
                     ),
                     const SizedBox(height: 24),
                   ],
@@ -746,6 +770,25 @@ class _ResumenHero extends StatelessWidget {
               ),
             ],
           ),
+          // Fase E1: tasa de ahorro — oculta sin ingresos registrados (no
+          // hay base real sobre la cual calcular un %, ver tasaAhorro).
+          Builder(builder: (context) {
+            final tasa = tasaAhorro(ingresos: ingresos, gastos: gastos);
+            if (tasa == null) return const SizedBox.shrink();
+            final pctAhorro = (tasa * 100).round();
+            return Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                tasa >= 0
+                    ? 'Ahorraste el $pctAhorro% de tus ingresos este mes.'
+                    : 'Gastaste ${pctAhorro.abs()}% más de lo que ingresó este mes.',
+                style: TextStyle(
+                  fontSize: AppTextSize.caption,
+                  color: tasa >= 0 ? colors.textSecondary : _kGastos,
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -834,6 +877,15 @@ class _PieDonutSection extends StatelessWidget {
   final ValueChanged<int> onTouch;
   final double totalGastos;
   final ValueChanged<String> onCategoriaTap;
+  // Fase E2: gasto del mismo mes anterior, por categoría exacta (mismo
+  // criterio de agrupación que `data`) — null cuando el periodo activo no
+  // es "Este mes" (comparar contra un bloque de distinta duración no es
+  // inequívoco, ver Fase 06).
+  final Map<String, double>? gastoPorCategoriaAnterior;
+  // Fase E3: presupuestos del mes en curso, por categoría padre — para
+  // ofrecer un acceso directo a Planificación desde la leyenda.
+  final Map<String, FinanceBudgetRow> budgetsPorCategoria;
+  final VoidCallback? onPresupuestoTap;
 
   const _PieDonutSection({
     required this.data,
@@ -842,6 +894,9 @@ class _PieDonutSection extends StatelessWidget {
     required this.onTouch,
     required this.totalGastos,
     required this.onCategoriaTap,
+    this.gastoPorCategoriaAnterior,
+    this.budgetsPorCategoria = const {},
+    this.onPresupuestoTap,
   });
 
   @override
@@ -933,6 +988,14 @@ class _PieDonutSection extends StatelessWidget {
                 totalGastos: totalGastos,
                 isOtros: data[i].catId == '__otros__',
                 onTap: data[i].catId == '__otros__' ? null : () => onCategoriaTap(data[i].catId),
+                montoAnterior: gastoPorCategoriaAnterior?[data[i].catId],
+                budget: () {
+                  if (data[i].catId == '__otros__') return null;
+                  final cat = catMap[data[i].catId];
+                  final padreId = cat?.parentId ?? data[i].catId;
+                  return budgetsPorCategoria[padreId];
+                }(),
+                onPresupuestoTap: onPresupuestoTap,
               ),
           ],
         ),
@@ -950,6 +1013,13 @@ class _PieLegendItem extends StatelessWidget {
   // Fase 06: navega a los movimientos que originan esta porción — null
   // para "Otros" (agrupa varias categorías, no hay un único filtro posible).
   final VoidCallback? onTap;
+  // Fase E2: gasto de esta misma categoría el mes anterior — null si no
+  // aplica (periodo distinto a "Este mes") o sin comparación válida.
+  final double? montoAnterior;
+  // Fase E3: si esta categoría (resuelta a su padre) ya tiene presupuesto
+  // este mes, se ofrece un segundo acceso directo a Planificación.
+  final FinanceBudgetRow? budget;
+  final VoidCallback? onPresupuestoTap;
 
   const _PieLegendItem({
     required this.item,
@@ -958,12 +1028,18 @@ class _PieLegendItem extends StatelessWidget {
     required this.totalGastos,
     required this.isOtros,
     this.onTap,
+    this.montoAnterior,
+    this.budget,
+    this.onPresupuestoTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final nombre = isOtros ? 'Otros' : (cat?.nombre ?? item.catId);
     final pct = totalGastos > 0 ? item.monto / totalGastos * 100 : 0.0;
+    final comparacion = montoAnterior != null
+        ? comparacionPeriodoAnterior(actual: item.monto, anterior: montoAnterior!)
+        : null;
     final contenido = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -975,6 +1051,28 @@ class _PieLegendItem extends StatelessWidget {
           '$nombre  ${formatCOP(item.monto)} (${pct.toStringAsFixed(1)}%)',
           style: const TextStyle(fontSize: AppTextSize.caption),
         ),
+        if (comparacion != null) ...[
+          const SizedBox(width: 4),
+          Icon(
+            comparacion.deltaPct > 0 ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 10,
+            color: comparacion.deltaPct > 0 ? _kGastos : Theme.of(context).extension<AppThemeColors>()!.textSecondary,
+          ),
+          Text(
+            '${comparacion.deltaPct.abs().round()}%',
+            style: TextStyle(
+              fontSize: AppTextSize.caption,
+              color: comparacion.deltaPct > 0 ? _kGastos : Theme.of(context).extension<AppThemeColors>()!.textSecondary,
+            ),
+          ),
+        ],
+        if (budget != null && onPresupuestoTap != null) ...[
+          const SizedBox(width: 2),
+          InkWell(
+            onTap: onPresupuestoTap,
+            child: Icon(Icons.pie_chart_outline, size: AppIconSize.micro, color: Theme.of(context).colorScheme.primary),
+          ),
+        ],
         if (onTap != null) ...[
           const SizedBox(width: 2),
           Icon(Icons.chevron_right, size: AppIconSize.micro, color: Theme.of(context).colorScheme.primary),

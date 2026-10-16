@@ -238,4 +238,23 @@ void main() {
       expect(totalReservadoVirtual([]), 0);
     });
   });
+
+  group('tasaAhorro', () {
+    test('porcentaje de ingresos que no se gastó', () {
+      expect(tasaAhorro(ingresos: 1000, gastos: 700), 0.3);
+    });
+
+    test('negativa cuando los gastos superan los ingresos — se muestra tal cual, sin clamp', () {
+      expect(tasaAhorro(ingresos: 100, gastos: 150), -0.5);
+    });
+
+    test('100% cuando no hubo ningún gasto', () {
+      expect(tasaAhorro(ingresos: 500, gastos: 0), 1.0);
+    });
+
+    test('null sin ingresos registrados — no hay base, no un 0% engañoso', () {
+      expect(tasaAhorro(ingresos: 0, gastos: 200), isNull);
+      expect(tasaAhorro(ingresos: 0, gastos: 0), isNull);
+    });
+  });
 }

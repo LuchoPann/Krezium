@@ -88,6 +88,17 @@ double totalReservadoVirtual(List<FinanceReservationRow> reservas) => reservas
     .where((r) => r.modalidad == 'virtual' && r.estado != 'cancelada')
     .fold(0.0, (sum, r) => sum + r.monto);
 
+/// % de los ingresos que no se gastó: (ingresos - gastos) / ingresos. Sin
+/// clamp — puede ser negativa (se gastó más de lo que entró, información
+/// real) o superar 1.0 no tiene sentido aquí porque gastos nunca es
+/// negativo, pero sí puede ser 0 (100% ahorrado). Devuelve null sin
+/// ingresos registrados: un 0% ahí sería engañoso, no es que no se
+/// ahorró nada, es que no hay base sobre la cual calcular una tasa.
+double? tasaAhorro({required double ingresos, required double gastos}) {
+  if (ingresos <= 0) return null;
+  return (ingresos - gastos) / ingresos;
+}
+
 /// El disponible estimado nunca oculta una inconsistencia: si las reservas
 /// superan el saldo, [disponibleEstimado] queda negativo y
 /// [reservasExcedenSaldo] en true — la UI decide cómo señalarlo, este
