@@ -6,11 +6,15 @@ import 'package:krezium/data/db/database.dart';
 import 'package:krezium/data/finance_categories_catalog.dart';
 import 'package:krezium/data/finance_icon_map.dart';
 import 'package:krezium/data/models/finance_models.dart';
+import 'package:krezium/domain/finance_budget.dart';
 import 'package:krezium/domain/finance_ledger.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
 import 'package:krezium/screens/finanzas/categoria_selector_sheet.dart';
+import 'package:krezium/screens/finanzas/finanzas_metas_screen.dart';
+import 'package:krezium/screens/finanzas/finanzas_presupuesto_screen.dart';
 import 'package:krezium/theme/app_theme.dart';
+import 'package:krezium/utils/credit_display_utils.dart';
 import 'package:krezium/utils/monto_input_formatter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -313,7 +317,26 @@ class _NuevaTransaccionSheetState
 
       await HapticFeedback.mediumImpact();
       widget.onGuardado?.call();
-      if (mounted) Navigator.of(context).pop();
+      // Fase C3: atajo opcional "Apartar a una meta" tras un ingreso —
+      // se decide y se captura el contexto del Navigator (sobrevive al
+      // cierre de este sheet) ANTES de popear, nunca después.
+      final ofrecerApartar = _tipo == 'ingreso' &&
+          (ref.read(allFinanceReservationsProvider).valueOrNull ?? [])
+              .any((m) => m.estado == 'activa');
+      if (!mounted) return;
+      final navigatorContext = Navigator.of(context).context;
+      Navigator.of(context).pop();
+      if (ofrecerApartar && navigatorContext.mounted) {
+        ScaffoldMessenger.of(navigatorContext).showSnackBar(
+          SnackBar(
+            content: const Text('Ingreso registrado'),
+            action: SnackBarAction(
+              label: 'Apartar a una meta',
+              onPressed: () => abrirApartarIngresoAMeta(navigatorContext, monto: monto),
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
@@ -743,6 +766,10 @@ class _Paso2 extends ConsumerWidget {
             valueColor: categoriaSeleccionada != null ? null : tc.textTertiary,
           ),
           const Divider(height: 1),
+          // Fase C1: resumen de presupuesto de la categoría elegida — solo
+          // para gastos, nunca bloquea guardar (ni excedido).
+          if (tipo == 'gasto' && categoriaSeleccionada != null)
+            _PresupuestoResumenInline(categoria: categoriaSeleccionada!, fecha: fecha),
         ],
         _FlowRow(
           icon: Icons.event_outlined,
@@ -975,6 +1002,91 @@ class _TipoTabs extends StatelessWidget {
 // Fila fluida tap-to-edit: ícono + etiqueta a la izquierda, valor + chevron
 // a la derecha — el lenguaje visual compartido por Registro/Destino/
 // Categoría/Fecha/Hora en el diseño v6, sin tarjeta ni borde propio.
+/// Fase C1 — resumen compacto del presupuesto de la categoría elegida
+/// (roll-up a la padre, igual criterio que el resto del módulo). Si no
+/// existe presupuesto este mes para esa categoría, ofrece crearlo sin
+/// salir del formulario de transacción; si existe, muestra gastado/
+/// límite/restante — nunca bloquea guardar, ni con el límite excedido.
+class _PresupuestoResumenInline extends ConsumerWidget {
+  final CatalogoCategoria categoria;
+  final DateTime fecha;
+
+  const _PresupuestoResumenInline({required this.categoria, required this.fecha});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tc = Theme.of(context).extension<AppThemeColors>()!;
+    final catsAsync = ref.watch(allFinanceCategoriesProvider);
+    final budgetsAsync = ref.watch(financeBudgetsProvider((fecha.year, fecha.month)));
+    final mesStr = '${fecha.year}-${fecha.month.toString().padLeft(2, '0')}';
+    final txsAsync = ref.watch(financeTransactionsProvider(mesStr));
+
+    if (!catsAsync.hasValue || !budgetsAsync.hasValue) return const SizedBox.shrink();
+
+    final cats = catsAsync.value!;
+    final padreId = categoria.parentId ?? categoria.id;
+    final padre = cats.where((c) => c.id == padreId).firstOrNull ?? categoria;
+    final budget = budgetsAsync.value!.where((b) => b.categoryId == padreId).firstOrNull;
+
+    if (budget == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: InkWell(
+          onTap: () => abrirCrearPresupuestoParaCategoria(
+            context,
+            categoriaPadre: padre,
+            anio: fecha.year,
+            mes: fecha.month,
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.add_circle_outline, size: AppIconSize.small, color: tc.textSecondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Crear presupuesto para ${padre.nombre}',
+                  style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!txsAsync.hasValue) return const SizedBox.shrink();
+    final parentPorCategoria = {for (final c in cats) c.id: c.parentId};
+    final transacciones = txsAsync.value!.map(FinanceTransaction.fromRow).toList();
+    final gasto = gastoCategoriaPeriodo(
+      categoryId: padreId,
+      transacciones: transacciones,
+      parentPorCategoria: parentPorCategoria,
+    );
+    final progreso = progresoPresupuesto(gasto: gasto, limite: budget.montoLimite);
+    final estado = estadoPresupuesto(progreso);
+    final excedido = estado == EstadoPresupuesto.agotado;
+    final restante = saldoPresupuesto(limite: budget.montoLimite, gasto: gasto);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Icon(Icons.pie_chart_outline, size: AppIconSize.small, color: excedido ? Colors.red : tc.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              excedido
+                  ? 'Presupuesto de ${padre.nombre} excedido por ${formatCOP(restante.abs())}'
+                  : '${padre.nombre}: quedan ${formatCOP(restante)} de ${formatCOP(budget.montoLimite)}',
+              style: TextStyle(fontSize: AppTextSize.caption, color: excedido ? Colors.red : tc.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FlowRow extends StatelessWidget {
   final IconData icon;
   final String label;

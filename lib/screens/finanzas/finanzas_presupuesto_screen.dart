@@ -7,11 +7,34 @@ import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_budget.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
+import 'package:krezium/screens/finanzas/finanzas_libro_transacciones_screen.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
 import 'package:krezium/utils/monto_input_formatter.dart';
 
 final _presupuestoMesProvider = StateProvider<DateTime>((ref) => DateTime.now());
+
+/// Fase C1: abre el flujo guiado de crear presupuesto desde fuera de esta
+/// pantalla (atajo "Crear presupuesto para {categoría}" en Nueva
+/// Transacción), con la categoría padre ya resuelta — salta el paso 0.
+Future<void> abrirCrearPresupuestoParaCategoria(
+  BuildContext context, {
+  required CatalogoCategoria categoriaPadre,
+  required int anio,
+  required int mes,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PresupuestoFormSheet(
+      anio: anio,
+      mes: mes,
+      categoriasDisponibles: [categoriaPadre],
+      categoriaPreseleccionada: categoriaPadre,
+    ),
+  );
+}
 
 /// Fase 04 — Presupuestos: límites de gasto por categoría padre, con
 /// consumo real (incluye subcategorías), estados vacío/cercano/agotado,
@@ -359,7 +382,7 @@ class _EstadoVacio extends StatelessWidget {
   }
 }
 
-class _BudgetCard extends StatelessWidget {
+class _BudgetCard extends ConsumerWidget {
   final _BudgetItemData data;
   final AppThemeColors tc;
   final VoidCallback onTap;
@@ -367,8 +390,59 @@ class _BudgetCard extends StatelessWidget {
 
   const _BudgetCard({required this.data, required this.tc, required this.onTap, required this.onEliminar});
 
+  /// Fase C2: drill-down a los movimientos de esta categoría. Un
+  /// presupuesto es global (no por registro), así que si hay más de un
+  /// registro se pregunta primero; con uno solo va directo — sin
+  /// selector de por medio cuando no hace falta elegir nada.
+  Future<void> _verMovimientos(BuildContext context, WidgetRef ref) async {
+    final rows = ref.read(financeAccountsProvider).valueOrNull ?? [];
+    final libros = rows.map(FinanceAccount.fromRow).toList();
+    if (libros.isEmpty) return;
+
+    FinanceAccount? libro;
+    if (libros.length == 1) {
+      libro = libros.first;
+    } else {
+      libro = await showModalBottomSheet<FinanceAccount>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => Material(
+          color: Theme.of(ctx).scaffoldBackgroundColor,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('¿En qué registro?', style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary)),
+                  ),
+                ),
+                for (final l in libros)
+                  ListTile(title: Text(l.nombre), onTap: () => Navigator.of(ctx).pop(l)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    if (libro == null || !context.mounted) return;
+
+    ref.read(finanzasFiltrosProvider.notifier).state =
+        ref.read(finanzasFiltrosProvider).copyWith(categoriaId: data.categoryId);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => FinanzasLibroTransaccionesScreen(libro: libro!)),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cat = data.cat;
     final estadoColor = switch (data.estado) {
       EstadoPresupuesto.agotado => Colors.red,
@@ -424,6 +498,13 @@ class _BudgetCard extends StatelessWidget {
                                 style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w700, color: estadoColor),
                               ),
                             ),
+                          IconButton(
+                            icon: Icon(Icons.receipt_long_outlined, size: AppIconSize.small, color: tc.textTertiary),
+                            tooltip: 'Ver movimientos',
+                            onPressed: () => _verMovimientos(context, ref),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          ),
                           IconButton(
                             icon: Icon(Icons.delete_outline, size: AppIconSize.small, color: tc.textTertiary),
                             tooltip: 'Eliminar presupuesto',
@@ -496,6 +577,11 @@ class _PresupuestoFormSheet extends ConsumerStatefulWidget {
   final List<CatalogoCategoria> categoriasDisponibles;
   final CatalogoCategoria? categoriaInicial;
   final double? montoInicial;
+  // Fase C1: abrir el flujo desde fuera de esta pantalla (atajo "Crear
+  // presupuesto" en Nueva Transacción) con la categoría ya resuelta —
+  // a diferencia de categoriaInicial, esto NO activa el modo edición,
+  // solo salta el paso 0 (elegir categoría) porque ya se conoce.
+  final CatalogoCategoria? categoriaPreseleccionada;
 
   const _PresupuestoFormSheet({
     required this.anio,
@@ -503,6 +589,7 @@ class _PresupuestoFormSheet extends ConsumerStatefulWidget {
     required this.categoriasDisponibles,
     this.categoriaInicial,
     this.montoInicial,
+    this.categoriaPreseleccionada,
   });
 
   @override
@@ -510,13 +597,13 @@ class _PresupuestoFormSheet extends ConsumerStatefulWidget {
 }
 
 class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
-  late CatalogoCategoria? _categoria = widget.categoriaInicial;
+  late CatalogoCategoria? _categoria = widget.categoriaInicial ?? widget.categoriaPreseleccionada;
   late final _montoCtrl = TextEditingController(
     text: widget.montoInicial != null ? agruparMiles(widget.montoInicial!.round()) : '',
   );
   bool _guardando = false;
   bool _sugerenciaAplicada = false;
-  late int _paso = _editando ? 2 : 0;
+  late int _paso = (_editando || widget.categoriaPreseleccionada != null) ? (_editando ? 2 : 1) : 0;
 
   bool get _editando => widget.categoriaInicial != null;
 
@@ -638,7 +725,8 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
   }
 
   Widget _botonesPaso(AppThemeColors tc) {
-    final esPrimerPaso = _paso == (_editando ? 2 : 0);
+    final primerPaso = _editando ? 2 : (widget.categoriaPreseleccionada != null ? 1 : 0);
+    final esPrimerPaso = _paso == primerPaso;
     final puedeAvanzar = switch (_paso) {
       0 => false, // paso 0 avanza al tocar una categoría, no con botón
       2 => _montoValido != null,

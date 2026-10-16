@@ -70,6 +70,34 @@ void main() {
         0,
       );
     });
+
+    test('Fase C4: editar la categoryId de una transacción ya contabilizada '
+        'recalcula ambos presupuestos sin tocar ninguno de los dos — el '
+        'gasto se mueve, no se duplica ni se pierde', () {
+      // Transacción original: $100 en transporte.
+      final antes = [_gasto('transporte', 100)];
+      expect(
+        gastoCategoriaPeriodo(categoryId: 'transporte', transacciones: antes, parentPorCategoria: {}),
+        100,
+      );
+      expect(
+        gastoCategoriaPeriodo(categoryId: 'comida', transacciones: antes, parentPorCategoria: {}),
+        0,
+      );
+
+      // El usuario edita esa misma transacción y le cambia la categoría a
+      // comida — en la UI esto es un upsert sobre el mismo id, acá se
+      // simula con la lista ya actualizada (mismo id, categoryId nuevo).
+      final despues = [_gasto('comida', 100)];
+      expect(
+        gastoCategoriaPeriodo(categoryId: 'transporte', transacciones: despues, parentPorCategoria: {}),
+        0,
+      );
+      expect(
+        gastoCategoriaPeriodo(categoryId: 'comida', transacciones: despues, parentPorCategoria: {}),
+        100,
+      );
+    });
   });
 
   group('progresoPresupuesto', () {

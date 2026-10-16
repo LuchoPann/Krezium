@@ -19,6 +19,71 @@ Color _colorFromHex(String hex) {
   return Color(int.parse('FF$h', radix: 16));
 }
 
+/// Fase C3: atajo opcional tras guardar un ingreso — "Apartar a una
+/// meta". Si no hay ninguna meta 'activa', no hace nada (el llamador no
+/// debería ni ofrecer el atajo en ese caso). Con una sola meta activa va
+/// directo al sheet de aportar; con varias, pregunta cuál primero.
+///
+/// Recibe [context] en vez de un WidgetRef porque se dispara desde el
+/// action de un SnackBar mostrado *después* de que el formulario de
+/// transacción ya se cerró — en ese punto su propio State (y su ref) ya
+/// está disposed. `ProviderScope.containerOf` sigue siendo válido porque
+/// [context] viene del Navigator (vive por encima de la ruta cerrada).
+Future<void> abrirApartarIngresoAMeta(
+  BuildContext context, {
+  required double monto,
+}) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final metas = (container.read(allFinanceReservationsProvider).valueOrNull ?? [])
+      .where((m) => m.estado == 'activa')
+      .toList();
+  if (metas.isEmpty) return;
+
+  FinanceReservationRow? meta;
+  if (metas.length == 1) {
+    meta = metas.first;
+  } else {
+    meta = await showModalBottomSheet<FinanceReservationRow>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final tc = Theme.of(ctx).extension<AppThemeColors>()!;
+        return Material(
+          color: Theme.of(ctx).scaffoldBackgroundColor,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('¿A qué meta apartas?', style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary)),
+                  ),
+                ),
+                for (final m in metas)
+                  ListTile(title: Text(m.nombre), onTap: () => Navigator.of(ctx).pop(m)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+  if (meta == null || !context.mounted) return;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _AportarRetirarSheet(meta: meta!, esAporte: true, montoInicial: monto),
+  );
+}
+
 /// Fase 05 — Metas de ahorro: el dinero de una meta vive dentro del saldo
 /// de su registro (campo `monto` en FinanceReservations, ya restado del
 /// disponible desde Fase 01) — nunca se mueve a otro registro ni genera un
@@ -910,15 +975,18 @@ class _MetaFormSheetState extends ConsumerState<_MetaFormSheet> {
 class _AportarRetirarSheet extends ConsumerStatefulWidget {
   final FinanceReservationRow meta;
   final bool esAporte;
+  final double? montoInicial;
 
-  const _AportarRetirarSheet({required this.meta, required this.esAporte});
+  const _AportarRetirarSheet({required this.meta, required this.esAporte, this.montoInicial});
 
   @override
   ConsumerState<_AportarRetirarSheet> createState() => _AportarRetirarSheetState();
 }
 
 class _AportarRetirarSheetState extends ConsumerState<_AportarRetirarSheet> {
-  final _montoCtrl = TextEditingController();
+  late final _montoCtrl = TextEditingController(
+    text: widget.montoInicial != null ? agruparMiles(widget.montoInicial!.round()) : '',
+  );
   bool _guardando = false;
 
   @override
