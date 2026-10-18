@@ -156,7 +156,7 @@ class _LoanProgress extends StatelessWidget {
               color: kredit.textTertiary,
             ),
           )
-        else
+        else ...[
           Text(
             '${(credit.interestRate * 100).toStringAsFixed(1)}% ${credit.interestRateType ?? ''}',
             style: TextStyle(
@@ -164,6 +164,21 @@ class _LoanProgress extends StatelessWidget {
               color: kredit.textTertiary,
             ),
           ),
+          const SizedBox(height: 6),
+          // Costo total del crédito: cuánto interés se paga en total durante
+          // toda la vida del préstamo frente al capital — la vista por cuota
+          // no deja ver este número, y es el que de verdad importa para
+          // decidir si vale la pena un abono extra o prepagar.
+          Text(
+            'Costo total: ${formatCOP(totalAmount)} '
+            '(${formatCOP(credit.installments.fold(0.0, (s, i) => s + i.interest))} en intereses)',
+            style: TextStyle(
+              fontSize: AppTextSize.body,
+              fontWeight: FontWeight.w600,
+              color: kredit.textSecondary,
+            ),
+          ),
+        ],
       ],
     );
   }
