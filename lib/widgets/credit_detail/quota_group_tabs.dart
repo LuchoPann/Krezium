@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/commercial_quota.dart';
 import '../../data/models/credit.dart';
-import '../../domain/commercial_quota_calculator.dart';
 import '../../domain/credit_calculator.dart';
 import '../../providers/credits_provider.dart';
 import '../../screens/credit_detail/edit_credit_sheet.dart';
@@ -11,7 +10,6 @@ import '../../theme/app_theme.dart';
 import '../../utils/credit_display_utils.dart';
 import '../krezium_bottom_dialogs.dart';
 import 'schedule_tab.dart';
-import 'stat_box.dart';
 import 'summary_tab.dart';
 
 const _kAccordionAnim = Duration(milliseconds: 260);
@@ -194,45 +192,16 @@ class QuotaGroupSummaryTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    final q = quota;
+    // Disponible/Límite ahora viven en el header fijo (_QuotaOverviewTiles
+    // en credit_detail_screen.dart), visible también en Cronograma — ya
+    // no se repiten acá para no mostrarlos dos veces en Resumen.
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.card, AppSpacing.card, AppSpacing.card, 16),
-      itemCount: purchases.length + (q != null ? 1 : 0),
+      itemCount: purchases.length,
       itemBuilder: (context, index) {
-        if (q != null && index == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: StatBox(
-                    label: 'Disponible',
-                    value: formatCOP(quotaAvailable(q, purchases)),
-                    icon: Icons.account_balance_wallet_outlined,
-                    emphasized: true,
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 34,
-                  margin: const EdgeInsets.symmetric(horizontal: 18),
-                  color: kredit.borderCard,
-                ),
-                Expanded(
-                  child: StatBox(
-                    label: 'Límite',
-                    value: formatCOP(q.limit),
-                    icon: Icons.credit_score_outlined,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        final purchase = purchases[index - (q != null ? 1 : 0)];
+        final purchase = purchases[index];
         final isExpanded = expandedId == purchase.id;
 
         return Padding(

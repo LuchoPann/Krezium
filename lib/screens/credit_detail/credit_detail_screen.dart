@@ -19,6 +19,7 @@ import '../../widgets/credit_detail/schedule_tab.dart';
 import '../../widgets/credit_detail/summary_tab.dart';
 import '../../domain/card_calculator.dart';
 import '../../domain/card_statement_engine.dart';
+import '../../domain/commercial_quota_calculator.dart';
 import '../../domain/credit_calculator.dart';
 import '../../domain/date_utils.dart';
 import '../../utils/credit_display_utils.dart';
@@ -415,24 +416,36 @@ class _CreditDetailScreenState extends ConsumerState<CreditDetailScreen>
             ),
           ),
           body: isGrouped
-              ? TabBarView(
-                  controller: _tabController,
+              ? Column(
                   children: [
-                    QuotaGroupSummaryTab(
-                      quota: quota,
-                      purchases: groupPurchases,
-                      expandedId: _expandedPurchaseId,
-                      onToggle: (id) => setState(
-                        () => _expandedPurchaseId =
-                            _expandedPurchaseId == id ? null : id,
-                      ),
-                    ),
-                    QuotaGroupScheduleTab(
-                      purchases: groupPurchases,
-                      expandedId: _expandedPurchaseId,
-                      onToggle: (id) => setState(
-                        () => _expandedPurchaseId =
-                            _expandedPurchaseId == id ? null : id,
+                    // Mismo patrón que _CreditOverviewTiles para tarjeta/
+                    // préstamo: fijo arriba de las pestañas, así
+                    // Disponible/Límite se ven igual en Resumen que en
+                    // Cronograma, sin depender de cuál esté activa.
+                    if (quota != null)
+                      _QuotaOverviewTiles(quota: quota, purchases: groupPurchases),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          QuotaGroupSummaryTab(
+                            quota: quota,
+                            purchases: groupPurchases,
+                            expandedId: _expandedPurchaseId,
+                            onToggle: (id) => setState(
+                              () => _expandedPurchaseId =
+                                  _expandedPurchaseId == id ? null : id,
+                            ),
+                          ),
+                          QuotaGroupScheduleTab(
+                            purchases: groupPurchases,
+                            expandedId: _expandedPurchaseId,
+                            onToggle: (id) => setState(
+                              () => _expandedPurchaseId =
+                                  _expandedPurchaseId == id ? null : id,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -542,6 +555,47 @@ class _CreditTypeBadge extends StatelessWidget {
 
 /// Two overview tiles shown above the TabBarView — always visible regardless
 /// of which tab is active, never inside the scrollable area.
+/// Header fijo de Disponible/Límite para un cupo de tienda — antes solo
+/// vivía dentro de [QuotaGroupSummaryTab] (desaparecía al cambiar a
+/// Cronograma). Mismo lenguaje visual que [_CreditOverviewTiles].
+class _QuotaOverviewTiles extends StatelessWidget {
+  final CommercialQuota quota;
+  final List<LoanCredit> purchases;
+  const _QuotaOverviewTiles({required this.quota, required this.purchases});
+
+  @override
+  Widget build(BuildContext context) {
+    final kredit = Theme.of(context).extension<AppThemeColors>()!;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.card, 10, AppSpacing.card, 10),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: kredit.borderCard)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: StatBox(
+              label: 'Disponible',
+              value: formatCOP(quotaAvailable(quota, purchases)),
+              icon: Icons.account_balance_wallet_outlined,
+              emphasized: true,
+            ),
+          ),
+          Container(width: 1, height: 34, margin: const EdgeInsets.symmetric(horizontal: 18), color: kredit.borderCard),
+          Expanded(
+            child: StatBox(
+              label: 'Límite',
+              value: formatCOP(quota.limit),
+              icon: Icons.credit_score_outlined,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CreditOverviewTiles extends StatelessWidget {
   final Credit credit;
   const _CreditOverviewTiles({required this.credit});
