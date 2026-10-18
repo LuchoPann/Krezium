@@ -101,10 +101,11 @@ class MovementsTab extends ConsumerWidget {
     // sentido "pagar" algo que todavía se está acumulando en el ciclo
     // abierto (ni siquiera se sabe el total final todavía). Se habilita
     // única y exclusivamente cuando hay algo exigible.
-    // TEMPORAL: forzado a true para que puedas revisar el nuevo diseño
-    // de solo lectura de ConfirmarPagoExtractoSheet. Restaurar a
-    // `montoExigibleTotal > 0` cuando termines de revisarlo.
-    final puedePagar = true;
+    // Un pago de tarjeta confirma el extracto ya cerrado — no tiene
+    // sentido "pagar" algo que todavía se está acumulando en el ciclo
+    // abierto (ni siquiera se sabe el total final todavía). Se habilita
+    // única y exclusivamente cuando hay algo exigible.
+    final puedePagar = montoExigibleTotal > 0;
 
     return Column(
       children: [

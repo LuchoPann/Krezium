@@ -791,10 +791,7 @@ class _CardQuickActions extends StatelessWidget {
     // el mismo criterio que en Movimientos: solo se puede confirmar el
     // pago cuando ya hay un extracto exigible (cerrado, en su fecha
     // límite) — antes de eso no hay nada que pagar todavía.
-    // TEMPORAL: forzado a true para que puedas revisar el nuevo diseño
-    // de solo lectura de ConfirmarPagoExtractoSheet. Restaurar a
-    // `getPayableSummary(credit).exigible > 0` cuando termines de revisarlo.
-    final puedePagar = true;
+    final puedePagar = getPayableSummary(credit).exigible > 0;
 
     return Container(
       decoration: BoxDecoration(
