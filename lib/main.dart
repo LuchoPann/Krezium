@@ -157,18 +157,33 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
   final Set<int> _visitedFinanzas = {0};
 
   // Cortina de cambio de módulo: baja cubriendo toda la pantalla con el
-  // logo de Krezium, el módulo se intercambia debajo (oculto) justo cuando
-  // termina de cubrir, un destello marca el "listo", y la cortina sube
-  // revelando el módulo ya cargado. Fases sobre un solo controller 0→1:
-  //   [0.00, 0.35] baja   [0.35, 0.60] destello (cubierta)   [0.60, 1.00] sube
+  // logo de Krezium: fade-in con scale-in, hold con un pulso sutil del logo
+  // (el módulo se intercambia debajo, oculto, justo al llegar al hold), y
+  // fade-out con scale-out revelando el módulo ya cargado. Un solo ritmo
+  // continuo (opacidad+escala) en vez de slide+shine+nav-fade por separado
+  // con relojes propios — eso era lo que se sentía descoordinado/apurado.
+  // Fases sobre un solo controller 0→1:
+  //   [0.00, 0.30] entra   [0.30, 0.62] hold + pulso   [0.62, 1.00] sale
   late final AnimationController _curtainController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 700),
+    duration: const Duration(milliseconds: 820),
   );
   bool _curtainSwitched = false;
 
-  static const _curtainDownEnd = 0.35;
-  static const _curtainUpStart = 0.60;
+  static const _curtainDownEnd = 0.30;
+  static const _curtainUpStart = 0.62;
+
+  /// Opacidad del overlay en el instante [v] (0→1→0) — fuente única que
+  /// también usa el nav bar para ocultarse exactamente en sincronía, en vez
+  /// de un AnimatedSwitcher con su propio reloj independiente.
+  static double curtainOpacityAt(double v) {
+    if (v <= 0 || v >= 1) return 0;
+    if (v < _curtainDownEnd) {
+      return Curves.easeOutCubic.transform(v / _curtainDownEnd);
+    }
+    if (v < _curtainUpStart) return 1;
+    return 1 - Curves.easeInCubic.transform((v - _curtainUpStart) / (1 - _curtainUpStart));
+  }
 
   void _switchEntorno(Entorno next) {
     if (_curtainController.isAnimating) return;
@@ -485,18 +500,19 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
         ),
         iconTheme: WidgetStateProperty.all(const IconThemeData(size: 22)),
       ),
-      // Antes el nav bar no estaba cubierto por la cortina (vive en
-      // `bottomNavigationBar`, fuera del Stack del body) y sus destinos
-      // cambiaban de golpe en el instante exacto del switch — justo lo que
-      // se veía roto. AnimatedSwitcher, keyed por entorno, lo desvanece y
-      // lo vuelve a aparecer ya con los íconos del módulo que está cargando,
-      // sincronizado con la ventana del destello sobre la cortina.
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
-        switchInCurve: Curves.easeOut,
-        switchOutCurve: Curves.easeIn,
+      // El nav bar no está cubierto por la cortina (vive en
+      // `bottomNavigationBar`, fuera del Stack del body), así que sus
+      // destinos cambiarían de golpe en el instante exacto del switch. En
+      // vez de un AnimatedSwitcher con su propio reloj (podía desincronizarse
+      // del overlay), su opacidad sale de la MISMA función que usa la
+      // cortina — exactamente en fase, un solo reloj para los dos.
+      child: AnimatedBuilder(
+        animation: _curtainController,
+        builder: (context, navChild) => Opacity(
+          opacity: 1 - curtainOpacityAt(_curtainController.value),
+          child: navChild,
+        ),
         child: NavigationBar(
-        key: ValueKey(entorno),
         selectedIndex: navIndex,
         onDestinationSelected: (i) {
           if (i == 2) {
@@ -558,57 +574,35 @@ class _CurtainOverlay extends StatelessWidget {
       animation: controller,
       builder: (context, _) {
         final v = controller.value;
-        if (v <= 0) return const SizedBox.shrink();
+        final opacity = _RootScaffoldState.curtainOpacityAt(v);
+        if (opacity <= 0) return const SizedBox.shrink();
 
-        // y: 1 = oculta arriba de la pantalla (fuera de vista), 0 = cubriendo
-        // exactamente el viewport. Se aplica como traslación NEGATIVA en Y
-        // (Transform.translate con dy negativo mueve hacia arriba), para que
-        // la cortina entre bajando DESDE arriba y, al salir, suba y
-        // desaparezca por el mismo borde de arriba — un signo invertido acá
-        // hacía que entrara desde abajo, al revés de lo esperado.
-        double y;
-        if (v < _RootScaffoldState._curtainDownEnd) {
-          y = 1 - Curves.easeInCubic.transform(v / _RootScaffoldState._curtainDownEnd);
-        } else if (v < _RootScaffoldState._curtainUpStart) {
-          y = 0;
+        // Escala: entra creciendo hasta 1, se queda en 1 durante el hold
+        // (con un pulso suave encima) y sale encogiéndose de nuevo — un
+        // único movimiento de "respiración", no una cortina deslizándose
+        // más un brillo cruzando encima por separado.
+        double scale;
+        const downEnd = _RootScaffoldState._curtainDownEnd;
+        const upStart = _RootScaffoldState._curtainUpStart;
+        if (v < downEnd) {
+          scale = 0.85 + 0.15 * Curves.easeOutCubic.transform(v / downEnd);
+        } else if (v < upStart) {
+          final holdT = (v - downEnd) / (upStart - downEnd);
+          // Campana suave centrada en el hold: 1 → 1.06 → 1.
+          scale = 1 + 0.06 * (1 - (holdT * 2 - 1).abs());
         } else {
-          final upT = (v - _RootScaffoldState._curtainUpStart) /
-              (1 - _RootScaffoldState._curtainUpStart);
-          y = Curves.easeInCubic.transform(upT);
+          final upT = (v - upStart) / (1 - upStart);
+          scale = 1 - 0.1 * Curves.easeInCubic.transform(upT);
         }
 
-        // Destello: brillo horizontal puro (izquierda→derecha) que recorre
-        // el logo completo una vez durante la ventana "cubierta" (el
-        // intercambio real de módulo ya ocurrió para entonces, igual que el
-        // crossfade del nav bar de abajo).
-        const holdStart = _RootScaffoldState._curtainDownEnd;
-        const holdEnd = _RootScaffoldState._curtainUpStart;
-        final holdT = v <= holdStart
-            ? 0.0
-            : v >= holdEnd
-                ? 1.0
-                : (v - holdStart) / (holdEnd - holdStart);
-        final sweepX = -1.4 + holdT * 2.8;
-
-        final size = MediaQuery.sizeOf(context);
-        return Transform.translate(
-          offset: Offset(0, -y * size.height),
+        return Opacity(
+          opacity: opacity,
           child: Container(
             color: kredit.bgCard,
             child: Center(
-              child: ShaderMask(
-                blendMode: BlendMode.srcATop,
-                shaderCallback: (bounds) => LinearGradient(
-                  begin: Alignment(sweepX - 0.5, 0),
-                  end: Alignment(sweepX + 0.5, 0),
-                  colors: const [
-                    Colors.transparent,
-                    Colors.white,
-                    Colors.transparent,
-                  ],
-                  stops: const [0.35, 0.5, 0.65],
-                ).createShader(bounds),
-                child: const AppLogo(height: 76),
+              child: Transform.scale(
+                scale: scale,
+                child: const AppLogo(height: 72),
               ),
             ),
           ),
