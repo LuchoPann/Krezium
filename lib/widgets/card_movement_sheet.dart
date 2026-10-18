@@ -286,6 +286,7 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
                     TextFormField(
                       controller: _noteCtrl,
                       autofocus: true,
+                      style: const TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700),
                       decoration: const InputDecoration(hintText: 'Ej. Supermercado, Tenis Nike'),
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Ingresa el nombre de la compra' : null,
@@ -312,7 +313,10 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
                           keyboardType: TextInputType.number,
                           inputFormatters: const [CurrencyInputFormatter()],
                           autofocus: !isCharge,
-                          style: const TextStyle(fontSize: AppTextSize.emphasis, fontWeight: FontWeight.w700),
+                          // Mismo tamaño que Nombre/Cuotas — antes este
+                          // campo era notablemente más grande que los otros
+                          // dos sin ninguna razón de jerarquía real.
+                          style: const TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700),
                           decoration: const InputDecoration(prefixText: '\$ ', hintText: 'Ej. 80.000'),
                           validator: (v) {
                             final n = double.tryParse(CurrencyInputFormatter.unformat(v ?? ''));
@@ -329,6 +333,7 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
                             controller: _installmentsCtrl,
                             keyboardType: TextInputType.number,
                             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            style: const TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700),
                             decoration: const InputDecoration(labelText: 'Cuotas'),
                             validator: (v) {
                               final n = int.tryParse(v ?? '');
