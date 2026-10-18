@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:krezium/data/models/card_movement.dart';
 import 'package:krezium/data/models/credit.dart';
+import 'package:krezium/domain/card_statement_engine.dart';
+import 'package:krezium/domain/date_utils.dart';
 import 'package:krezium/domain/loan_calculator.dart';
 import 'package:krezium/domain/recommendations.dart';
 
@@ -220,6 +223,44 @@ void main() {
       final rec = buildBestPrepaymentRecommendation([expensive, cheap]);
 
       expect(rec, isNull);
+    });
+  });
+
+  group('diasHastaProximoPago', () {
+    test('usa daysUntilDue de nextPayment cuando existe (extracto exigible o cuota)', () {
+      final ref = DateTime(2026, 1, 10);
+      final loan = _loan(id: 'l1', dueDate: '2026-01-15');
+      final payment = buildPendingPayments([loan], now: ref).single;
+
+      expect(diasHastaProximoPago(loan, payment, ref), 5);
+    });
+
+    test('tarjeta sin extracto exigible: cuenta hasta la fecha límite '
+        'proyectada del ciclo abierto, no se queda en null', () {
+      final ref = DateTime(2026, 1, 10);
+      final card = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(card, ref);
+
+      final dias = diasHastaProximoPago(card, null, ref);
+
+      final esperado = parseDateStr(open.dueDate).difference(ref).inDays;
+      expect(dias, esperado);
+      expect(dias, isNotNull);
+    });
+
+    test('préstamo sin ninguna cuota pendiente: null (nada que contar)', () {
+      final loan = _loan(id: 'l1');
+      // Todas las cuotas ya pagadas → buildPendingPayments no genera nada.
+      final loanPaid = LoanCredit(
+        id: loan.id, name: loan.name, lender: loan.lender,
+        totalAmount: loan.totalAmount, quotaAmount: loan.quotaAmount,
+        totalInstallments: loan.totalInstallments, frequency: loan.frequency,
+        startDate: loan.startDate, interestRate: loan.interestRate,
+        installments: loan.installments
+            .map((i) => i.copyWith(paid: true))
+            .toList(),
+      );
+      expect(diasHastaProximoPago(loanPaid, null), isNull);
     });
   });
 }

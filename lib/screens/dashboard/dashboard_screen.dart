@@ -828,20 +828,10 @@ class _CreditListRow extends StatelessWidget {
       metricValue = '$remaining';
     }
 
-    // Urgencia del próximo pago. Para tarjetas sin extracto exigible
-    // todavía, cuenta igual hasta la fecha límite del ciclo abierto
-    // (proximoExtractoDueDate) — el usuario pidió ver el contador desde
-    // ya, no solo cuando el extracto ya está cerrado.
-    int? daysLeft;
-    if (nextPayment != null) {
-      daysLeft = nextPayment!.daysUntilDue();
-    } else if (isCard) {
-      final due = proximoExtractoDueDate(credit as CardCredit);
-      final today = DateTime.now();
-      daysLeft = DateTime(due.year, due.month, due.day)
-          .difference(DateTime(today.year, today.month, today.day))
-          .inDays;
-    }
+    // Urgencia del próximo pago — mismo cálculo que ordena la lista
+    // (diasHastaProximoPago), para que lo que se muestra y el orden en el
+    // que aparece sean siempre consistentes entre sí.
+    final daysLeft = diasHastaProximoPago(credit, nextPayment);
 
     Color? urgencyColor;
     String? urgencyLabel;
@@ -1080,13 +1070,17 @@ class _CreditsListSection extends ConsumerWidget {
     PendingPayment? nextFor(Credit c) =>
         upcoming.where((p) => p.credit.id == c.id).firstOrNull;
 
+    // diasHastaProximoPago (no solo nextFor) — una tarjeta sin extracto
+    // exigible todavía igual muestra un contador de días (el de su ciclo
+    // abierto), así que tiene que ordenar con ese mismo valor o la lista
+    // queda visualmente desordenada respecto a lo que el usuario ve.
     final sorted = [...displayCredits]..sort((a, b) {
-      final pa = nextFor(a);
-      final pb = nextFor(b);
-      if (pa == null && pb == null) return 0;
-      if (pa == null) return 1;
-      if (pb == null) return -1;
-      return pa.daysUntilDue().compareTo(pb.daysUntilDue());
+      final da = diasHastaProximoPago(a, nextFor(a));
+      final db = diasHastaProximoPago(b, nextFor(b));
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return da.compareTo(db);
     });
 
     return Column(

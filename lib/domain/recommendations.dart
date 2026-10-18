@@ -73,6 +73,26 @@ class FinancialRecommendation {
   });
 }
 
+/// Días hasta el próximo pago relevante de [credit], para mostrar/ordenar
+/// en Inicio. Si [nextPayment] existe (extracto exigible o cuota
+/// pendiente), usa su fecha. Si [credit] es una tarjeta SIN extracto
+/// exigible todavía, cuenta igual hasta la fecha límite proyectada del
+/// ciclo abierto — sin esto, una tarjeta en ciclo abierto se trataba como
+/// "sin fecha" para ordenar aunque la UI ya le mostrara un contador de
+/// días (Inicio quedaba desordenado respecto a lo que el usuario veía).
+/// null solo cuando de verdad no hay ningún pago pendiente (préstamo con
+/// todas las cuotas pagadas).
+int? diasHastaProximoPago(Credit credit, PendingPayment? nextPayment, [DateTime? now]) {
+  if (nextPayment != null) return nextPayment.daysUntilDue(now);
+  if (credit is CardCredit) {
+    final due = proximoExtractoDueDate(credit);
+    final ref = now ?? DateTime.now();
+    final today = DateTime(ref.year, ref.month, ref.day);
+    return DateTime(due.year, due.month, due.day).difference(today).inDays;
+  }
+  return null;
+}
+
 List<PendingPayment> buildPendingPayments(
   List<Credit> credits, {
   DateTime? now,
