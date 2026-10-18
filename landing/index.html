@@ -56,14 +56,11 @@ nav {
   padding-inline: clamp(16px, 4vw, 56px);
   padding-block: 11px;
 }
-.wordmark { display: inline-flex; align-items: center; gap: 8px; }
-.wordmark img, .wordmark svg { height: 20px; width: auto; display: block; }
-.wordmark span {
-  font-family: 'Space Grotesk', sans-serif;
-  font-weight: 800; font-size: 1.05rem;
-  letter-spacing: -0.01em; color: var(--fg);
-}
-.nav-logo img, .nav-logo svg { height: 20px; width: auto; display: block; }
+/* KREZIUM_COMP.svg viene con relleno negro (#000) — se traza para fondo
+   claro. La landing es oscura, así que se invierte a blanco con filter:
+   invert(1), igual efecto visual que el wordmark blanco de la app. */
+.nav-logo img, .footer-logo img { filter: invert(1); }
+.nav-logo img { height: 20px; width: auto; display: block; }
 .nav-right { display: flex; align-items: center; gap: 24px; }
 .nav-link {
   font-size: .82rem; font-weight: 500;
@@ -434,7 +431,7 @@ footer {
 <!-- ═══ NAV ════════════════════════════════════════════════ -->
 <nav>
   <div class="nav-inner">
-    <a href="#" class="nav-logo wordmark" aria-label="Krezium"><img src="assets/krezium-icon.svg" alt=""><span>KREZIUM</span></a>
+    <a href="#" class="nav-logo" aria-label="Krezium"><img src="assets/KREZIUM_COMP.svg" alt="Krezium"></a>
     <div class="nav-right">
       <a href="#creditos" class="nav-link">Créditos</a>
       <a href="#finanzas" class="nav-link">Finanzas</a>
@@ -679,7 +676,7 @@ footer {
 <!-- ═══ FOOTER ════════════════════════════════════════════ -->
 <footer>
   <div class="footer-inner">
-    <a href="#" aria-label="Krezium" class="footer-logo wordmark"><img src="assets/krezium-icon.svg" alt=""><span>KREZIUM</span></a>
+    <a href="#" aria-label="Krezium" class="footer-logo"><img src="assets/KREZIUM_COMP.svg" alt="Krezium"></a>
     <div class="footer-r">
       <span>Hecho en Colombia</span>
       <span>Tus datos, tu propiedad</span>
