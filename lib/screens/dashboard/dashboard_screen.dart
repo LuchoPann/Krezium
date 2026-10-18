@@ -753,7 +753,7 @@ class _NextPaymentBlock extends ConsumerWidget {
             accent: accent,
             fgOnAccent: fgOnAccent,
             onMarcarAmbos: () =>
-                _confirmarYMarcarAmbosPagados(context, ref, item, cercano!),
+                _elegirComoPagar(context, ref, item, cercano!),
           ),
         ],
       ],
@@ -780,10 +780,22 @@ class _CompromisoCercano extends StatelessWidget {
     required this.onMarcarAmbos,
   });
 
+  // No usa formatRelativeDate: ese cae a la fecha exacta pasados 30 días,
+  // y el "cercano" puede estar hasta 6 días más lejos que el principal
+  // (que ya puede andar cerca de ese límite) — sin esto, el texto
+  // cambiaba de "En X días" a una fecha según cuán lejos esté el
+  // principal, algo que no tiene sentido para el usuario.
+  String _diasLabel(int dias) {
+    if (dias < 0) return 'Vencido hace ${dias.abs()}d';
+    if (dias == 0) return 'Hoy';
+    if (dias == 1) return 'Mañana';
+    return 'En $dias días';
+  }
+
   @override
   Widget build(BuildContext context) {
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    final relativeLabel = formatRelativeDate(cercano.dueDate);
+    final relativeLabel = _diasLabel(cercano.daysUntilDue());
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -870,39 +882,130 @@ class _CompromisoCercano extends StatelessWidget {
   }
 }
 
-/// Un solo diálogo de confirmación para los dos pagos — nunca dos
-/// confirmaciones seguidas por la misma acción del usuario. Cada uno se
-/// marca con el mecanismo que le corresponde (toggle reversible para
-/// cuota, pago real para extracto de tarjeta).
-Future<void> _confirmarYMarcarAmbosPagados(
+/// Marca un único pago con el mecanismo que le corresponde: toggle
+/// reversible para una cuota de préstamo, pago real (motor FIFO) para un
+/// extracto de tarjeta.
+Future<void> _marcarUnPago(WidgetRef ref, PendingPayment p) async {
+  final notifier = ref.read(creditsProvider.notifier);
+  if (p.installment != null) {
+    await notifier.toggleInstallmentPaid(p.credit.id, p.installment!.number);
+  } else if (p.credit is CardCredit) {
+    await notifier.registerMovement(
+      p.credit.id,
+      CardMovementType.payment,
+      p.amount,
+      'Extracto marcado como pagado',
+    );
+  }
+}
+
+/// Desplegable que explica las dos formas de resolver un compromiso
+/// cercano: pagarlo solo, o junto con el principal — en vez de un único
+/// botón ambiguo con un diálogo de confirmación encima. Elegir una opción
+/// ya es la confirmación, no hay un segundo paso después.
+Future<void> _elegirComoPagar(
   BuildContext context,
   WidgetRef ref,
-  PendingPayment a,
-  PendingPayment b,
+  PendingPayment principal,
+  PendingPayment cercano,
 ) async {
-  final total = a.amount + b.amount;
-  final confirmado = await showAppConfirmSheet(
-    context,
-    title: 'Marcar ambos pagados',
-    message: '¿Marcar como pagados "${a.credit.name}" (${formatCOP(a.amount)}) y '
-        '"${b.credit.name}" (${formatCOP(b.amount)})? Total: ${formatCOP(total)}.',
-    confirmLabel: 'Marcar ambos',
-  );
-  if (!confirmado) return;
-  HapticFeedback.mediumImpact();
-  final notifier = ref.read(creditsProvider.notifier);
-  for (final p in [a, b]) {
-    if (p.installment != null) {
-      await notifier.toggleInstallmentPaid(p.credit.id, p.installment!.number);
-    } else if (p.credit is CardCredit) {
-      await notifier.registerMovement(
-        p.credit.id,
-        CardMovementType.payment,
-        p.amount,
-        'Extracto marcado como pagado',
+  final opcion = await showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) {
+      final kredit = Theme.of(ctx).extension<AppThemeColors>()!;
+      final accent = Theme.of(ctx).colorScheme.primary;
+      return Material(
+        color: Theme.of(ctx).scaffoldBackgroundColor,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '¿Cómo quieres pagar esto?',
+                  style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: kredit.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '"${cercano.credit.name}" está cerca de "${principal.credit.name}" en el calendario — puedes resolverlos juntos o por separado.',
+                  style: TextStyle(color: kredit.textSecondary, height: 1.35),
+                ),
+                const SizedBox(height: 16),
+                InkWell(
+                  borderRadius: BorderRadius.circular(AppRadius.tile),
+                  onTap: () => Navigator.pop(ctx, 'solo'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.done, color: kredit.textPrimary),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Pagar solo "${cercano.credit.name}"', style: const TextStyle(fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 2),
+                              Text(
+                                '"${principal.credit.name}" sigue pendiente, tal como está arriba.',
+                                style: TextStyle(color: kredit.textSecondary, fontSize: AppTextSize.body),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Divider(height: 24, color: kredit.borderCard),
+                InkWell(
+                  borderRadius: BorderRadius.circular(AppRadius.tile),
+                  onTap: () => Navigator.pop(ctx, 'ambos'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.done_all, color: accent),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Pagar los dos juntos', style: TextStyle(fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Marca "${principal.credit.name}" y "${cercano.credit.name}" como pagados de una vez — ideal si los vas a pagar al mismo tiempo.',
+                                style: TextStyle(color: kredit.textSecondary, fontSize: AppTextSize.body),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
-    }
+    },
+  );
+  if (opcion == null) return;
+  HapticFeedback.mediumImpact();
+  if (opcion == 'ambos') {
+    await _marcarUnPago(ref, principal);
   }
+  await _marcarUnPago(ref, cercano);
 }
 
 /// Marcar un extracto como pagado registra un pago real (motor FIFO), a
