@@ -301,9 +301,6 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
     updateHomeWidget(c, showAmounts: showAmounts, accentColor: themePrefs.accentColor, bgTone: themePrefs.bgTone);
   }
 
-  Set<int> _visitedForEntorno(Entorno e) =>
-      e == Entorno.creditos ? _visitedCreditos : _visitedFinanzas;
-
   @override
   Widget build(BuildContext context) {
     _registerListenersOnce();
@@ -329,7 +326,6 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
       FinanzasPlanificacionScreen(),
       FinanzasEstadisticasScreen(),
     ];
-    final screens = isCreditos ? creditosScreens : finanzasScreens;
 
     return Scaffold(
       body: Stack(
@@ -347,35 +343,36 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
               ),
             ),
           ),
+          // Ambos módulos quedan montados en el mismo Stack (igual criterio que
+          // los tabs dentro de un módulo, vía _visitedCreditos/_visitedFinanzas):
+          // cambiar de módulo nunca destruye su subtree ni reinicia su estado
+          // (scroll, controllers, providers ya cargados), solo alterna opacidad
+          // con _TabFadeLayer. La versión anterior usaba AnimatedSwitcher con
+          // key por entorno, que desmontaba el módulo saliente y reconstruía el
+          // entrante desde cero en cada cambio — de ahí la sensación de "recarga
+          // completa" aunque el fade corriera encima.
           Positioned.fill(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) =>
-                  FadeTransition(opacity: animation, child: child),
-              layoutBuilder: (currentChild, previousChildren) => Stack(
-                children: [...previousChildren, if (currentChild != null) currentChild],
-              ),
-              child: KeyedSubtree(
-                key: ValueKey(entorno),
-                child: Stack(
-                  children: [
-                    for (var i = 0; i < screens.length; i++)
-                      if (_visitedForEntorno(entorno).contains(i))
-                        _TabFadeLayer(
-                          active: !isAccount && i == currentTab,
-                          child: screens[i],
-                        )
-                      else
-                        const SizedBox.shrink(),
+            child: Stack(
+              children: [
+                for (var i = 0; i < creditosScreens.length; i++)
+                  if (_visitedCreditos.contains(i))
                     _TabFadeLayer(
-                      active: isAccount,
-                      child: const AccountScreen(),
+                      active: isCreditos && !isAccount && i == currentTab,
+                      duration: const Duration(milliseconds: 420),
+                      child: creditosScreens[i],
                     ),
-                  ],
+                for (var i = 0; i < finanzasScreens.length; i++)
+                  if (_visitedFinanzas.contains(i))
+                    _TabFadeLayer(
+                      active: !isCreditos && !isAccount && i == currentTab,
+                      duration: const Duration(milliseconds: 420),
+                      child: finanzasScreens[i],
+                    ),
+                _TabFadeLayer(
+                  active: isAccount,
+                  child: const AccountScreen(),
                 ),
-              ),
+              ],
             ),
           ),
         ],
@@ -475,10 +472,12 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
 class _TabFadeLayer extends StatelessWidget {
   final bool active;
   final Widget child;
+  final Duration duration;
 
   const _TabFadeLayer({
     required this.active,
     required this.child,
+    this.duration = const Duration(milliseconds: 340),
   });
 
   @override
@@ -496,7 +495,7 @@ class _TabFadeLayer extends StatelessWidget {
         excluding: !active,
         child: AnimatedOpacity(
           opacity: active ? 1 : 0,
-          duration: const Duration(milliseconds: 340),
+          duration: duration,
           curve: Curves.easeOutCubic,
           child: TickerMode(
             enabled: active,
