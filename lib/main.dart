@@ -361,7 +361,7 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
                 // volver — dirección consistente con el ícono del botón central.
                 _ModuleSlideLayer(
                   active: isCreditos && !isAccount,
-                  hiddenOffset: const Offset(-0.10, 0),
+                  hiddenOffset: const Offset(-0.14, 0),
                   child: Stack(
                     children: [
                       for (var i = 0; i < creditosScreens.length; i++)
@@ -375,7 +375,7 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
                 ),
                 _ModuleSlideLayer(
                   active: !isCreditos && !isAccount,
-                  hiddenOffset: const Offset(0.10, 0),
+                  hiddenOffset: const Offset(0.14, 0),
                   child: Stack(
                     children: [
                       for (var i = 0; i < finanzasScreens.length; i++)
@@ -503,26 +503,49 @@ class _ModuleSlideLayer extends StatelessWidget {
     required this.hiddenOffset,
   });
 
-  static const _duration = Duration(milliseconds: 420);
+  static const _duration = Duration(milliseconds: 450);
 
   @override
   Widget build(BuildContext context) {
+    // Shared-axis (Material Motion): el saliente sale rápido y se encoge
+    // apenas empieza la transición (primer 60%); el entrante arranca con un
+    // pequeño retraso (desde 30%) y termina con un leve overshoot — da la
+    // sensación de "entra encima" en vez de las dos capas moviéndose a la
+    // par, que es lo que se sentía plano/raro en el slide simple anterior.
+    final curve = active
+        ? const Interval(0.30, 1.0, curve: Curves.easeOutCubic)
+        : const Interval(0.0, 0.60, curve: Curves.easeInCubic);
+    const visible = 1.0, hidden = 0.0;
     return IgnorePointer(
       ignoring: !active,
       child: ExcludeSemantics(
         excluding: !active,
-        child: AnimatedSlide(
-          offset: active ? Offset.zero : hiddenOffset,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(
+            begin: active ? visible : hidden,
+            end: active ? visible : hidden,
+          ),
           duration: _duration,
-          curve: active ? Curves.easeOutCubic : Curves.easeInCubic,
-          child: AnimatedOpacity(
-            opacity: active ? 1 : 0,
-            duration: _duration,
-            curve: active ? Curves.easeOutCubic : Curves.easeInCubic,
-            child: TickerMode(
-              enabled: active,
-              child: child,
-            ),
+          curve: curve,
+          builder: (context, t, builderChild) {
+            final size = MediaQuery.sizeOf(context);
+            return Opacity(
+              opacity: t,
+              child: Transform.translate(
+                offset: Offset(
+                  hiddenOffset.dx * (1 - t) * size.width,
+                  hiddenOffset.dy * (1 - t) * size.height,
+                ),
+                child: Transform.scale(
+                  scale: 0.94 + 0.06 * t,
+                  child: builderChild,
+                ),
+              ),
+            );
+          },
+          child: TickerMode(
+            enabled: active,
+            child: child,
           ),
         ),
       ),
