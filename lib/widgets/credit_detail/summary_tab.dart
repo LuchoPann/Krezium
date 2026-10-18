@@ -778,25 +778,19 @@ class _CardQuickActions extends StatelessWidget {
 
   const _CardQuickActions({required this.credit});
 
-  void _showPaymentTypeSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        child: Material(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          child: _PaymentTypeSheet(credit: credit),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
     final accent = Theme.of(context).colorScheme.primary;
+    // Antes había un selector "Pagar extracto" / "Abono a la deuda" que no
+    // hacía ninguna diferencia real — las dos opciones terminaban llamando
+    // exactamente al mismo pago FIFO (registerCardPayment), así que elegir
+    // una u otra no cambiaba nada. Esa falsa elección era justo lo que
+    // hacía confuso el flujo; se quita y queda un solo botón directo, con
+    // el mismo criterio que en Movimientos: solo se puede confirmar el
+    // pago cuando ya hay un extracto exigible (cerrado, en su fecha
+    // límite) — antes de eso no hay nada que pagar todavía.
+    final puedePagar = getPayableSummary(credit).exigible > 0;
 
     return Container(
       decoration: BoxDecoration(
@@ -826,13 +820,26 @@ class _CardQuickActions extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     foregroundColor: legibleForegroundOn(accent),
                   ),
-                  onPressed: () => _showPaymentTypeSheet(context),
+                  onPressed: puedePagar
+                      ? () => CardMovementSheet.show(
+                          context,
+                          creditId: credit.id,
+                          movementType: CardMovementType.payment,
+                        )
+                      : null,
                   icon: const Icon(Icons.payments_outlined, size: AppIconSize.small),
-                  label: const Text('Pagar tarjeta'),
+                  label: const Text('Confirmar pago'),
                 ),
               ),
             ],
           ),
+          if (!puedePagar) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Podrás confirmar el pago cuando tu extracto cierre y entre en su fecha límite de pago.',
+              style: TextStyle(fontSize: AppTextSize.caption, color: kredit.textTertiary),
+            ),
+          ],
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
@@ -843,119 +850,6 @@ class _CardQuickActions extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PaymentTypeSheet extends StatefulWidget {
-  final CardCredit credit;
-
-  const _PaymentTypeSheet({required this.credit});
-
-  @override
-  State<_PaymentTypeSheet> createState() => _PaymentTypeSheetState();
-}
-
-class _PaymentTypeSheetState extends State<_PaymentTypeSheet> {
-  String _selected = 'extracto';
-
-  @override
-  Widget build(BuildContext context) {
-    final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    final accent = Theme.of(context).colorScheme.primary;
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 0, 0, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: kredit.borderCard,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(
-                '¿Cómo quieres pagar?',
-                style: TextStyle(
-                  fontSize: AppTextSize.heading,
-                  fontWeight: FontWeight.w700,
-                  color: kredit.textPrimary,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: Icon(Icons.receipt_long_outlined,
-                  color: _selected == 'extracto' ? accent : kredit.textSecondary),
-              title: Text(
-                'Pagar extracto',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: kredit.textPrimary,
-                ),
-              ),
-              subtitle: Text(
-                'Aplica al extracto más antiguo sin pagar primero',
-                style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary),
-              ),
-              trailing: _selected == 'extracto'
-                  ? Icon(Icons.check_circle, color: accent)
-                  : Icon(Icons.radio_button_unchecked, color: kredit.borderCard),
-              onTap: () => setState(() => _selected = 'extracto'),
-            ),
-            ListTile(
-              leading: Icon(Icons.account_balance_wallet_outlined,
-                  color: _selected == 'deuda' ? accent : kredit.textSecondary),
-              title: Text(
-                'Abono a la deuda',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: kredit.textPrimary,
-                ),
-              ),
-              subtitle: Text(
-                'Reduce tu saldo total directamente',
-                style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary),
-              ),
-              trailing: _selected == 'deuda'
-                  ? Icon(Icons.check_circle, color: accent)
-                  : Icon(Icons.radio_button_unchecked, color: kredit.borderCard),
-              onTap: () => setState(() => _selected = 'deuda'),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    foregroundColor: legibleForegroundOn(accent),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    CardMovementSheet.show(
-                      context,
-                      creditId: widget.credit.id,
-                      movementType: CardMovementType.payment,
-                    );
-                  },
-                  child: const Text('Continuar'),
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -55,6 +55,19 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
   void initState() {
     super.initState();
     _amountCtrl.addListener(_onAmountChanged);
+    // Confirmar el pago de un extracto parte precargado con el total
+    // exigible — el usuario está confirmando ESE pago, no llenando un
+    // monto desde cero. Sigue siendo editable por si paga parcial.
+    if (widget.movementType == CardMovementType.payment) {
+      final credits = ref.read(creditsProvider).value ?? [];
+      final credit = credits.whereType<CardCredit>().where((c) => c.id == widget.creditId).firstOrNull;
+      if (credit != null) {
+        final exigible = getPayableSummary(credit).exigible;
+        if (exigible > 0) {
+          _amountCtrl.text = CurrencyInputFormatter.format(exigible);
+        }
+      }
+    }
   }
 
   @override
@@ -91,7 +104,7 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
           SnackBar(
             content: Text(
               widget.movementType == CardMovementType.payment
-                  ? 'Pago registrado'
+                  ? 'Pago confirmado'
                   : 'Cargo registrado',
             ),
           ),
@@ -173,7 +186,7 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  isCharge ? 'Nueva compra' : 'Registrar pago',
+                  isCharge ? 'Nueva compra' : 'Confirmar pago',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ],
@@ -182,7 +195,7 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
             Text(
               isCharge
                   ? 'Registra lo que compraste con la tarjeta — suma a tu saldo.'
-                  : 'Registra lo que le pagaste al banco — reduce tu saldo.',
+                  : 'Confirma el pago de tu extracto — ya viene precargado con lo que debes, puedes ajustarlo si pagas parcial.',
               style: TextStyle(fontSize: AppTextSize.body, color: kredit.textTertiary),
             ),
             // Contexto de extracto
@@ -445,7 +458,9 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
               width: double.infinity,
               child: FilledButton(
                 onPressed: _saving ? null : _save,
-                child: Text(_saving ? 'Guardando...' : 'Guardar Movimiento'),
+                child: Text(_saving
+                    ? 'Guardando...'
+                    : (isCharge ? 'Guardar compra' : 'Confirmar pago')),
               ),
             ),
           ],

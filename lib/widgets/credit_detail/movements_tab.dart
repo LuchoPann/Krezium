@@ -97,10 +97,16 @@ class MovementsTab extends ConsumerWidget {
     final primerExigibleId = unpaidClosed.isEmpty ? null : unpaidClosed.first.id;
     final montoExigibleTotal = getPayableSummary(credit).exigible;
 
+    // Un pago de tarjeta confirma el extracto ya cerrado — no tiene
+    // sentido "pagar" algo que todavía se está acumulando en el ciclo
+    // abierto (ni siquiera se sabe el total final todavía). Se habilita
+    // única y exclusivamente cuando hay algo exigible.
+    final puedePagar = montoExigibleTotal > 0;
+
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(AppSpacing.card),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.card, AppSpacing.card, AppSpacing.card, 0),
           child: Row(
             children: [
               Expanded(
@@ -117,18 +123,29 @@ class MovementsTab extends ConsumerWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: () => CardMovementSheet.show(
-                    context,
-                    creditId: credit.id,
-                    movementType: CardMovementType.payment,
-                  ),
+                  onPressed: puedePagar
+                      ? () => CardMovementSheet.show(
+                          context,
+                          creditId: credit.id,
+                          movementType: CardMovementType.payment,
+                        )
+                      : null,
                   icon: const Icon(Icons.payments_outlined, size: AppIconSize.small),
-                  label: const Text('Pagar tarjeta'),
+                  label: const Text('Confirmar pago'),
                 ),
               ),
             ],
           ),
         ),
+        if (!puedePagar)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.card, 6, AppSpacing.card, 0),
+            child: Text(
+              'Podrás confirmar el pago cuando tu extracto cierre y entre en su fecha límite de pago.',
+              style: TextStyle(fontSize: AppTextSize.caption, color: kredit.textTertiary),
+            ),
+          ),
+        const SizedBox(height: AppSpacing.card),
         Align(
           alignment: Alignment.centerLeft,
           child: Padding(
