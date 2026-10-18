@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/card_movement.dart';
@@ -10,6 +9,7 @@ import '../../domain/date_utils.dart';
 import '../../providers/credits_provider.dart';
 import '../../theme/app_theme.dart';
 import '../card_movement_sheet.dart';
+import '../confirmar_pago_extracto_sheet.dart';
 import '../../utils/credit_display_utils.dart';
 import '../krezium_bottom_dialogs.dart';
 
@@ -101,7 +101,10 @@ class MovementsTab extends ConsumerWidget {
     // sentido "pagar" algo que todavía se está acumulando en el ciclo
     // abierto (ni siquiera se sabe el total final todavía). Se habilita
     // única y exclusivamente cuando hay algo exigible.
-    final puedePagar = montoExigibleTotal > 0;
+    // TEMPORAL: forzado a true para que puedas revisar el nuevo diseño
+    // de solo lectura de ConfirmarPagoExtractoSheet. Restaurar a
+    // `montoExigibleTotal > 0` cuando termines de revisarlo.
+    final puedePagar = true;
 
     return Column(
       children: [
@@ -124,11 +127,7 @@ class MovementsTab extends ConsumerWidget {
               Expanded(
                 child: FilledButton.icon(
                   onPressed: puedePagar
-                      ? () => CardMovementSheet.show(
-                          context,
-                          creditId: credit.id,
-                          movementType: CardMovementType.payment,
-                        )
+                      ? () => ConfirmarPagoExtractoSheet.show(context, creditId: credit.id)
                       : null,
                   icon: const Icon(Icons.payments_outlined, size: AppIconSize.small),
                   label: const Text('Confirmar pago'),
@@ -218,32 +217,6 @@ class MovementsTab extends ConsumerWidget {
       ],
     );
   }
-}
-
-/// Marcar un extracto como pagado registra un pago real (motor FIFO), a
-/// diferencia de un toggle reversible — por eso pide confirmación explícita.
-Future<void> _confirmarYMarcarExtractoPagado(
-  BuildContext context,
-  WidgetRef ref,
-  CardCredit card,
-  double amount,
-) async {
-  final confirmado = await showAppConfirmSheet(
-    context,
-    title: 'Marcar extracto como pagado',
-    message:
-        '¿Marcar este extracto como pagado por ${formatCOP(amount)}? '
-        'Esto registra un pago real por ese monto.',
-    confirmLabel: 'Marcar pagado',
-  );
-  if (!confirmado) return;
-  HapticFeedback.mediumImpact();
-  await ref.read(creditsProvider.notifier).registerMovement(
-        card.id,
-        CardMovementType.payment,
-        amount,
-        'Extracto marcado como pagado',
-      );
 }
 
 const _monthsEs = [
@@ -411,11 +384,10 @@ class _StatementCardState extends State<_StatementCard> {
                         // que el de cuotas de préstamo (schedule_tab.dart),
                         // solo en el extracto cerrado más antiguo sin pagar.
                         if (widget.esElPrimerExigible && (isOverdue || (!isFuture && !isOpen && !isPaid)))
-                          Consumer(builder: (ctx, ref, _) {
+                          Builder(builder: (ctx) {
                             return InkWell(
                               borderRadius: BorderRadius.circular(AppRadius.chip),
-                              onTap: () => _confirmarYMarcarExtractoPagado(
-                                ctx, ref, widget.credit, widget.montoAPagar),
+                              onTap: () => ConfirmarPagoExtractoSheet.show(ctx, creditId: widget.credit.id),
                               child: Container(
                                 width: 22,
                                 height: 22,

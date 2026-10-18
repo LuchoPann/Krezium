@@ -13,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../screens/stats/simulator_sheet.dart';
 import '../card_advance_sheet.dart';
 import '../card_movement_sheet.dart';
+import '../confirmar_pago_extracto_sheet.dart';
 import '../../utils/credit_display_utils.dart';
 import '../wallet_card.dart';
 import 'notes_tab.dart';
@@ -790,7 +791,10 @@ class _CardQuickActions extends StatelessWidget {
     // el mismo criterio que en Movimientos: solo se puede confirmar el
     // pago cuando ya hay un extracto exigible (cerrado, en su fecha
     // límite) — antes de eso no hay nada que pagar todavía.
-    final puedePagar = getPayableSummary(credit).exigible > 0;
+    // TEMPORAL: forzado a true para que puedas revisar el nuevo diseño
+    // de solo lectura de ConfirmarPagoExtractoSheet. Restaurar a
+    // `getPayableSummary(credit).exigible > 0` cuando termines de revisarlo.
+    final puedePagar = true;
 
     return Container(
       decoration: BoxDecoration(
@@ -821,11 +825,7 @@ class _CardQuickActions extends StatelessWidget {
                     foregroundColor: legibleForegroundOn(accent),
                   ),
                   onPressed: puedePagar
-                      ? () => CardMovementSheet.show(
-                          context,
-                          creditId: credit.id,
-                          movementType: CardMovementType.payment,
-                        )
+                      ? () => ConfirmarPagoExtractoSheet.show(context, creditId: credit.id)
                       : null,
                   icon: const Icon(Icons.payments_outlined, size: AppIconSize.small),
                   label: const Text('Confirmar pago'),
