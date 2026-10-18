@@ -189,87 +189,171 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
       ),
     );
 
-    final body = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      shrinkWrap: widget.shrinkWrap,
-      physics: widget.shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      children: [
-        if (overdue.isNotEmpty)
-          _SectionGroup(
-            title: 'Vencidas',
-            count: overdue.length,
-            total: _sumAmount(overdue),
-            emphasized: true,
-            children: overdue
-                .map((i) => _InstallmentTile(credit: credit, inst: i))
-                .toList(),
-          ),
-        if (dueSoon.isNotEmpty)
-          _SectionGroup(
-            title: 'Próximas',
-            count: dueSoon.length,
-            total: _sumAmount(dueSoon),
-            children: dueSoon
-                .map((i) => _InstallmentTile(credit: credit, inst: i))
-                .toList(),
-          ),
-        if (upcoming.isNotEmpty)
-          _SectionGroup(
-            title: 'Futuras',
-            count: upcoming.length,
-            total: _sumAmount(upcoming),
-            children: upcoming
-                .map((i) => _InstallmentTile(credit: credit, inst: i))
-                .toList(),
-          ),
-        if (paid.isNotEmpty)
-          _SectionGroup(
-            title: 'Pagadas',
-            count: paid.length,
-            total: _sumAmount(paid),
-            collapsible: true,
-            expanded: _paidExpanded,
-            onToggle: () => setState(() => _paidExpanded = !_paidExpanded),
-            children: paid
-                .map((i) => _InstallmentTile(credit: credit, inst: i))
-                .toList(),
-          ),
-        if (credit.abonos.isNotEmpty)
-          _SectionGroup(
-            title: 'Abonos Registrados',
-            count: credit.abonos.length,
-            total: credit.abonos.fold(0.0, (s, a) => s + a.amount),
-            collapsible: true,
-            expanded: _abonosExpanded,
-            onToggle: () => setState(() => _abonosExpanded = !_abonosExpanded),
-            children: credit.abonos.reversed
-                .map(
-                  (a) => _AbonoTile(
-                    creditId: credit.id,
-                    abono: a,
-                    // Solo el ÚLTIMO abono (primero en esta lista
-                    // invertida) tiene una comparación antes/ahora
-                    // exacta contra el estado actual del crédito.
-                    impact: identical(a, credit.abonos.last)
-                        ? computeLastAbonoImpact(credit)
-                        : null,
-                  ),
-                )
-                .toList(),
-          ),
-      ],
-    );
+    final abonosReversed = credit.abonos.reversed.toList();
+
+    final sections = [
+      if (overdue.isNotEmpty)
+        _SectionSpec(
+          title: 'Vencidas',
+          count: overdue.length,
+          total: _sumAmount(overdue),
+          emphasized: true,
+          itemCount: overdue.length,
+          itemBuilder: (ctx, i) =>
+              _InstallmentTile(credit: credit, inst: overdue[i]),
+        ),
+      if (dueSoon.isNotEmpty)
+        _SectionSpec(
+          title: 'Próximas',
+          count: dueSoon.length,
+          total: _sumAmount(dueSoon),
+          itemCount: dueSoon.length,
+          itemBuilder: (ctx, i) =>
+              _InstallmentTile(credit: credit, inst: dueSoon[i]),
+        ),
+      if (upcoming.isNotEmpty)
+        _SectionSpec(
+          title: 'Futuras',
+          count: upcoming.length,
+          total: _sumAmount(upcoming),
+          itemCount: upcoming.length,
+          itemBuilder: (ctx, i) =>
+              _InstallmentTile(credit: credit, inst: upcoming[i]),
+        ),
+      if (paid.isNotEmpty)
+        _SectionSpec(
+          title: 'Pagadas',
+          count: paid.length,
+          total: _sumAmount(paid),
+          collapsible: true,
+          expanded: _paidExpanded,
+          onToggle: () => setState(() => _paidExpanded = !_paidExpanded),
+          itemCount: paid.length,
+          itemBuilder: (ctx, i) =>
+              _InstallmentTile(credit: credit, inst: paid[i]),
+        ),
+      if (credit.abonos.isNotEmpty)
+        _SectionSpec(
+          title: 'Abonos Registrados',
+          count: credit.abonos.length,
+          total: credit.abonos.fold(0.0, (s, a) => s + a.amount),
+          collapsible: true,
+          expanded: _abonosExpanded,
+          onToggle: () => setState(() => _abonosExpanded = !_abonosExpanded),
+          itemCount: abonosReversed.length,
+          itemBuilder: (ctx, i) {
+            final a = abonosReversed[i];
+            return _AbonoTile(
+              creditId: credit.id,
+              abono: a,
+              // Solo el ÚLTIMO abono (primero en esta lista
+              // invertida) tiene una comparación antes/ahora
+              // exacta contra el estado actual del crédito.
+              impact: identical(a, credit.abonos.last)
+                  ? computeLastAbonoImpact(credit)
+                  : null,
+            );
+          },
+        ),
+    ];
 
     if (widget.shrinkWrap) {
-      return Column(children: [header, body]);
+      // Embebido dentro del ListView externo de un cupo comercial agrupado:
+      // necesita encogerse a su contenido, lo que de todas formas obliga a
+      // Flutter a hacer layout de cada fila para medir la altura total — no
+      // hay forma de virtualizar aquí sin alturas fijas. Estos grupos son
+      // casos chicos (compras de un cupo), así que el costo es aceptable.
+      return Column(
+        children: [
+          header,
+          ListView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: sections.map((s) => _SectionGroup(spec: s)).toList(),
+          ),
+        ],
+      );
     }
+
+    // Pestaña a pantalla completa (el caso común): un préstamo a 360 cuotas
+    // ya no construye+lay-outea las 360 filas en cada build — SliverList
+    // solo materializa lo que entra en viewport más el cacheExtent.
     return Column(
       children: [
         header,
-        Expanded(child: body),
+        Expanded(
+          child: CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                sliver: SliverMainAxisGroup(
+                  slivers: [
+                    for (final s in sections)
+                      ..._sectionSlivers(s, dividerColor: kredit.borderCard),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
+}
+
+class _SectionSpec {
+  final String title;
+  final int count;
+  final double total;
+  final int itemCount;
+  final Widget Function(BuildContext, int) itemBuilder;
+  final bool emphasized;
+  final bool collapsible;
+  final bool expanded;
+  final VoidCallback? onToggle;
+
+  const _SectionSpec({
+    required this.title,
+    required this.count,
+    required this.total,
+    required this.itemCount,
+    required this.itemBuilder,
+    this.emphasized = false,
+    this.collapsible = false,
+    this.expanded = false,
+    this.onToggle,
+  });
+}
+
+List<Widget> _sectionSlivers(_SectionSpec s, {required Color dividerColor}) {
+  final showChildren = !s.collapsible || s.expanded;
+  return [
+    SliverToBoxAdapter(
+      child: _SectionHeader(
+        title: s.title,
+        count: s.count,
+        total: s.total,
+        emphasized: s.emphasized,
+        collapsible: s.collapsible,
+        expanded: s.expanded,
+        onToggle: s.onToggle,
+      ),
+    ),
+    if (showChildren)
+      SliverToBoxAdapter(child: Divider(height: 1, color: dividerColor)),
+    if (showChildren && s.itemCount > 0)
+      SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, i) {
+            if (i.isOdd) return Divider(height: 1, color: dividerColor);
+            return s.itemBuilder(context, i ~/ 2);
+          },
+          childCount: s.itemCount * 2 - 1,
+        ),
+      ),
+    const SliverToBoxAdapter(child: SizedBox(height: 12)),
+  ];
 }
 
 class _AbonoTile extends ConsumerWidget {
@@ -423,20 +507,57 @@ class _AbonoTile extends ConsumerWidget {
 }
 
 class _SectionGroup extends StatelessWidget {
+  final _SectionSpec spec;
+
+  const _SectionGroup({required this.spec});
+
+  @override
+  Widget build(BuildContext context) {
+    final kredit = Theme.of(context).extension<AppThemeColors>()!;
+    final showChildren = !spec.collapsible || spec.expanded;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionHeader(
+            title: spec.title,
+            count: spec.count,
+            total: spec.total,
+            emphasized: spec.emphasized,
+            collapsible: spec.collapsible,
+            expanded: spec.expanded,
+            onToggle: spec.onToggle,
+          ),
+          if (showChildren) Divider(height: 1, color: kredit.borderCard),
+          if (showChildren)
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: spec.itemCount,
+              itemBuilder: spec.itemBuilder,
+              separatorBuilder: (context, index) =>
+                  Divider(height: 1, color: kredit.borderCard),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
   final String title;
   final int count;
   final double total;
-  final List<Widget> children;
   final bool emphasized;
   final bool collapsible;
   final bool expanded;
   final VoidCallback? onToggle;
 
-  const _SectionGroup({
+  const _SectionHeader({
     required this.title,
     required this.count,
     required this.total,
-    required this.children,
     this.emphasized = false,
     this.collapsible = false,
     this.expanded = false,
@@ -446,73 +567,53 @@ class _SectionGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    final showChildren = !collapsible || expanded;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: collapsible ? onToggle : null,
-            borderRadius: BorderRadius.circular(AppRadius.chip),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                children: [
-                  Text(
-                    title.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: AppTextSize.body,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.6,
-                      color: emphasized
-                          ? kredit.textPrimary
-                          : kredit.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '($count)',
-                    style: TextStyle(
-                      fontSize: AppTextSize.body,
-                      fontWeight: FontWeight.w600,
-                      color: kredit.textTertiary,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    formatCOP(total),
-                    style: TextStyle(
-                      // Slightly larger than the section label/count next to
-                      // it — this is a real money figure someone scans for
-                      // ("how much is overdue"), not just decorative meta.
-                      fontSize: AppTextSize.body,
-                      fontWeight: FontWeight.w700,
-                      color: emphasized
-                          ? kredit.textPrimary
-                          : kredit.textSecondary,
-                    ),
-                  ),
-                  if (collapsible) ...[
-                    const SizedBox(width: 6),
-                    Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      size: AppIconSize.small,
-                      color: kredit.textTertiary,
-                    ),
-                  ],
-                ],
+    return InkWell(
+      onTap: collapsible ? onToggle : null,
+      borderRadius: BorderRadius.circular(AppRadius.chip),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Text(
+              title.toUpperCase(),
+              style: TextStyle(
+                fontSize: AppTextSize.body,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: emphasized ? kredit.textPrimary : kredit.textSecondary,
               ),
             ),
-          ),
-          if (showChildren) Divider(height: 1, color: kredit.borderCard),
-          if (showChildren)
-            for (var i = 0; i < children.length; i++) ...[
-              children[i],
-              if (i != children.length - 1)
-                Divider(height: 1, color: kredit.borderCard),
+            const SizedBox(width: 6),
+            Text(
+              '($count)',
+              style: TextStyle(
+                fontSize: AppTextSize.body,
+                fontWeight: FontWeight.w600,
+                color: kredit.textTertiary,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              formatCOP(total),
+              style: TextStyle(
+                // Slightly larger than the section label/count next to
+                // it — this is a real money figure someone scans for
+                // ("how much is overdue"), not just decorative meta.
+                fontSize: AppTextSize.body,
+                fontWeight: FontWeight.w700,
+                color: emphasized ? kredit.textPrimary : kredit.textSecondary,
+              ),
+            ),
+            if (collapsible) ...[
+              const SizedBox(width: 6),
+              Icon(
+                expanded ? Icons.expand_less : Icons.expand_more,
+                size: AppIconSize.small,
+                color: kredit.textTertiary,
+              ),
             ],
-        ],
+          ],
+        ),
       ),
     );
   }
