@@ -29,6 +29,36 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.2.0',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.nuevo,
+          'Planificación: los presupuestos ahora te sugieren un límite basado en lo que gastaste los últimos meses en esa categoría.'),
+      ChangeItem(ChangeType.nuevo,
+          'Metas de ahorro: puedes crearlas vinculadas a un registro o como reserva virtual, con historial de cada aporte y retiro.'),
+      ChangeItem(ChangeType.nuevo,
+          'Al registrar un gasto, ves de una vez el presupuesto de esa categoría y puedes crear uno si no existe, sin salir del formulario.'),
+      ChangeItem(ChangeType.nuevo,
+          'Estadísticas muestra ahora tu tasa de ahorro del mes y la variación de cada categoría frente al mes anterior.'),
+      ChangeItem(ChangeType.nuevo,
+          'Inicio detecta cuando dos pagos de tarjetas o préstamos caen cerca en el calendario y te deja marcarlos pagados juntos o por separado.'),
+      ChangeItem(ChangeType.mejora,
+          'Inicio muestra el extracto que se avecina de cada tarjeta (no la deuda total) y el contador de días siempre apunta a la fecha límite real.'),
+      ChangeItem(ChangeType.mejora,
+          '"Confirmar pago" de una tarjeta ahora es una pantalla de solo revisar y confirmar, sin campos que llenar, y solo se habilita cuando el extracto ya está en su fecha límite.'),
+      ChangeItem(ChangeType.mejora,
+          'Al registrar una compra con tarjeta, el nombre es obligatorio y las cuotas se escriben libremente, como las hayas negociado.'),
+      ChangeItem(ChangeType.mejora,
+          'El Disponible y el Límite de un cupo de tienda ahora se ven igual en Resumen que en Cronograma.'),
+      ChangeItem(ChangeType.correccion,
+          'La lista de "Tus créditos" en Inicio ahora ordena correctamente por los días reales que faltan para cada pago.'),
+      ChangeItem(ChangeType.correccion,
+          'Se eliminó el selector "Pagar extracto / Abono a la deuda", que no cambiaba nada real entre sus dos opciones.'),
+      ChangeItem(ChangeType.correccion,
+          'Se quitó el recordatorio de notificación personalizado por crédito.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.0.0',
     date: 'Octubre 2026',
     changes: [
