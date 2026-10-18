@@ -579,7 +579,6 @@ class _QuotaOverviewTiles extends StatelessWidget {
               label: 'Disponible',
               value: formatCOP(quotaAvailable(quota, purchases)),
               icon: Icons.account_balance_wallet_outlined,
-              emphasized: true,
             ),
           ),
           Container(width: 1, height: 34, margin: const EdgeInsets.symmetric(horizontal: 18), color: kredit.borderCard),

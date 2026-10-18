@@ -582,6 +582,11 @@ class _PaymentCoachCard extends ConsumerWidget {
                       ? () => _confirmarYMarcarExtractoPagado(
                           context, ref, item.credit as CardCredit, item.amount)
                       : null,
+              // Pago cercano (≤6 días de diferencia con el principal) —
+              // solo entre pagos reales (cuotas o extractos exigibles),
+              // nunca un ciclo de tarjeta todavía abierto (ver
+              // encontrarPagoCercano).
+              cercano: encontrarPagoCercano(upcoming, item)?.cercano,
             ),
           ],
 
@@ -598,13 +603,16 @@ class _PaymentCoachCard extends ConsumerWidget {
 }
 
 /// Bloque visual del pago prioritario dentro del card unificado.
-class _NextPaymentBlock extends StatelessWidget {
+class _NextPaymentBlock extends ConsumerWidget {
   final PendingPayment item;
   final FinancialRecommendation recommendation;
   final Color urgencyColor;
   final Color accent;
   final Color fgOnAccent;
   final VoidCallback? onTogglePaid;
+  // Otro pago real (cuota o extracto exigible) a ≤6 días de este — null si
+  // ninguno cae en esa ventana (ver encontrarPagoCercano).
+  final PendingPayment? cercano;
 
   const _NextPaymentBlock({
     required this.item,
@@ -613,10 +621,11 @@ class _NextPaymentBlock extends StatelessWidget {
     required this.accent,
     required this.fgOnAccent,
     this.onTogglePaid,
+    this.cercano,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
     final daysLeft = item.daysUntilDue();
     final relativeLabel = formatRelativeDate(item.dueDate);
@@ -735,8 +744,107 @@ class _NextPaymentBlock extends StatelessWidget {
             ],
           ],
         ),
+        if (cercano != null) ...[
+          const SizedBox(height: 12),
+          _PagoCercanoBanner(principal: item, cercano: cercano!),
+        ],
       ],
     );
+  }
+}
+
+/// Aviso de que otro pago real cae a pocos días del principal — invita a
+/// resolver ambos de una vez en vez de que el usuario los descubra por
+/// separado, uno cada vez que entra a la app.
+class _PagoCercanoBanner extends ConsumerWidget {
+  final PendingPayment principal;
+  final PendingPayment cercano;
+
+  const _PagoCercanoBanner({required this.principal, required this.cercano});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final kredit = Theme.of(context).extension<AppThemeColors>()!;
+    final dias = cercano.daysUntilDue();
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: kredit.bgCard,
+        borderRadius: BorderRadius.circular(AppRadius.tile),
+        border: Border.all(color: kredit.borderCard),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.schedule, size: AppIconSize.small, color: kredit.textSecondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'También tienes "${cercano.credit.name}" cerca — en $dias ${dias == 1 ? 'día' : 'días'}.',
+                  style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context)
+                      .pushNamed('/credit-detail', arguments: cercano.credit.id),
+                  child: const Text('Ver detalle'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => _confirmarYMarcarAmbosPagados(context, ref, principal, cercano),
+                  child: const Text('Marcar ambos pagados'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Un solo diálogo de confirmación para los dos pagos — nunca dos
+/// confirmaciones seguidas por la misma acción del usuario. Cada uno se
+/// marca con el mecanismo que le corresponde (toggle reversible para
+/// cuota, pago real para extracto de tarjeta).
+Future<void> _confirmarYMarcarAmbosPagados(
+  BuildContext context,
+  WidgetRef ref,
+  PendingPayment a,
+  PendingPayment b,
+) async {
+  final total = a.amount + b.amount;
+  final confirmado = await showAppConfirmSheet(
+    context,
+    title: 'Marcar ambos pagados',
+    message: '¿Marcar como pagados "${a.credit.name}" (${formatCOP(a.amount)}) y '
+        '"${b.credit.name}" (${formatCOP(b.amount)})? Total: ${formatCOP(total)}.',
+    confirmLabel: 'Marcar ambos',
+  );
+  if (!confirmado) return;
+  HapticFeedback.mediumImpact();
+  final notifier = ref.read(creditsProvider.notifier);
+  for (final p in [a, b]) {
+    if (p.installment != null) {
+      await notifier.toggleInstallmentPaid(p.credit.id, p.installment!.number);
+    } else if (p.credit is CardCredit) {
+      await notifier.registerMovement(
+        p.credit.id,
+        CardMovementType.payment,
+        p.amount,
+        'Extracto marcado como pagado',
+      );
+    }
   }
 }
 

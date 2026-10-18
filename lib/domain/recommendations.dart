@@ -93,6 +93,34 @@ int? diasHastaProximoPago(Credit credit, PendingPayment? nextPayment, [DateTime?
   return null;
 }
 
+/// Busca, entre los demás pagos reales de [upcoming] (cuotas de préstamo o
+/// extractos de tarjeta ya exigibles — nunca un ciclo de tarjeta todavía
+/// abierto, eso es proyección, no un compromiso firme), el más cercano a
+/// [principal] en días, siempre que esa diferencia no supere [ventanaDias].
+/// Devuelve null si ninguno cae dentro de la ventana — nunca "inventa" un
+/// pago cercano sin evidencia real.
+({PendingPayment principal, PendingPayment cercano})? encontrarPagoCercano(
+  List<PendingPayment> upcoming,
+  PendingPayment principal, {
+  int ventanaDias = 6,
+  DateTime? now,
+}) {
+  final diasPrincipal = principal.daysUntilDue(now);
+  PendingPayment? mejor;
+  int? mejorDiff;
+  for (final p in upcoming) {
+    if (p.credit.id == principal.credit.id) continue;
+    final diff = (p.daysUntilDue(now) - diasPrincipal).abs();
+    if (diff > ventanaDias) continue;
+    if (mejorDiff == null || diff < mejorDiff) {
+      mejor = p;
+      mejorDiff = diff;
+    }
+  }
+  if (mejor == null) return null;
+  return (principal: principal, cercano: mejor);
+}
+
 List<PendingPayment> buildPendingPayments(
   List<Credit> credits, {
   DateTime? now,

@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:krezium/data/models/card_movement.dart';
 import 'package:krezium/data/models/credit.dart';
 import 'package:krezium/domain/card_statement_engine.dart';
 import 'package:krezium/domain/date_utils.dart';
@@ -261,6 +260,48 @@ void main() {
             .toList(),
       );
       expect(diasHastaProximoPago(loanPaid, null), isNull);
+    });
+  });
+
+  group('encontrarPagoCercano', () {
+    test('encuentra el más cercano dentro de la ventana de 6 días', () {
+      final ref = DateTime(2026, 1, 10);
+      final principal = _loan(id: 'p', dueDate: '2026-01-13'); // en 3 días
+      final cercano = _loan(id: 'c', dueDate: '2026-01-16'); // en 6 días, diff=3
+      final lejano = _loan(id: 'l', dueDate: '2026-01-30'); // diff grande
+
+      final upcoming = buildPendingPayments([principal, cercano, lejano], now: ref);
+      final pPrincipal = upcoming.firstWhere((p) => p.credit.id == 'p');
+
+      final resultado = encontrarPagoCercano(upcoming, pPrincipal, now: ref);
+
+      expect(resultado, isNotNull);
+      expect(resultado!.cercano.credit.id, 'c');
+    });
+
+    test('ninguno dentro de la ventana: null, no inventa un "cercano" falso', () {
+      final ref = DateTime(2026, 1, 10);
+      final principal = _loan(id: 'p', dueDate: '2026-01-13');
+      final lejano = _loan(id: 'l', dueDate: '2026-02-01');
+
+      final upcoming = buildPendingPayments([principal, lejano], now: ref);
+      final pPrincipal = upcoming.firstWhere((p) => p.credit.id == 'p');
+
+      expect(encontrarPagoCercano(upcoming, pPrincipal, now: ref), isNull);
+    });
+
+    test('elige el más cercano cuando hay varios candidatos dentro de la ventana', () {
+      final ref = DateTime(2026, 1, 10);
+      final principal = _loan(id: 'p', dueDate: '2026-01-13'); // 3 días
+      final masCercano = _loan(id: 'mc', dueDate: '2026-01-15'); // 5 días, diff=2
+      final menosCercano = _loan(id: 'lc', dueDate: '2026-01-18'); // 8 días, diff=5
+
+      final upcoming = buildPendingPayments([principal, masCercano, menosCercano], now: ref);
+      final pPrincipal = upcoming.firstWhere((p) => p.credit.id == 'p');
+
+      final resultado = encontrarPagoCercano(upcoming, pPrincipal, now: ref);
+
+      expect(resultado!.cercano.credit.id, 'mc');
     });
   });
 }
