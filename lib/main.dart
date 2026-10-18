@@ -163,7 +163,7 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
   //   [0.00, 0.35] baja   [0.35, 0.60] destello (cubierta)   [0.60, 1.00] sube
   late final AnimationController _curtainController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: const Duration(milliseconds: 700),
   );
   bool _curtainSwitched = false;
 
@@ -485,7 +485,18 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
         ),
         iconTheme: WidgetStateProperty.all(const IconThemeData(size: 22)),
       ),
-      child: NavigationBar(
+      // Antes el nav bar no estaba cubierto por la cortina (vive en
+      // `bottomNavigationBar`, fuera del Stack del body) y sus destinos
+      // cambiaban de golpe en el instante exacto del switch — justo lo que
+      // se veía roto. AnimatedSwitcher, keyed por entorno, lo desvanece y
+      // lo vuelve a aparecer ya con los íconos del módulo que está cargando,
+      // sincronizado con la ventana del destello sobre la cortina.
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        child: NavigationBar(
+        key: ValueKey(entorno),
         selectedIndex: navIndex,
         onDestinationSelected: (i) {
           if (i == 2) {
@@ -524,16 +535,13 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
           const NavigationDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart), label: 'Estadísticas'),
           const NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Cuenta'),
         ],
+        ),
       ),
     );
   }
 }
 
 
-/// Transición de MÓDULO completo (Créditos ↔ Finanzas): slide + fade como
-/// unidad, deliberadamente más marcada que el fundido plano de _TabFadeLayer
-/// que usan las pestañas internas, para que el cambio de módulo se sienta
-/// distinto — una transición de contexto, no un simple cambio de pestaña.
 /// Cortina de cambio de módulo: baja cubriendo toda la pantalla con el logo
 /// de Krezium, un destello marca el "listo" justo cuando el módulo ya se
 /// intercambió debajo (oculto), y la cortina sube revelándolo. Ver fases en
@@ -552,7 +560,13 @@ class _CurtainOverlay extends StatelessWidget {
         final v = controller.value;
         if (v <= 0) return const SizedBox.shrink();
 
-        double y; // 1 = oculta arriba de la pantalla, 0 = cubriendo
+        // y: 1 = oculta arriba de la pantalla (fuera de vista), 0 = cubriendo
+        // exactamente el viewport. Se aplica como traslación NEGATIVA en Y
+        // (Transform.translate con dy negativo mueve hacia arriba), para que
+        // la cortina entre bajando DESDE arriba y, al salir, suba y
+        // desaparezca por el mismo borde de arriba — un signo invertido acá
+        // hacía que entrara desde abajo, al revés de lo esperado.
+        double y;
         if (v < _RootScaffoldState._curtainDownEnd) {
           y = 1 - Curves.easeInCubic.transform(v / _RootScaffoldState._curtainDownEnd);
         } else if (v < _RootScaffoldState._curtainUpStart) {
@@ -563,32 +577,39 @@ class _CurtainOverlay extends StatelessWidget {
           y = Curves.easeInCubic.transform(upT);
         }
 
-        // Destello centrado en la ventana "cubierta" (el intercambio real ya
-        // ocurrió para entonces) — sube y baja de opacidad como una campana.
-        double flash = 0;
+        // Destello: brillo horizontal puro (izquierda→derecha) que recorre
+        // el logo completo una vez durante la ventana "cubierta" (el
+        // intercambio real de módulo ya ocurrió para entonces, igual que el
+        // crossfade del nav bar de abajo).
         const holdStart = _RootScaffoldState._curtainDownEnd;
         const holdEnd = _RootScaffoldState._curtainUpStart;
-        if (v >= holdStart && v <= holdEnd) {
-          final holdT = (v - holdStart) / (holdEnd - holdStart);
-          flash = (1 - (holdT * 2 - 1).abs()).clamp(0.0, 1.0);
-        }
+        final holdT = v <= holdStart
+            ? 0.0
+            : v >= holdEnd
+                ? 1.0
+                : (v - holdStart) / (holdEnd - holdStart);
+        final sweepX = -1.4 + holdT * 2.8;
 
         final size = MediaQuery.sizeOf(context);
         return Transform.translate(
-          offset: Offset(0, y * size.height),
+          offset: Offset(0, -y * size.height),
           child: Container(
             color: kredit.bgCard,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                const AppLogo(height: 56),
-                IgnorePointer(
-                  child: Opacity(
-                    opacity: flash * 0.55,
-                    child: Container(color: Colors.white),
-                  ),
-                ),
-              ],
+            child: Center(
+              child: ShaderMask(
+                blendMode: BlendMode.srcATop,
+                shaderCallback: (bounds) => LinearGradient(
+                  begin: Alignment(sweepX - 0.5, 0),
+                  end: Alignment(sweepX + 0.5, 0),
+                  colors: const [
+                    Colors.transparent,
+                    Colors.white,
+                    Colors.transparent,
+                  ],
+                  stops: const [0.35, 0.5, 0.65],
+                ).createShader(bounds),
+                child: const AppLogo(height: 76),
+              ),
             ),
           ),
         );
