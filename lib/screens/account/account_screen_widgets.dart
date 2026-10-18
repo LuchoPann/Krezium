@@ -586,67 +586,6 @@ class _VersionTileState extends State<_VersionTile> {
       );
 }
 
-/// Tile de respaldo automático que lee el estado actual de SharedPreferences
-/// para mostrar el subtítulo dinámico sin necesitar un provider adicional.
-class _BackupAutoTile extends StatefulWidget {
-  final Widget Function({
-    required IconData icon,
-    required String title,
-    String? subtitle,
-    required VoidCallback onTap,
-    Color? iconColor,
-    bool showChevron,
-  }) navTile;
-
-  const _BackupAutoTile({required this.navTile});
-
-  @override
-  State<_BackupAutoTile> createState() => _BackupAutoTileState();
-}
-
-class _BackupAutoTileState extends State<_BackupAutoTile> {
-  String _subtitle = 'Cargando…';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSubtitle();
-  }
-
-  Future<void> _loadSubtitle() async {
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool('backup_enabled') ?? false;
-    if (!enabled) {
-      if (mounted) setState(() => _subtitle = 'Desactivado');
-      return;
-    }
-    final freq = prefs.getString('backup_frequency') ?? 'weekly';
-    final mode = prefs.getString('backup_mode') ?? 'overwrite';
-    final freqLabel = switch (freq) {
-      'daily' => 'Diario',
-      'biweekly' => 'Quincenal',
-      'monthly' => 'Mensual',
-      _ => 'Semanal',
-    };
-    final modeLabel = mode == 'new_file' ? 'Archivo nuevo' : 'Sobreescribir';
-    if (mounted) setState(() => _subtitle = '$freqLabel · $modeLabel');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.navTile(
-      icon: Icons.backup_outlined,
-      title: 'Respaldo automático',
-      subtitle: _subtitle,
-      onTap: () async {
-        await Navigator.of(context).push(
-          slidePageRoute((_) => const BackupSettingsScreen()),
-        );
-        _loadSubtitle(); // refresh after returning
-      },
-    );
-  }
-}
 
 // ── Navegación interna de sheets ─────────────────────────────────────────────
 

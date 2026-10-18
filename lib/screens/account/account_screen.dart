@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/changelog.dart';
 import '../../providers/notification_settings_provider.dart';
@@ -20,7 +19,6 @@ import '../../widgets/account/bg_tone_picker.dart';
 import '../../widgets/account/danger_zone_card.dart';
 import '../../widgets/account/data_tools_card.dart';
 import '../../widgets/notification_settings_tile.dart';
-import 'backup_settings_screen.dart';
 import 'how_it_works_screen.dart';
 import '../lock/setup_lock_screen.dart';
 import '../../providers/widget_privacy_provider.dart';
