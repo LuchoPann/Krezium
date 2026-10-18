@@ -715,21 +715,21 @@ class _NextPaymentBlock extends ConsumerWidget {
         Row(
           children: [
             Expanded(
-              child: FilledButton.icon(
+              child: OutlinedButton.icon(
                 onPressed: () => Navigator.of(context)
                     .pushNamed('/credit-detail', arguments: item.credit.id),
                 icon: const Icon(Icons.open_in_new, size: AppIconSize.small),
                 label: const Text('Ver detalle'),
-                style: FilledButton.styleFrom(
+                style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(42),
-                  backgroundColor: accent,
-                  foregroundColor: fgOnAccent,
+                  foregroundColor: kredit.textPrimary,
+                  side: BorderSide(color: kredit.borderCard),
                 ),
               ),
             ),
             if (onTogglePaid != null) ...[
               const SizedBox(width: 10),
-              IconButton.outlined(
+              IconButton.filled(
                 tooltip: item.isLoanInstallment
                     ? 'Marcar cuota como pagada'
                     : 'Marcar extracto como pagado',
@@ -737,16 +737,24 @@ class _NextPaymentBlock extends ConsumerWidget {
                 icon: const Icon(Icons.done, size: AppIconSize.small),
                 style: IconButton.styleFrom(
                   minimumSize: const Size(42, 42),
-                  foregroundColor: kredit.textPrimary,
-                  side: BorderSide(color: kredit.borderCard),
+                  backgroundColor: accent,
+                  foregroundColor: fgOnAccent,
                 ),
               ),
             ],
           ],
         ),
         if (cercano != null) ...[
+          const SizedBox(height: 16),
+          Divider(height: 1, color: kredit.borderCard),
           const SizedBox(height: 12),
-          _PagoCercanoBanner(principal: item, cercano: cercano!),
+          _CompromisoCercano(
+            cercano: cercano!,
+            accent: accent,
+            fgOnAccent: fgOnAccent,
+            onMarcarAmbos: () =>
+                _confirmarYMarcarAmbosPagados(context, ref, item, cercano!),
+          ),
         ],
       ],
     );
@@ -756,59 +764,108 @@ class _NextPaymentBlock extends ConsumerWidget {
 /// Aviso de que otro pago real cae a pocos días del principal — invita a
 /// resolver ambos de una vez en vez de que el usuario los descubra por
 /// separado, uno cada vez que entra a la app.
-class _PagoCercanoBanner extends ConsumerWidget {
-  final PendingPayment principal;
+/// Mismo lenguaje visual que el bloque principal, en versión compacta y
+/// sin caja propia (el Divider de arriba ya separa) — para que un segundo
+/// compromiso cercano se sienta parte del mismo card, no un aviso aparte.
+class _CompromisoCercano extends StatelessWidget {
   final PendingPayment cercano;
+  final Color accent;
+  final Color fgOnAccent;
+  final VoidCallback onMarcarAmbos;
 
-  const _PagoCercanoBanner({required this.principal, required this.cercano});
+  const _CompromisoCercano({
+    required this.cercano,
+    required this.accent,
+    required this.fgOnAccent,
+    required this.onMarcarAmbos,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    final dias = cercano.daysUntilDue();
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: kredit.bgCard,
-        borderRadius: BorderRadius.circular(AppRadius.tile),
-        border: Border.all(color: kredit.borderCard),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.schedule, size: AppIconSize.small, color: kredit.textSecondary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'También tienes "${cercano.credit.name}" cerca — en $dias ${dias == 1 ? 'día' : 'días'}.',
-                  style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary),
+    final relativeLabel = formatRelativeDate(cercano.dueDate);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'COMPROMISO CERCANO',
+                    style: TextStyle(
+                      fontSize: AppTextSize.body,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.7,
+                      color: kredit.textTertiary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    cercano.credit.name,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  formatCOP(cercano.amount),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+                Text(
+                  relativeLabel,
+                  style: TextStyle(
+                    fontSize: AppTextSize.body,
+                    color: kredit.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.of(context)
+                    .pushNamed('/credit-detail', arguments: cercano.credit.id),
+                icon: const Icon(Icons.open_in_new, size: AppIconSize.small),
+                label: const Text('Ver detalle'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(42),
+                  foregroundColor: kredit.textPrimary,
+                  side: BorderSide(color: kredit.borderCard),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context)
-                      .pushNamed('/credit-detail', arguments: cercano.credit.id),
-                  child: const Text('Ver detalle'),
-                ),
+            ),
+            const SizedBox(width: 10),
+            IconButton.filled(
+              tooltip: 'Marcar ambos pagados',
+              onPressed: onMarcarAmbos,
+              icon: const Icon(Icons.done_all, size: AppIconSize.small),
+              style: IconButton.styleFrom(
+                minimumSize: const Size(42, 42),
+                backgroundColor: accent,
+                foregroundColor: fgOnAccent,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => _confirmarYMarcarAmbosPagados(context, ref, principal, cercano),
-                  child: const Text('Marcar ambos pagados'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
