@@ -354,20 +354,39 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
           Positioned.fill(
             child: Stack(
               children: [
-                for (var i = 0; i < creditosScreens.length; i++)
-                  if (_visitedCreditos.contains(i))
-                    _TabFadeLayer(
-                      active: isCreditos && !isAccount && i == currentTab,
-                      duration: const Duration(milliseconds: 420),
-                      child: creditosScreens[i],
-                    ),
-                for (var i = 0; i < finanzasScreens.length; i++)
-                  if (_visitedFinanzas.contains(i))
-                    _TabFadeLayer(
-                      active: !isCreditos && !isAccount && i == currentTab,
-                      duration: const Duration(milliseconds: 420),
-                      child: finanzasScreens[i],
-                    ),
+                // Grupo Créditos: slide+fade propio como UNIDAD (no por pantalla
+                // individual) para que se note que es un cambio de MÓDULO, no un
+                // fundido igual al de las pestañas internas. Sale hacia la
+                // izquierda al entrar a Finanzas, entra desde la izquierda al
+                // volver — dirección consistente con el ícono del botón central.
+                _ModuleSlideLayer(
+                  active: isCreditos && !isAccount,
+                  hiddenOffset: const Offset(-0.10, 0),
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < creditosScreens.length; i++)
+                        if (_visitedCreditos.contains(i))
+                          _TabFadeLayer(
+                            active: i == currentTab,
+                            child: creditosScreens[i],
+                          ),
+                    ],
+                  ),
+                ),
+                _ModuleSlideLayer(
+                  active: !isCreditos && !isAccount,
+                  hiddenOffset: const Offset(0.10, 0),
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < finanzasScreens.length; i++)
+                        if (_visitedFinanzas.contains(i))
+                          _TabFadeLayer(
+                            active: i == currentTab,
+                            child: finanzasScreens[i],
+                          ),
+                    ],
+                  ),
+                ),
                 _TabFadeLayer(
                   active: isAccount,
                   child: const AccountScreen(),
@@ -469,15 +488,55 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
 }
 
 
+/// Transición de MÓDULO completo (Créditos ↔ Finanzas): slide + fade como
+/// unidad, deliberadamente más marcada que el fundido plano de _TabFadeLayer
+/// que usan las pestañas internas, para que el cambio de módulo se sienta
+/// distinto — una transición de contexto, no un simple cambio de pestaña.
+class _ModuleSlideLayer extends StatelessWidget {
+  final bool active;
+  final Widget child;
+  final Offset hiddenOffset;
+
+  const _ModuleSlideLayer({
+    required this.active,
+    required this.child,
+    required this.hiddenOffset,
+  });
+
+  static const _duration = Duration(milliseconds: 420);
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !active,
+      child: ExcludeSemantics(
+        excluding: !active,
+        child: AnimatedSlide(
+          offset: active ? Offset.zero : hiddenOffset,
+          duration: _duration,
+          curve: active ? Curves.easeOutCubic : Curves.easeInCubic,
+          child: AnimatedOpacity(
+            opacity: active ? 1 : 0,
+            duration: _duration,
+            curve: active ? Curves.easeOutCubic : Curves.easeInCubic,
+            child: TickerMode(
+              enabled: active,
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TabFadeLayer extends StatelessWidget {
   final bool active;
   final Widget child;
-  final Duration duration;
 
   const _TabFadeLayer({
     required this.active,
     required this.child,
-    this.duration = const Duration(milliseconds: 340),
   });
 
   @override
@@ -495,7 +554,7 @@ class _TabFadeLayer extends StatelessWidget {
         excluding: !active,
         child: AnimatedOpacity(
           opacity: active ? 1 : 0,
-          duration: duration,
+          duration: const Duration(milliseconds: 340),
           curve: Curves.easeOutCubic,
           child: TickerMode(
             enabled: active,
