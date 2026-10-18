@@ -29,6 +29,16 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.2.1',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.mejora,
+          'Al cambiar entre Créditos y Finanzas ahora siempre vuelves a la vista inicial de ese módulo.'),
+      ChangeItem(ChangeType.mejora,
+          'El cambio entre módulos se ve con una transición suave en vez de un salto brusco.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.2.0',
     date: 'Octubre 2026',
     changes: [

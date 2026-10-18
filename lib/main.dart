@@ -348,21 +348,34 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
             ),
           ),
           Positioned.fill(
-            child: Stack(
-              children: [
-                for (var i = 0; i < screens.length; i++)
-                  if (_visitedForEntorno(entorno).contains(i))
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) =>
+                  FadeTransition(opacity: animation, child: child),
+              layoutBuilder: (currentChild, previousChildren) => Stack(
+                children: [...previousChildren, if (currentChild != null) currentChild],
+              ),
+              child: KeyedSubtree(
+                key: ValueKey(entorno),
+                child: Stack(
+                  children: [
+                    for (var i = 0; i < screens.length; i++)
+                      if (_visitedForEntorno(entorno).contains(i))
+                        _TabFadeLayer(
+                          active: !isAccount && i == currentTab,
+                          child: screens[i],
+                        )
+                      else
+                        const SizedBox.shrink(),
                     _TabFadeLayer(
-                      active: !isAccount && i == currentTab,
-                      child: screens[i],
-                    )
-                  else
-                    const SizedBox.shrink(),
-                _TabFadeLayer(
-                  active: isAccount,
-                  child: const AccountScreen(),
+                      active: isAccount,
+                      child: const AccountScreen(),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -413,8 +426,13 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
         selectedIndex: navIndex,
         onDestinationSelected: (i) {
           if (i == 2) {
-            // switch entorno
+            // switch entorno — siempre vuelve a la vista inicial del módulo destino
             final next = isCreditos ? Entorno.finanzas : Entorno.creditos;
+            if (next == Entorno.creditos) {
+              ref.read(creditosTabProvider.notifier).state = 0;
+            } else {
+              ref.read(finanzasTabProvider.notifier).state = 0;
+            }
             ref.read(entornoProvider.notifier).state = next;
             savePreferredEntorno(next);
             return;
