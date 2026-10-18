@@ -391,63 +391,82 @@ class _FinanzasLibroTransaccionesScreenState
               // Cada grupo es su propia tarjeta (header + filas + divisores
               // internos), en vez de texto suelto + lista plana — así el
               // histórico se ve "contenido" en bloques, no mezclado con el
-              // fondo de la pantalla.
+              // fondo de la pantalla. El header y el borde/fondo usan
+              // DecoratedSliver en vez de AppSectionCard (un Container):
+              // con años de historial, un grupo podía tener cientos de filas
+              // — SliverList solo materializa lo que entra en viewport, en
+              // vez de construir+lay-outear toda la Column de una vez.
+              final header = Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _grupoLabel(clave, filtros.periodo),
+                      style: TextStyle(
+                        fontSize: AppTextSize.caption,
+                        color: colors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    // Texto neutro en vez de un monto verde/rojo sin
+                    // contexto — un color ahí "sale de la nada" para quien
+                    // no sabe de dónde surge.
+                    Text(
+                      '${grupoTxs.length} ${grupoTxs.length == 1 ? 'registro' : 'registros'}',
+                      style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
+                    ),
+                  ],
+                ),
+              );
+              final dividerColor = colors.textTertiary.withValues(alpha: 0.1);
+
               slivers.add(
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: AppSectionCard(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _grupoLabel(clave, filtros.periodo),
-                                style: TextStyle(
-                                  fontSize: AppTextSize.caption,
-                                  color: colors.textSecondary,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              // Texto neutro en vez de un monto verde/rojo
-                              // sin contexto — un color ahí "sale de la
-                              // nada" para quien no sabe de dónde surge.
-                              Text(
-                                '${grupoTxs.length} ${grupoTxs.length == 1 ? 'registro' : 'registros'}',
-                                style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
-                              ),
-                            ],
-                          ),
-                        ),
-                        for (var i = 0; i < grupoTxs.length; i++) ...[
-                          if (i > 0)
-                            Divider(
-                              height: 1,
-                              color: colors.textTertiary.withValues(alpha: 0.1),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  sliver: DecoratedSliver(
+                    decoration: BoxDecoration(
+                      color: colors.bgCard,
+                      borderRadius: BorderRadius.circular(AppRadius.card),
+                      border: Border.all(color: colors.borderCard.withValues(alpha: 0.6)),
+                    ),
+                    sliver: SliverPadding(
+                      padding: const EdgeInsets.all(AppSpacing.card),
+                      sliver: SliverMainAxisGroup(
+                        slivers: [
+                          SliverToBoxAdapter(child: header),
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, i) {
+                                if (i.isOdd) {
+                                  return Divider(height: 1, color: dividerColor);
+                                }
+                                final tx = grupoTxs[i ~/ 2];
+                                return _TxRow(
+                                  tx: tx,
+                                  libroActualId: _libroActual.id,
+                                  cat: catMap[tx.categoryId],
+                                  // catMap ya es el catálogo combinado (fijo
+                                  // + personalizado) — resolverlo acá en vez
+                                  // de dentro de _TxRow evita que esa fila
+                                  // busque el padre solo en el catálogo
+                                  // fijo estático.
+                                  catPadre: catMap[catMap[tx.categoryId]?.parentId],
+                                  onConfirmDismiss: () => _confirmarEliminar(context, tx),
+                                  onDismissed: () => _eliminar(tx),
+                                  onEditar: () => showNuevaTransaccionSheet(
+                                    context,
+                                    libroId: tx.accountId,
+                                    editar: tx,
+                                  ),
+                                  colors: colors,
+                                );
+                              },
+                              childCount: grupoTxs.length * 2 - 1,
                             ),
-                          _TxRow(
-                            tx: grupoTxs[i],
-                            libroActualId: _libroActual.id,
-                            cat: catMap[grupoTxs[i].categoryId],
-                            // catMap ya es el catálogo combinado (fijo +
-                            // personalizado) — resolverlo acá en vez de
-                            // dentro de _TxRow evita que esa fila busque el
-                            // padre solo en el catálogo fijo estático.
-                            catPadre: catMap[catMap[grupoTxs[i].categoryId]?.parentId],
-                            onConfirmDismiss: () =>
-                                _confirmarEliminar(context, grupoTxs[i]),
-                            onDismissed: () => _eliminar(grupoTxs[i]),
-                            onEditar: () => showNuevaTransaccionSheet(
-                              context,
-                              libroId: grupoTxs[i].accountId,
-                              editar: grupoTxs[i],
-                            ),
-                            colors: colors,
                           ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
