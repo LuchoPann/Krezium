@@ -98,6 +98,37 @@ class _FinanzasEstadisticasScreenState
   // All transactions for the active libro (no period filter)
   Future<List<FinanceTransaction>>? _allTxFuture;
 
+  // _totales/_gastosPorCategoria/_tendencia recorren todo el historial del
+  // libro — antes se recalculaban en cada build, incluyendo el toque del
+  // donut (que solo cambia _touchedPieIndex, un estado puramente visual sin
+  // relación con los datos). Se cachea el resultado mientras no cambien los
+  // txs, el periodo o el libro activo.
+  List<FinanceTransaction>? _statsCacheTxs;
+  _Periodo? _statsCachePeriodo;
+  String? _statsCacheLibroId;
+  late ({
+    double ingresos,
+    double gastos,
+    double balance,
+  }) _statsTot;
+  late List<({String catId, double monto})> _statsPieData;
+  late List<({int year, int month, double ingresos, double gastos})>
+      _statsTendencia;
+
+  void _ensureStats(List<FinanceTransaction> allTxs) {
+    if (identical(_statsCacheTxs, allTxs) &&
+        _statsCachePeriodo == _periodo &&
+        _statsCacheLibroId == _libroActual?.id) {
+      return;
+    }
+    _statsCacheTxs = allTxs;
+    _statsCachePeriodo = _periodo;
+    _statsCacheLibroId = _libroActual?.id;
+    _statsTot = _totales(allTxs);
+    _statsPieData = _gastosPorCategoria(allTxs);
+    _statsTendencia = _tendencia(allTxs);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -347,9 +378,10 @@ class _FinanzasEstadisticasScreenState
               ? {for (final c in asyncCats.valueOrNull!) c.id: c}
               : <String, CatalogoCategoria>{};
 
-          final tot = _totales(allTxs);
-          final pieData = _gastosPorCategoria(allTxs);
-          final tendencia = _tendencia(allTxs);
+          _ensureStats(allTxs);
+          final tot = _statsTot;
+          final pieData = _statsPieData;
+          final tendencia = _statsTendencia;
           final hayDatos = pieData.isNotEmpty || tot.ingresos > 0 || tot.gastos > 0;
           // Balance "oficial" (transfer-aware) para la tarjeta de Resumen —
           // tot.balance es period-scoped y viene de una query solo-origen,
@@ -535,22 +567,29 @@ class _ObservacionesSection extends ConsumerWidget {
     final catsAsync = ref.watch(allFinanceCategoriesProvider);
     final metasAsync = ref.watch(allFinanceReservationsProvider);
 
+    // parentPorCategoria y txs se recalculaban DENTRO del .map de abajo —
+    // una vez por cada presupuesto (O(presupuestos × (categorías + txs del
+    // mes))). Se calculan una sola vez aquí.
     final obsPresupuesto = (budgetsAsync.valueOrNull != null &&
             txMesAsync.valueOrNull != null &&
             catsAsync.valueOrNull != null)
-        ? observacionesPresupuestoCercano(budgetsAsync.value!.map((b) {
-            final cat = catsAsync.value!.where((c) => c.id == b.categoryId).firstOrNull;
-            final parentPorCategoria = {for (final c in catsAsync.value!) c.id: c.parentId};
+        ? observacionesPresupuestoCercano((() {
+            final cats = catsAsync.value!;
+            final catsById = {for (final c in cats) c.id: c};
+            final parentPorCategoria = {for (final c in cats) c.id: c.parentId};
             final txs = txMesAsync.value!.map(FinanceTransaction.fromRow).toList();
-            final gasto = gastoCategoriaPeriodo(
-              categoryId: b.categoryId, transacciones: txs, parentPorCategoria: parentPorCategoria,
-            );
-            return (
-              categoryId: b.categoryId,
-              nombre: cat?.nombre ?? b.categoryId,
-              progreso: progresoPresupuesto(gasto: gasto, limite: b.montoLimite),
-            );
-          }).toList())
+            return budgetsAsync.value!.map((b) {
+              final cat = catsById[b.categoryId];
+              final gasto = gastoCategoriaPeriodo(
+                categoryId: b.categoryId, transacciones: txs, parentPorCategoria: parentPorCategoria,
+              );
+              return (
+                categoryId: b.categoryId,
+                nombre: cat?.nombre ?? b.categoryId,
+                progreso: progresoPresupuesto(gasto: gasto, limite: b.montoLimite),
+              );
+            }).toList();
+          })())
         : <Observacion>[];
 
     final obsMetas = metasAsync.valueOrNull != null
