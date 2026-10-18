@@ -151,60 +151,15 @@ class RootScaffold extends ConsumerStatefulWidget {
   ConsumerState<RootScaffold> createState() => _RootScaffoldState();
 }
 
-class _RootScaffoldState extends ConsumerState<RootScaffold>
-    with TickerProviderStateMixin {
+class _RootScaffoldState extends ConsumerState<RootScaffold> {
   final Set<int> _visitedCreditos = {0};
   final Set<int> _visitedFinanzas = {0};
 
-  // Cortina de cambio de módulo: baja cubriendo toda la pantalla con el
-  // logo de Krezium: fade-in con scale-in, hold con un pulso sutil del logo
-  // (el módulo se intercambia debajo, oculto, justo al llegar al hold), y
-  // fade-out con scale-out revelando el módulo ya cargado. Un solo ritmo
-  // continuo (opacidad+escala) en vez de slide+shine+nav-fade por separado
-  // con relojes propios — eso era lo que se sentía descoordinado/apurado.
-  // Fases sobre un solo controller 0→1:
-  //   [0.00, 0.30] entra   [0.30, 0.62] hold + pulso   [0.62, 1.00] sale
-  late final AnimationController _curtainController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 820),
-  );
-  bool _curtainSwitched = false;
-
-  static const _curtainDownEnd = 0.30;
-  static const _curtainUpStart = 0.62;
-
-  /// Opacidad del overlay en el instante [v] (0→1→0) — fuente única que
-  /// también usa el nav bar para ocultarse exactamente en sincronía, en vez
-  /// de un AnimatedSwitcher con su propio reloj independiente.
-  static double curtainOpacityAt(double v) {
-    if (v <= 0 || v >= 1) return 0;
-    if (v < _curtainDownEnd) {
-      return Curves.easeOutCubic.transform(v / _curtainDownEnd);
-    }
-    if (v < _curtainUpStart) return 1;
-    return 1 - Curves.easeInCubic.transform((v - _curtainUpStart) / (1 - _curtainUpStart));
-  }
-
+  // Cambio de módulo: sin overlay ni logo tapando pantalla — el estado
+  // cambia al toque y la transición visual la hace _FadeThroughLayer sobre
+  // el contenido mismo (patrón "Fade Through" de Material Motion, el mismo
+  // que usa Android nativo para cambiar entre secciones de primer nivel).
   void _switchEntorno(Entorno next) {
-    if (_curtainController.isAnimating) return;
-    _curtainSwitched = false;
-    _curtainController.addListener(_onCurtainTick);
-    _curtainController.forward(from: 0).whenComplete(() {
-      _curtainController
-        ..removeListener(_onCurtainTick)
-        ..value = 0;
-    });
-    _pendingEntorno = next;
-  }
-
-  Entorno? _pendingEntorno;
-
-  void _onCurtainTick() {
-    if (_curtainSwitched) return;
-    if (_curtainController.value < _curtainDownEnd) return;
-    _curtainSwitched = true;
-    final next = _pendingEntorno;
-    if (next == null) return;
     if (next == Entorno.creditos) {
       ref.read(creditosTabProvider.notifier).state = 0;
     } else {
@@ -212,12 +167,6 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
     }
     ref.read(entornoProvider.notifier).state = next;
     savePreferredEntorno(next);
-  }
-
-  @override
-  void dispose() {
-    _curtainController.dispose();
-    super.dispose();
   }
 
   @override
@@ -412,13 +361,15 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
           // Ambos módulos quedan montados en el mismo Stack (igual criterio que
           // los tabs dentro de un módulo, vía _visitedCreditos/_visitedFinanzas):
           // cambiar de módulo nunca destruye su subtree ni reinicia su estado
-          // (scroll, controllers, providers ya cargados). El intercambio en sí
-          // queda oculto detrás de la cortina (ver _CurtainOverlay más abajo),
-          // así que acá no hace falta ninguna animación propia de transición.
+          // (scroll, controllers, providers ya cargados). _FadeThroughLayer en
+          // vez de _TabFadeLayer en el nivel de módulo: "Fade Through" de
+          // Material Motion (fade+scale, el mismo patrón que usa Android para
+          // cambiar entre secciones de primer nivel) — se nota como un cambio
+          // de contexto real, no un fundido plano igual al de las pestañas.
           Positioned.fill(
             child: Stack(
               children: [
-                _TabFadeLayer(
+                _FadeThroughLayer(
                   active: isCreditos && !isAccount,
                   child: Stack(
                     children: [
@@ -431,7 +382,7 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
                     ],
                   ),
                 ),
-                _TabFadeLayer(
+                _FadeThroughLayer(
                   active: !isCreditos && !isAccount,
                   child: Stack(
                     children: [
@@ -449,11 +400,6 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
                   child: const AccountScreen(),
                 ),
               ],
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: _CurtainOverlay(controller: _curtainController),
             ),
           ),
         ],
@@ -500,24 +446,14 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
         ),
         iconTheme: WidgetStateProperty.all(const IconThemeData(size: 22)),
       ),
-      // El nav bar no está cubierto por la cortina (vive en
-      // `bottomNavigationBar`, fuera del Stack del body), así que sus
-      // destinos cambiarían de golpe en el instante exacto del switch. En
-      // vez de un AnimatedSwitcher con su propio reloj (podía desincronizarse
-      // del overlay), su opacidad sale de la MISMA función que usa la
-      // cortina — exactamente en fase, un solo reloj para los dos.
-      child: AnimatedBuilder(
-        animation: _curtainController,
-        builder: (context, navChild) => Opacity(
-          opacity: 1 - curtainOpacityAt(_curtainController.value),
-          child: navChild,
-        ),
-        child: NavigationBar(
+      child: NavigationBar(
         selectedIndex: navIndex,
         onDestinationSelected: (i) {
           if (i == 2) {
-            // switch entorno — la cortina decide cuándo cambia realmente
-            // (oculta el intercambio) y siempre vuelve a la vista inicial.
+            // switch entorno — siempre vuelve a la vista inicial del módulo
+            // destino; la transición visual la hace _FadeThroughLayer sobre
+            // el contenido, no el nav bar (sus íconos cambian al toque,
+            // igual que cualquier bottom nav nativo).
             HapticFeedback.mediumImpact();
             _switchEntorno(isCreditos ? Entorno.finanzas : Entorno.creditos);
             return;
@@ -551,63 +487,54 @@ class _RootScaffoldState extends ConsumerState<RootScaffold>
           const NavigationDestination(icon: Icon(Icons.bar_chart_outlined), selectedIcon: Icon(Icons.bar_chart), label: 'Estadísticas'),
           const NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Cuenta'),
         ],
-        ),
       ),
     );
   }
 }
 
 
-/// Cortina de cambio de módulo: baja cubriendo toda la pantalla con el logo
-/// de Krezium, un destello marca el "listo" justo cuando el módulo ya se
-/// intercambió debajo (oculto), y la cortina sube revelándolo. Ver fases en
-/// _RootScaffoldState (_curtainDownEnd/_curtainUpStart).
-class _CurtainOverlay extends StatelessWidget {
-  final AnimationController controller;
+/// Transición de MÓDULO completo (Créditos ↔ Finanzas): patrón "Fade
+/// Through" de Material Motion — el mismo que usa Android nativo al cambiar
+/// entre secciones de primer nivel (bottom nav). El saliente se desvanece y
+/// encoge primero (0–30% del tiempo), luego el entrante aparece creciendo
+/// (30–100%): nunca se cruzan a la vista, hay un instante breve sin ninguno
+/// de los dos antes de que aparezca el nuevo. Sin overlay de pantalla
+/// completa ni logo — solo el contenido mismo transicionando.
+class _FadeThroughLayer extends StatelessWidget {
+  final bool active;
+  final Widget child;
 
-  const _CurtainOverlay({required this.controller});
+  const _FadeThroughLayer({required this.active, required this.child});
+
+  static const _duration = Duration(milliseconds: 300);
+  static const _exitFraction = 0.3;
 
   @override
   Widget build(BuildContext context) {
-    final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final v = controller.value;
-        final opacity = _RootScaffoldState.curtainOpacityAt(v);
-        if (opacity <= 0) return const SizedBox.shrink();
-
-        // Escala: entra creciendo hasta 1, se queda en 1 durante el hold
-        // (con un pulso suave encima) y sale encogiéndose de nuevo — un
-        // único movimiento de "respiración", no una cortina deslizándose
-        // más un brillo cruzando encima por separado.
-        double scale;
-        const downEnd = _RootScaffoldState._curtainDownEnd;
-        const upStart = _RootScaffoldState._curtainUpStart;
-        if (v < downEnd) {
-          scale = 0.85 + 0.15 * Curves.easeOutCubic.transform(v / downEnd);
-        } else if (v < upStart) {
-          final holdT = (v - downEnd) / (upStart - downEnd);
-          // Campana suave centrada en el hold: 1 → 1.06 → 1.
-          scale = 1 + 0.06 * (1 - (holdT * 2 - 1).abs());
-        } else {
-          final upT = (v - upStart) / (1 - upStart);
-          scale = 1 - 0.1 * Curves.easeInCubic.transform(upT);
-        }
-
-        return Opacity(
-          opacity: opacity,
-          child: Container(
-            color: kredit.bgCard,
-            child: Center(
-              child: Transform.scale(
-                scale: scale,
-                child: const AppLogo(height: 72),
-              ),
+    final curve = active
+        ? const Interval(_exitFraction, 1.0, curve: Curves.easeOut)
+        : const Interval(0.0, _exitFraction, curve: Curves.easeIn);
+    return IgnorePointer(
+      ignoring: !active,
+      child: ExcludeSemantics(
+        excluding: !active,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(
+            begin: active ? 1.0 : 0.0,
+            end: active ? 1.0 : 0.0,
+          ),
+          duration: _duration,
+          curve: curve,
+          builder: (context, t, builderChild) => Opacity(
+            opacity: t,
+            child: Transform.scale(
+              scale: 0.92 + 0.08 * t,
+              child: builderChild,
             ),
           ),
-        );
-      },
+          child: TickerMode(enabled: active, child: child),
+        ),
+      ),
     );
   }
 }
