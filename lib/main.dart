@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -150,9 +151,59 @@ class RootScaffold extends ConsumerStatefulWidget {
   ConsumerState<RootScaffold> createState() => _RootScaffoldState();
 }
 
-class _RootScaffoldState extends ConsumerState<RootScaffold> {
+class _RootScaffoldState extends ConsumerState<RootScaffold>
+    with TickerProviderStateMixin {
   final Set<int> _visitedCreditos = {0};
   final Set<int> _visitedFinanzas = {0};
+
+  // Cortina de cambio de módulo: baja cubriendo toda la pantalla con el
+  // logo de Krezium, el módulo se intercambia debajo (oculto) justo cuando
+  // termina de cubrir, un destello marca el "listo", y la cortina sube
+  // revelando el módulo ya cargado. Fases sobre un solo controller 0→1:
+  //   [0.00, 0.35] baja   [0.35, 0.60] destello (cubierta)   [0.60, 1.00] sube
+  late final AnimationController _curtainController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  bool _curtainSwitched = false;
+
+  static const _curtainDownEnd = 0.35;
+  static const _curtainUpStart = 0.60;
+
+  void _switchEntorno(Entorno next) {
+    if (_curtainController.isAnimating) return;
+    _curtainSwitched = false;
+    _curtainController.addListener(_onCurtainTick);
+    _curtainController.forward(from: 0).whenComplete(() {
+      _curtainController
+        ..removeListener(_onCurtainTick)
+        ..value = 0;
+    });
+    _pendingEntorno = next;
+  }
+
+  Entorno? _pendingEntorno;
+
+  void _onCurtainTick() {
+    if (_curtainSwitched) return;
+    if (_curtainController.value < _curtainDownEnd) return;
+    _curtainSwitched = true;
+    final next = _pendingEntorno;
+    if (next == null) return;
+    if (next == Entorno.creditos) {
+      ref.read(creditosTabProvider.notifier).state = 0;
+    } else {
+      ref.read(finanzasTabProvider.notifier).state = 0;
+    }
+    ref.read(entornoProvider.notifier).state = next;
+    savePreferredEntorno(next);
+  }
+
+  @override
+  void dispose() {
+    _curtainController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -346,22 +397,14 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
           // Ambos módulos quedan montados en el mismo Stack (igual criterio que
           // los tabs dentro de un módulo, vía _visitedCreditos/_visitedFinanzas):
           // cambiar de módulo nunca destruye su subtree ni reinicia su estado
-          // (scroll, controllers, providers ya cargados), solo alterna opacidad
-          // con _TabFadeLayer. La versión anterior usaba AnimatedSwitcher con
-          // key por entorno, que desmontaba el módulo saliente y reconstruía el
-          // entrante desde cero en cada cambio — de ahí la sensación de "recarga
-          // completa" aunque el fade corriera encima.
+          // (scroll, controllers, providers ya cargados). El intercambio en sí
+          // queda oculto detrás de la cortina (ver _CurtainOverlay más abajo),
+          // así que acá no hace falta ninguna animación propia de transición.
           Positioned.fill(
             child: Stack(
               children: [
-                // Grupo Créditos: slide+fade propio como UNIDAD (no por pantalla
-                // individual) para que se note que es un cambio de MÓDULO, no un
-                // fundido igual al de las pestañas internas. Sale hacia la
-                // izquierda al entrar a Finanzas, entra desde la izquierda al
-                // volver — dirección consistente con el ícono del botón central.
-                _ModuleSlideLayer(
+                _TabFadeLayer(
                   active: isCreditos && !isAccount,
-                  hiddenOffset: const Offset(-0.14, 0),
                   child: Stack(
                     children: [
                       for (var i = 0; i < creditosScreens.length; i++)
@@ -373,9 +416,8 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
                     ],
                   ),
                 ),
-                _ModuleSlideLayer(
+                _TabFadeLayer(
                   active: !isCreditos && !isAccount,
-                  hiddenOffset: const Offset(0.14, 0),
                   child: Stack(
                     children: [
                       for (var i = 0; i < finanzasScreens.length; i++)
@@ -392,6 +434,11 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
                   child: const AccountScreen(),
                 ),
               ],
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: _CurtainOverlay(controller: _curtainController),
             ),
           ),
         ],
@@ -442,15 +489,10 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
         selectedIndex: navIndex,
         onDestinationSelected: (i) {
           if (i == 2) {
-            // switch entorno — siempre vuelve a la vista inicial del módulo destino
-            final next = isCreditos ? Entorno.finanzas : Entorno.creditos;
-            if (next == Entorno.creditos) {
-              ref.read(creditosTabProvider.notifier).state = 0;
-            } else {
-              ref.read(finanzasTabProvider.notifier).state = 0;
-            }
-            ref.read(entornoProvider.notifier).state = next;
-            savePreferredEntorno(next);
+            // switch entorno — la cortina decide cuándo cambia realmente
+            // (oculta el intercambio) y siempre vuelve a la vista inicial.
+            HapticFeedback.mediumImpact();
+            _switchEntorno(isCreditos ? Entorno.finanzas : Entorno.creditos);
             return;
           }
           final tab = i > 2 ? i - 1 : i;
@@ -492,63 +534,65 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
 /// unidad, deliberadamente más marcada que el fundido plano de _TabFadeLayer
 /// que usan las pestañas internas, para que el cambio de módulo se sienta
 /// distinto — una transición de contexto, no un simple cambio de pestaña.
-class _ModuleSlideLayer extends StatelessWidget {
-  final bool active;
-  final Widget child;
-  final Offset hiddenOffset;
+/// Cortina de cambio de módulo: baja cubriendo toda la pantalla con el logo
+/// de Krezium, un destello marca el "listo" justo cuando el módulo ya se
+/// intercambió debajo (oculto), y la cortina sube revelándolo. Ver fases en
+/// _RootScaffoldState (_curtainDownEnd/_curtainUpStart).
+class _CurtainOverlay extends StatelessWidget {
+  final AnimationController controller;
 
-  const _ModuleSlideLayer({
-    required this.active,
-    required this.child,
-    required this.hiddenOffset,
-  });
-
-  static const _duration = Duration(milliseconds: 450);
+  const _CurtainOverlay({required this.controller});
 
   @override
   Widget build(BuildContext context) {
-    // Shared-axis (Material Motion): el saliente sale rápido y se encoge
-    // apenas empieza la transición (primer 60%); el entrante arranca con un
-    // pequeño retraso (desde 30%) y termina con un leve overshoot — da la
-    // sensación de "entra encima" en vez de las dos capas moviéndose a la
-    // par, que es lo que se sentía plano/raro en el slide simple anterior.
-    final curve = active
-        ? const Interval(0.30, 1.0, curve: Curves.easeOutCubic)
-        : const Interval(0.0, 0.60, curve: Curves.easeInCubic);
-    const visible = 1.0, hidden = 0.0;
-    return IgnorePointer(
-      ignoring: !active,
-      child: ExcludeSemantics(
-        excluding: !active,
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(
-            begin: active ? visible : hidden,
-            end: active ? visible : hidden,
-          ),
-          duration: _duration,
-          curve: curve,
-          builder: (context, t, builderChild) {
-            final size = MediaQuery.sizeOf(context);
-            return Opacity(
-              opacity: t,
-              child: Transform.translate(
-                offset: Offset(
-                  hiddenOffset.dx * (1 - t) * size.width,
-                  hiddenOffset.dy * (1 - t) * size.height,
+    final kredit = Theme.of(context).extension<AppThemeColors>()!;
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final v = controller.value;
+        if (v <= 0) return const SizedBox.shrink();
+
+        double y; // 1 = oculta arriba de la pantalla, 0 = cubriendo
+        if (v < _RootScaffoldState._curtainDownEnd) {
+          y = 1 - Curves.easeInCubic.transform(v / _RootScaffoldState._curtainDownEnd);
+        } else if (v < _RootScaffoldState._curtainUpStart) {
+          y = 0;
+        } else {
+          final upT = (v - _RootScaffoldState._curtainUpStart) /
+              (1 - _RootScaffoldState._curtainUpStart);
+          y = Curves.easeInCubic.transform(upT);
+        }
+
+        // Destello centrado en la ventana "cubierta" (el intercambio real ya
+        // ocurrió para entonces) — sube y baja de opacidad como una campana.
+        double flash = 0;
+        const holdStart = _RootScaffoldState._curtainDownEnd;
+        const holdEnd = _RootScaffoldState._curtainUpStart;
+        if (v >= holdStart && v <= holdEnd) {
+          final holdT = (v - holdStart) / (holdEnd - holdStart);
+          flash = (1 - (holdT * 2 - 1).abs()).clamp(0.0, 1.0);
+        }
+
+        final size = MediaQuery.sizeOf(context);
+        return Transform.translate(
+          offset: Offset(0, y * size.height),
+          child: Container(
+            color: kredit.bgCard,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const AppLogo(height: 56),
+                IgnorePointer(
+                  child: Opacity(
+                    opacity: flash * 0.55,
+                    child: Container(color: Colors.white),
+                  ),
                 ),
-                child: Transform.scale(
-                  scale: 0.94 + 0.06 * t,
-                  child: builderChild,
-                ),
-              ),
-            );
-          },
-          child: TickerMode(
-            enabled: active,
-            child: child,
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
