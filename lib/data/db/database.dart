@@ -927,6 +927,40 @@ class AppDatabase extends _$AppDatabase {
     return q.get();
   }
 
+  /// Ingresos/gastos de [mes] sumados sobre todas las cuentas activas en una
+  /// sola consulta (SUM...GROUP BY en SQLite) — reemplaza el patrón N+1 que
+  /// antes consultaba transacciones cuenta por cuenta y sumaba en Dart.
+  /// Igual que [calcularIngresosGastos]: una transferencia nunca cuenta.
+  Future<({double ingresos, double gastos})> getFinanceGlobalPeriodSummary(
+    String mes,
+  ) async {
+    final montoSum = financeTransactions.monto.sum();
+    final query = selectOnly(financeTransactions)
+      ..addColumns([financeTransactions.tipo, montoSum])
+      ..join([
+        innerJoin(
+          financeAccounts,
+          financeAccounts.id.equalsExp(financeTransactions.accountId),
+        ),
+      ])
+      ..where(
+        financeAccounts.activa.equals(true) &
+            financeTransactions.fecha.like('$mes%') &
+            financeTransactions.tipo.isIn(const ['ingreso', 'gasto']),
+      )
+      ..groupBy([financeTransactions.tipo]);
+
+    var ingresos = 0.0;
+    var gastos = 0.0;
+    for (final row in await query.get()) {
+      final tipo = row.read(financeTransactions.tipo);
+      final total = row.read(montoSum) ?? 0.0;
+      if (tipo == 'ingreso') ingresos = total;
+      if (tipo == 'gasto') gastos = total;
+    }
+    return (ingresos: ingresos, gastos: gastos);
+  }
+
   // --- Finance Budgets ---
 
   Future<List<FinanceBudgetRow>> getFinanceBudgets(int anio, int mes) =>

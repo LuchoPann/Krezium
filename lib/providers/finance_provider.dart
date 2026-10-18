@@ -138,19 +138,8 @@ class FinanceGlobalPeriodSummary {
 final financeGlobalPeriodSummaryProvider =
     FutureProvider.family<FinanceGlobalPeriodSummary, String>((ref, mes) async {
   final db = ref.watch(databaseProvider);
-  final cuentas = await db.getFinanceAccounts();
-  var ingresos = 0.0;
-  var gastos = 0.0;
-  for (final cuenta in cuentas) {
-    final rows = await db.getFinanceTransactionsInvolvingLibro(
-      libroId: cuenta.id, mes: mes,
-    );
-    final txs = rows.map(FinanceTransaction.fromRow).toList();
-    final ig = calcularIngresosGastos(txs, cuenta.id);
-    ingresos += ig.ingresos;
-    gastos += ig.gastos;
-  }
-  return FinanceGlobalPeriodSummary(ingresos: ingresos, gastos: gastos);
+  final r = await db.getFinanceGlobalPeriodSummary(mes);
+  return FinanceGlobalPeriodSummary(ingresos: r.ingresos, gastos: r.gastos);
 });
 
 // Historial completo del libro activo (sin recorte por mes) — incluye las
