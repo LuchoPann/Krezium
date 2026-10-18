@@ -332,15 +332,29 @@ class _StatementCardState extends State<_StatementCard> {
                 : isPaid
                     ? kredit.textTertiary
                     : kredit.textPrimary;
+    // Antes decía "HOY"/"PRÓXIMO" aunque la fecha real estuviera lejos —
+    // confuso, porque el resto de la app (Inicio) siempre cuenta en días.
+    // Acá también: cuántos días faltan para la fecha límite de pago real
+    // de ESE extracto (el ciclo abierto ya tiene la suya calculada desde
+    // que se crea, ver ensureOpenStatement), nunca una palabra fija.
+    final hoy = DateTime.now();
+    int diasHasta(DateTime fecha) => DateTime(fecha.year, fecha.month, fecha.day)
+        .difference(DateTime(hoy.year, hoy.month, hoy.day))
+        .inDays;
+    String diasLabel(int dias) {
+      if (dias < 0) return 'Vencido hace ${dias.abs()}d';
+      if (dias == 0) return 'Hoy';
+      if (dias == 1) return 'Mañana';
+      return 'En $dias días';
+    }
+
     final statusLabel = isFuture
-        ? 'PRÓXIMO'
+        ? 'Se genera en ${diasHasta(entry.cutoffDate)}d'
         : isOverdue
-            ? 'VENCIDO'
-            : isOpen
-                ? 'HOY'
-                : isPaid
-                    ? 'PAGADO'
-                    : 'PENDIENTE';
+            ? diasLabel(diasHasta(parseDateStr(entry.group!.statement.dueDate)))
+            : isPaid
+                ? 'PAGADO'
+                : diasLabel(diasHasta(parseDateStr(entry.group!.statement.dueDate)));
 
     final movements = entry.group?.movements.reversed.toList() ?? const <CardMovement>[];
     // El monto es la deuda real de ESE extracto — igual fórmula que usa el
