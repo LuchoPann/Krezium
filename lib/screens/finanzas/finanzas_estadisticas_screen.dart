@@ -114,19 +114,27 @@ class _FinanzasEstadisticasScreenState
         _libroActual = FinanceAccount.fromRow(rows.first);
       }
     }
-    _reloadTx();
+    // didChangeDependencies corre con cualquier InheritedWidget que cambie
+    // (Theme, MediaQuery, etc.), no solo al entrar a la pantalla — recargar
+    // ahí reconsultaba la DB entera en cada uno de esos cambios. _changeLibro
+    // ya dispara su propio _reloadTx() cuando el usuario cambia de cuenta.
+    _allTxFuture ??= _buildTxFuture();
   }
 
-  void _reloadTx() {
-    if (_libroActual == null) return;
+  Future<List<FinanceTransaction>>? _buildTxFuture() {
+    if (_libroActual == null) return null;
     final db = ref.read(databaseProvider);
-    _allTxFuture = db
+    return db
         .getFinanceTransactionsByLibro(
           libroId: _libroActual!.id,
           mes: null,
           tipo: null,
         )
         .then((rows) => rows.map(FinanceTransaction.fromRow).toList());
+  }
+
+  void _reloadTx() {
+    _allTxFuture = _buildTxFuture();
   }
 
   void _changeLibro(FinanceAccount libro) {

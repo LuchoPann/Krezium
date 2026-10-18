@@ -62,9 +62,15 @@ class BankLogoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSvg = assetPath.endsWith('.svg');
-    return isSvg
-        ? SvgPicture.asset(assetPath, height: height, fit: BoxFit.contain)
-        : Image.asset(assetPath, height: height, fit: BoxFit.contain);
+    if (isSvg) {
+      return SvgPicture.asset(assetPath, height: height, fit: BoxFit.contain);
+    }
+    // Los PNG de bancos vienen a 1376x768 pero se muestran a ~18px — sin
+    // cacheHeight, Flutter decodifica cada uno a resolución completa
+    // (~4MB) en cada frame en que aparece. cacheHeight limita el decode al
+    // tamaño real de pantalla.
+    final cacheHeight = (height * MediaQuery.devicePixelRatioOf(context)).round();
+    return Image.asset(assetPath, height: height, fit: BoxFit.contain, cacheHeight: cacheHeight);
   }
 }
 
