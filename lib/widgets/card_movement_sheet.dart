@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models/card_movement.dart';
@@ -47,8 +48,11 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
   final _formKey = GlobalKey<FormState>();
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  // Texto libre, no un selector con opciones fijas — cada usuario negocia
+  // sus propias cuotas con el banco o la tienda, no tiene sentido que la
+  // app le imponga un menú de valores "típicos".
+  final _installmentsCtrl = TextEditingController(text: '1');
   bool _saving = false;
-  String? _categoria;
   int _chargeInstallments = 1;
 
   @override
@@ -75,6 +79,7 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
     _amountCtrl.removeListener(_onAmountChanged);
     _amountCtrl.dispose();
     _noteCtrl.dispose();
+    _installmentsCtrl.dispose();
     super.dispose();
   }
 
@@ -93,7 +98,6 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
             widget.movementType,
             amount,
             _noteCtrl.text.trim(),
-            categoria: _categoria,
             chargeInstallments: widget.movementType == CardMovementType.charge && _chargeInstallments > 1
                 ? _chargeInstallments
                 : null,
@@ -264,6 +268,30 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // En una compra, el nombre es el primer dato — es lo que
+                  // identifica la compra en el extracto y en las cuotas
+                  // proyectadas (ver movements_tab.dart), así que es
+                  // obligatorio, no una nota opcional como en un pago.
+                  if (isCharge) ...[
+                    Text(
+                      'NOMBRE DE LA COMPRA',
+                      style: TextStyle(
+                        fontSize: AppTextSize.body,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.4,
+                        color: kredit.textTertiary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _noteCtrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(hintText: 'Ej. Supermercado, Tenis Nike'),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Ingresa el nombre de la compra' : null,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   Text(
                     'MONTO',
                     style: TextStyle(
@@ -274,83 +302,98 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _amountCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: const [CurrencyInputFormatter()],
-                    autofocus: true,
-                    style: const TextStyle(fontSize: AppTextSize.emphasis, fontWeight: FontWeight.w700),
-                    decoration: const InputDecoration(prefixText: '\$ ', hintText: 'Ej. 80.000'),
-                    validator: (v) {
-                      final n = double.tryParse(CurrencyInputFormatter.unformat(v ?? ''));
-                      if (n == null || n <= 0) return 'Ingresa un monto válido';
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _noteCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nota / Descripción',
-                      hintText: 'Ej. Compra en supermercado, Pago desde Nequi',
-                    ),
-                  ),
-                  if (isCharge) ...[
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int>(
-                      value: _chargeInstallments,
-                      decoration: const InputDecoration(
-                        labelText: 'Cuotas',
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: isCharge ? 2 : 1,
+                        child: TextFormField(
+                          controller: _amountCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: const [CurrencyInputFormatter()],
+                          autofocus: !isCharge,
+                          style: const TextStyle(fontSize: AppTextSize.emphasis, fontWeight: FontWeight.w700),
+                          decoration: const InputDecoration(prefixText: '\$ ', hintText: 'Ej. 80.000'),
+                          validator: (v) {
+                            final n = double.tryParse(CurrencyInputFormatter.unformat(v ?? ''));
+                            if (n == null || n <= 0) return 'Ingresa un monto válido';
+                            return null;
+                          },
+                        ),
                       ),
-                      items: [1, 2, 3, 6, 12, 18, 24, 36].map((n) => DropdownMenuItem(
-                        value: n,
-                        child: Text(n == 1 ? 'Pago único / rotativo' : '$n cuotas'),
-                      )).toList(),
-                      onChanged: (v) => setState(() => _chargeInstallments = v ?? 1),
-                    ),
-                    if (_chargeInstallments > 1) ...[
-                      const SizedBox(height: 8),
-                      Builder(builder: (ctx) {
-                        final amount = double.tryParse(CurrencyInputFormatter.unformat(_amountCtrl.text));
-                        if (amount == null || amount <= 0) return const SizedBox.shrink();
-                        double monthlyRate = 0;
-                        if (credit != null && credit.interestRate > 0) {
-                          monthlyRate = math.pow(1 + credit.interestRate / 100, 1 / 12).toDouble() - 1;
-                        }
-                        final double cuota;
-                        if (monthlyRate > 0) {
-                          final r = monthlyRate;
-                          final n = _chargeInstallments;
-                          cuota = (amount * r * math.pow(1 + r, n)) / (math.pow(1 + r, n) - 1);
-                        } else {
-                          cuota = amount / _chargeInstallments;
-                        }
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(8),
+                      if (isCharge) ...[
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 1,
+                          child: TextFormField(
+                            controller: _installmentsCtrl,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            decoration: const InputDecoration(labelText: 'Cuotas'),
+                            validator: (v) {
+                              final n = int.tryParse(v ?? '');
+                              if (n == null || n <= 0) return 'Inválida';
+                              return null;
+                            },
+                            onChanged: (v) {
+                              final n = int.tryParse(v);
+                              setState(() => _chargeInstallments = (n != null && n > 0) ? n : 1);
+                            },
                           ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline, size: AppIconSize.small,
-                                  color: Theme.of(ctx).colorScheme.primary),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Cuota mensual estimada: ${formatCOP(cuota)}',
-                                style: TextStyle(
-                                  fontSize: AppTextSize.body,
-                                  fontWeight: FontWeight.w600,
-                                  color: Theme.of(ctx).colorScheme.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
+                        ),
+                      ],
                     ],
+                  ),
+                  if (!isCharge) ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _noteCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nota / Descripción',
+                        hintText: 'Ej. Pago desde Nequi',
+                      ),
+                    ),
+                  ],
+                  if (isCharge && _chargeInstallments > 1) ...[
+                    const SizedBox(height: 8),
+                    Builder(builder: (ctx) {
+                      final amount = double.tryParse(CurrencyInputFormatter.unformat(_amountCtrl.text));
+                      if (amount == null || amount <= 0) return const SizedBox.shrink();
+                      double monthlyRate = 0;
+                      if (credit != null && credit.interestRate > 0) {
+                        monthlyRate = math.pow(1 + credit.interestRate / 100, 1 / 12).toDouble() - 1;
+                      }
+                      final double cuota;
+                      if (monthlyRate > 0) {
+                        final r = monthlyRate;
+                        final n = _chargeInstallments;
+                        cuota = (amount * r * math.pow(1 + r, n)) / (math.pow(1 + r, n) - 1);
+                      } else {
+                        cuota = amount / _chargeInstallments;
+                      }
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, size: AppIconSize.small,
+                                color: Theme.of(ctx).colorScheme.primary),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Cuota mensual estimada: ${formatCOP(cuota)}',
+                              style: TextStyle(
+                                fontSize: AppTextSize.body,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(ctx).colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
                   ],
                 ],
               ),
@@ -390,44 +433,6 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
                   ),
               ],
             ),
-            if (isCharge) ...[
-              const SizedBox(height: 14),
-              Text(
-                'CATEGORÍA',
-                style: TextStyle(
-                  fontSize: AppTextSize.body,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                  color: kredit.textTertiary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  for (final cat in const [
-                    ('alimentacion', '🍔', 'Alimentación'),
-                    ('transporte', '🚌', 'Transporte'),
-                    ('salud', '💊', 'Salud'),
-                    ('ropa', '👕', 'Ropa'),
-                    ('entretenimiento', '🎬', 'Entretenimiento'),
-                    ('servicios', '💡', 'Servicios'),
-                    ('viajes', '✈️', 'Viajes'),
-                    ('otro', '📦', 'Otro'),
-                  ])
-                    _CategoriaChip(
-                      value: cat.$1,
-                      emoji: cat.$2,
-                      label: cat.$3,
-                      selected: _categoria == cat.$1,
-                      onTap: () => setState(() {
-                        _categoria = _categoria == cat.$1 ? null : cat.$1;
-                      }),
-                    ),
-                ],
-              ),
-            ],
             if (overlimitBy != null) ...[
               const SizedBox(height: 14),
               Container(
@@ -472,47 +477,3 @@ class _CardMovementSheetState extends ConsumerState<CardMovementSheet> {
   }
 }
 
-class _CategoriaChip extends StatelessWidget {
-  final String value;
-  final String emoji;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _CategoriaChip({
-    required this.value,
-    required this.emoji,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.chip),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: selected ? accent.withValues(alpha: 0.18) : kredit.bgCard,
-          borderRadius: BorderRadius.circular(AppRadius.chip),
-          border: Border.all(
-            color: selected ? accent : kredit.borderCard,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Text(
-          '$emoji $label',
-          style: TextStyle(
-            fontSize: AppTextSize.body,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? accent : kredit.textSecondary,
-          ),
-        ),
-      ),
-    );
-  }
-}

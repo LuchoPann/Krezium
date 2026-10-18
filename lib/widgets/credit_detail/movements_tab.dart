@@ -472,8 +472,8 @@ class _StatementCardState extends State<_StatementCard> {
                                 Expanded(
                                   child: Text(
                                     line.purchaseNote.isNotEmpty
-                                        ? '${line.purchaseNote} · cuota ${line.installmentNumber}/${line.totalInstallments}'
-                                        : 'Cuota ${line.installmentNumber}/${line.totalInstallments}',
+                                        ? '${line.purchaseNote} · ${line.installmentNumber}/${line.totalInstallments}'
+                                        : '${line.installmentNumber}/${line.totalInstallments}',
                                     style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -570,43 +570,33 @@ class _MovementTile extends ConsumerWidget {
         child: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
       ),
       child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 11),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      // Texto plano, sin ícono — mismo lenguaje visual que la lista de
+      // cuotas proyectadas de un extracto futuro (ver _StatementCard),
+      // en vez del tratamiento "más grande" con ícono que tenía antes.
       child: Row(
         children: [
-          Icon(
-            _iconFor(m.type),
-            size: AppIconSize.small,
-            color: isCredit ? accent : kredit.textTertiary,
-          ),
-          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _labelFor(m.type),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: AppTextSize.body,
-                    color: kredit.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  m.note.isNotEmpty ? m.note : formatDate(m.date),
-                  style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary),
+                  purchase != null
+                      ? (purchase.note.isNotEmpty ? purchase.note : _labelFor(m.type))
+                      : (m.note.isNotEmpty ? m.note : _labelFor(m.type)),
+                  style: TextStyle(fontSize: AppTextSize.body, color: kredit.textPrimary),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (purchase != null)
                   Text(
-                    'Cuota ${m.installmentIndex ?? purchase.installmentsBilled}/${purchase.installments}',
-                    style: TextStyle(fontSize: 11, color: kredit.textTertiary),
+                    '${m.installmentIndex ?? purchase.installmentsBilled}/${purchase.installments}',
+                    style: TextStyle(fontSize: AppTextSize.caption, color: kredit.textTertiary),
                   )
                 else if (m.type == CardMovementType.charge && m.chargeInstallments != null && m.chargeInstallments! > 1)
                   Text(
                     '${m.chargeInstallments} cuotas',
-                    style: TextStyle(fontSize: 11, color: kredit.textTertiary),
+                    style: TextStyle(fontSize: AppTextSize.caption, color: kredit.textTertiary),
                   ),
               ],
             ),
@@ -615,7 +605,7 @@ class _MovementTile extends ConsumerWidget {
           Text(
             '${isCredit ? '-' : '+'}${formatCOP(m.amount)}',
             style: TextStyle(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               fontSize: AppTextSize.body,
               color: isCredit ? accent : kredit.textPrimary,
             ),
@@ -624,19 +614,6 @@ class _MovementTile extends ConsumerWidget {
       ),
       ),
     );
-  }
-
-  IconData _iconFor(String type) {
-    switch (type) {
-      case CardMovementType.payment:
-        return Icons.arrow_downward;
-      case CardMovementType.interest:
-        return Icons.percent;
-      case CardMovementType.fee:
-        return Icons.receipt_long;
-      default:
-        return Icons.arrow_upward;
-    }
   }
 
   String _labelFor(String type) {
