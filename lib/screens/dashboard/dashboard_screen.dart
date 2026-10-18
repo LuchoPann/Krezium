@@ -561,40 +561,48 @@ class _PaymentCoachCard extends ConsumerWidget {
               ],
             ),
           ] else ...[
-            _NextPaymentBlock(
-              item: item,
-              recommendation: recommendation,
-              urgencyColor: urgencyColor,
-              accent: accent,
-              fgOnAccent: fgOnAccent,
-              onTogglePaid: item.installment != null
-                  ? () {
-                      HapticFeedback.mediumImpact();
-                      ref.read(creditsProvider.notifier).toggleInstallmentPaid(
-                            item.credit.id,
-                            item.installment!.number,
-                          );
-                    }
-                  // Esta tarjeta solo aparece como "siguiente compromiso"
-                  // cuando ya tiene un extracto exigible (item.amount ya es
-                  // ese monto, no la deuda total — ver PendingPayment.amount).
-                  : (item.credit is CardCredit)
-                      ? () => _confirmarYMarcarExtractoPagado(
-                          context, ref, item.credit as CardCredit, item.amount)
-                      : null,
+            Builder(builder: (context) {
               // Pago cercano (≤6 días de diferencia con el principal) —
               // solo entre pagos reales (cuotas o extractos exigibles),
               // nunca un ciclo de tarjeta todavía abierto (ver
-              // encontrarPagoCercano).
-              cercano: encontrarPagoCercano(upcoming, item)?.cercano,
-            ),
+              // encontrarPagoCercano). Se calcula una sola vez acá para
+              // poder excluirlo también de la lista de abajo.
+              final cercano = encontrarPagoCercano(upcoming, item)?.cercano;
+              return _NextPaymentBlock(
+                item: item,
+                recommendation: recommendation,
+                urgencyColor: urgencyColor,
+                accent: accent,
+                fgOnAccent: fgOnAccent,
+                onTogglePaid: item.installment != null
+                    ? () {
+                        HapticFeedback.mediumImpact();
+                        ref.read(creditsProvider.notifier).toggleInstallmentPaid(
+                              item.credit.id,
+                              item.installment!.number,
+                            );
+                      }
+                    // Esta tarjeta solo aparece como "siguiente compromiso"
+                    // cuando ya tiene un extracto exigible (item.amount ya es
+                    // ese monto, no la deuda total — ver PendingPayment.amount).
+                    : (item.credit is CardCredit)
+                        ? () => _confirmarYMarcarExtractoPagado(
+                            context, ref, item.credit as CardCredit, item.amount)
+                        : null,
+                cercano: cercano,
+              );
+            }),
           ],
 
-          // ── Lista de créditos (sin el crédito ya mostrado arriba) ────────
+          // ── Lista de créditos (sin el crédito ya mostrado arriba ni el
+          // compromiso cercano, para no repetir lo que ya se ve arriba) ────
           _CreditsListSection(
             credits: credits,
             upcoming: upcoming,
-            priorityCreditId: item?.credit.id,
+            excludedCreditIds: {
+              if (item != null) item.credit.id,
+              if (item != null) encontrarPagoCercano(upcoming, item)?.cercano.credit.id,
+            }.whereType<String>().toSet(),
           ),
         ],
       ),
@@ -841,7 +849,8 @@ class _CompromisoCercano extends StatelessWidget {
                   relativeLabel,
                   style: TextStyle(
                     fontSize: AppTextSize.body,
-                    color: kredit.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
                   ),
                 ),
               ],
@@ -1312,26 +1321,27 @@ class _CreditListRow extends StatelessWidget {
 }
 
 /// Lista de créditos ordenada por urgencia — vive dentro del coach card.
-/// [priorityCreditId]: ID del crédito ya mostrado en "Siguiente compromiso";
-/// se excluye de esta lista para evitar duplicados.
+/// [excludedCreditIds]: créditos ya mostrados arriba (el principal y, si
+/// aplica, su compromiso cercano) — se excluyen de esta lista para no
+/// repetir lo mismo dos veces en la misma pantalla.
 class _CreditsListSection extends ConsumerWidget {
   final List<Credit> credits;
   final List<PendingPayment> upcoming;
-  final String? priorityCreditId;
+  final Set<String> excludedCreditIds;
 
   const _CreditsListSection({
     required this.credits,
     required this.upcoming,
-    this.priorityCreditId,
+    this.excludedCreditIds = const {},
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
 
-    final displayCredits = priorityCreditId == null
+    final displayCredits = excludedCreditIds.isEmpty
         ? credits
-        : credits.where((c) => c.id != priorityCreditId).toList();
+        : credits.where((c) => !excludedCreditIds.contains(c.id)).toList();
 
     if (displayCredits.isEmpty) return const SizedBox.shrink();
 
