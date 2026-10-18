@@ -828,11 +828,24 @@ class _CreditListRow extends StatelessWidget {
       metricValue = '$remaining';
     }
 
-    // Urgencia del próximo pago
+    // Urgencia del próximo pago. Para tarjetas sin extracto exigible
+    // todavía, cuenta igual hasta la fecha límite del ciclo abierto
+    // (proximoExtractoDueDate) — el usuario pidió ver el contador desde
+    // ya, no solo cuando el extracto ya está cerrado.
+    int? daysLeft;
+    if (nextPayment != null) {
+      daysLeft = nextPayment!.daysUntilDue();
+    } else if (isCard) {
+      final due = proximoExtractoDueDate(credit as CardCredit);
+      final today = DateTime.now();
+      daysLeft = DateTime(due.year, due.month, due.day)
+          .difference(DateTime(today.year, today.month, today.day))
+          .inDays;
+    }
+
     Color? urgencyColor;
     String? urgencyLabel;
-    if (nextPayment != null) {
-      final daysLeft = nextPayment!.daysUntilDue();
+    if (daysLeft != null) {
       if (daysLeft < 0) {
         urgencyColor = AppColors.danger;
         urgencyLabel = 'Vencido hace ${daysLeft.abs()}d';

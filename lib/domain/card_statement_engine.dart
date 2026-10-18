@@ -393,6 +393,19 @@ double proximoExtractoAmount(CardCredit credit) {
   return _round2(computeStatementTotal(open, credit.movements));
 }
 
+/// Fecha límite de pago de "el extracto que se avecina" (ver
+/// [proximoExtractoAmount]): la del exigible si ya existe, o la del ciclo
+/// abierto actual si no — ese ciclo ya trae su dueDate calculada desde
+/// que se crea ([ensureOpenStatement]), así que no hace falta proyectar
+/// nada nuevo.
+DateTime proximoExtractoDueDate(CardCredit credit) {
+  final summaryDueDate = getPayableSummary(credit).dueDate;
+  if (summaryDueDate != null) return summaryDueDate;
+  final open = credit.statements
+      .firstWhere((s) => s.status == CardStatementStatus.open);
+  return parseDateStr(open.dueDate);
+}
+
 PayableSummary getPayableSummary(CardCredit credit) {
   final unpaidClosed = credit.statements
       .where((s) => s.status == CardStatementStatus.closed)

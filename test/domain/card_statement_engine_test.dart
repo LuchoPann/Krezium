@@ -601,4 +601,28 @@ void main() {
       expect(proximoExtractoAmount(credit), 0);
     });
   });
+
+  group('proximoExtractoDueDate', () {
+    test('sin extracto exigible, cuenta hasta la fecha límite del ciclo '
+        'abierto actual (ya calculada desde que se crea el ciclo)', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+
+      expect(proximoExtractoDueDate(credit), parseDateStr(open.dueDate));
+    });
+
+    test('con extracto exigible, cuenta hasta SU fecha límite, no la del '
+        'ciclo abierto (que es un periodo posterior)', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(
+        date: '2026-01-12', type: CardMovementType.charge, amount: 100000,
+        statementId: open.id,
+      ));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+      final closed = credit.statements.firstWhere((s) => s.status == CardStatementStatus.closed);
+
+      expect(proximoExtractoDueDate(credit), parseDateStr(closed.dueDate));
+    });
+  });
 }
