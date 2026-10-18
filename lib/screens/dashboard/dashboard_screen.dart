@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/card_movement.dart';
 import '../../data/models/credit.dart';
+import '../../domain/card_statement_engine.dart';
 import '../../domain/recommendations.dart';
 import '../../providers/credits_provider.dart';
 import '../../providers/dashboard_provider.dart';
@@ -814,11 +815,13 @@ class _CreditListRow extends StatelessWidget {
 
     final String metricValue;
     if (isCard) {
-      // Si hay un extracto exigible (ya cerrado, esperando pago), mostrar
-      // ESO — no la deuda total de la tarjeta, que incluye compras que
-      // todavía ni se facturan. Sin extracto exigible, no hay nada puntual
-      // que pagar todavía, así que ahí sí tiene sentido mostrar el saldo.
-      metricValue = formatCOP(nextPayment?.amount ?? (credit as CardCredit).currentBalance);
+      // Nunca la deuda total (currentBalance incluye compras a plazos que
+      // ni se han facturado) — siempre "el extracto que se avecina": el
+      // exigible si ya lo hay, o lo acumulado en el ciclo abierto si
+      // todavía no. Así el usuario siempre ve lo que de verdad va a pagar
+      // en la próxima fecha, nunca una cifra que no corresponde a ningún
+      // pago puntual real.
+      metricValue = formatCOP(proximoExtractoAmount(credit as CardCredit));
     } else {
       final remaining =
           (credit as LoanCredit).installments.where((i) => !i.paid).length;

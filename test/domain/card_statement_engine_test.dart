@@ -562,4 +562,43 @@ void main() {
       expect(future, isEmpty);
     });
   });
+
+  group('proximoExtractoAmount', () {
+    test('sin extracto exigible, muestra lo acumulado en el ciclo abierto '
+        '(el que se convertirá en el próximo extracto a pagar)', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(
+        date: '2026-01-12', type: CardMovementType.charge, amount: 75000,
+        statementId: open.id,
+      ));
+
+      expect(proximoExtractoAmount(credit), 75000);
+    });
+
+    test('con extracto ya exigible (cerrado, sin pagar), ese es "lo que se '
+        'avecina" — no el ciclo abierto actual, que es un periodo distinto', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      final open = ensureOpenStatement(credit, DateTime(2026, 1, 10));
+      credit.movements.add(CardMovement(
+        date: '2026-01-12', type: CardMovementType.charge, amount: 100000,
+        statementId: open.id,
+      ));
+      closeCurrentCycleIfDue(credit, DateTime(2026, 1, 16));
+      final newOpen = credit.statements.firstWhere((s) => s.status == CardStatementStatus.open);
+      credit.movements.add(CardMovement(
+        date: '2026-01-20', type: CardMovementType.charge, amount: 20000,
+        statementId: newOpen.id,
+      ));
+
+      expect(proximoExtractoAmount(credit), 100000);
+    });
+
+    test('tarjeta recién creada sin ningún movimiento: el ciclo abierto da 0', () {
+      final credit = CardCredit(id: 'c1', name: 'Test', lender: 'Bank', cutoffDay: 15);
+      ensureOpenStatement(credit, DateTime(2026, 1, 10));
+
+      expect(proximoExtractoAmount(credit), 0);
+    });
+  });
 }

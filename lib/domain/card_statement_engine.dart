@@ -378,6 +378,21 @@ class PayableSummary {
   });
 }
 
+/// "El extracto que se avecina": si ya hay uno exigible (cerrado, sin
+/// pagar), ese es el monto — es el próximo que realmente hay que pagar en
+/// su fecha límite. Si no, es lo acumulado en el ciclo abierto actual, que
+/// se convertirá en el próximo extracto al cerrar — nunca la deuda total
+/// de la tarjeta (eso incluye compras a plazos que aún ni se facturan).
+double proximoExtractoAmount(CardCredit credit) {
+  final exigible = getPayableSummary(credit).exigible;
+  if (exigible > 0) return exigible;
+  final open = credit.statements
+      .where((s) => s.status == CardStatementStatus.open)
+      .firstOrNull;
+  if (open == null) return 0;
+  return _round2(computeStatementTotal(open, credit.movements));
+}
+
 PayableSummary getPayableSummary(CardCredit credit) {
   final unpaidClosed = credit.statements
       .where((s) => s.status == CardStatementStatus.closed)
