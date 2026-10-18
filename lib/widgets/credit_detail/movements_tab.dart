@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/card_movement.dart';
@@ -82,6 +83,19 @@ class MovementsTab extends ConsumerWidget {
       for (final g in groups) _TimelineEntry.real(g),
     ];
     final defaultExpandedIndex = entries.indexWhere((e) => e.isOpen);
+
+    // El check de "marcar pagado" solo se ofrece en el extracto cerrado más
+    // antiguo sin pagar — es el único que un pago de ese monto exacto deja
+    // en cero de forma inequívoca (el motor de pago aplica FIFO desde el
+    // más viejo). Los demás (si hubiera varios atrasados) solo muestran su
+    // estado, sin acción — pagarlos "fuera de orden" no tiene un resultado
+    // bien definido.
+    final unpaidClosed = credit.statements
+        .where((s) => s.status == CardStatementStatus.closed)
+        .toList()
+      ..sort((a, b) => a.cutoffDate.compareTo(b.cutoffDate));
+    final primerExigibleId = unpaidClosed.isEmpty ? null : unpaidClosed.first.id;
+    final montoExigibleTotal = getPayableSummary(credit).exigible;
 
     return Column(
       children: [
@@ -176,6 +190,9 @@ class MovementsTab extends ConsumerWidget {
                           collapsible: entries.length > 1,
                           initiallyExpanded:
                               i == (defaultExpandedIndex >= 0 ? defaultExpandedIndex : 0),
+                          esElPrimerExigible: entries[i].group != null &&
+                              entries[i].group!.statement.id == primerExigibleId,
+                          montoAPagar: montoExigibleTotal,
                         ),
                       ),
                   ],
@@ -184,6 +201,32 @@ class MovementsTab extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// Marcar un extracto como pagado registra un pago real (motor FIFO), a
+/// diferencia de un toggle reversible — por eso pide confirmación explícita.
+Future<void> _confirmarYMarcarExtractoPagado(
+  BuildContext context,
+  WidgetRef ref,
+  CardCredit card,
+  double amount,
+) async {
+  final confirmado = await showAppConfirmSheet(
+    context,
+    title: 'Marcar extracto como pagado',
+    message:
+        '¿Marcar este extracto como pagado por ${formatCOP(amount)}? '
+        'Esto registra un pago real por ese monto.',
+    confirmLabel: 'Marcar pagado',
+  );
+  if (!confirmado) return;
+  HapticFeedback.mediumImpact();
+  await ref.read(creditsProvider.notifier).registerMovement(
+        card.id,
+        CardMovementType.payment,
+        amount,
+        'Extracto marcado como pagado',
+      );
 }
 
 const _monthsEs = [
@@ -220,6 +263,10 @@ class _StatementCard extends StatefulWidget {
   final _TimelineEntry entry;
   final bool collapsible;
   final bool initiallyExpanded;
+  // Solo true en el extracto cerrado más antiguo sin pagar — el único que
+  // ofrece el check de "marcar pagado" (ver comentario en MovementsTab).
+  final bool esElPrimerExigible;
+  final double montoAPagar;
 
   const _StatementCard({
     required this.credit,
@@ -227,6 +274,8 @@ class _StatementCard extends StatefulWidget {
     required this.entry,
     required this.collapsible,
     required this.initiallyExpanded,
+    required this.esElPrimerExigible,
+    required this.montoAPagar,
   });
 
   @override
@@ -327,6 +376,27 @@ class _StatementCardState extends State<_StatementCard> {
                           ),
                         ),
                         const Spacer(),
+                        // Check de "marcar pagado" — mismo lenguaje visual
+                        // que el de cuotas de préstamo (schedule_tab.dart),
+                        // solo en el extracto cerrado más antiguo sin pagar.
+                        if (widget.esElPrimerExigible && (isOverdue || (!isFuture && !isOpen && !isPaid)))
+                          Consumer(builder: (ctx, ref, _) {
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(AppRadius.chip),
+                              onTap: () => _confirmarYMarcarExtractoPagado(
+                                ctx, ref, widget.credit, widget.montoAPagar),
+                              child: Container(
+                                width: 22,
+                                height: 22,
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: statusColor, width: 1.5),
+                                  borderRadius: BorderRadius.circular(AppRadius.chip),
+                                ),
+                                child: Icon(Icons.check, size: 14, color: statusColor),
+                              ),
+                            );
+                          }),
                         if (widget.collapsible)
                           AnimatedRotation(
                             turns: _expanded ? 0.5 : 0,

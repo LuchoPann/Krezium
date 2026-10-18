@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/models/card_movement.dart';
 import '../../data/models/credit.dart';
 import '../../domain/recommendations.dart';
 import '../../providers/credits_provider.dart';
@@ -13,6 +14,7 @@ import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/credit_display_utils.dart';
 import '../../domain/bank_detector.dart';
+import '../../widgets/krezium_bottom_dialogs.dart';
 import '../../widgets/krezium_logo.dart';
 import '../../widgets/krezium_section_card.dart';
 import '../../widgets/progress_ring.dart';
@@ -564,7 +566,7 @@ class _PaymentCoachCard extends ConsumerWidget {
               urgencyColor: urgencyColor,
               accent: accent,
               fgOnAccent: fgOnAccent,
-              onTogglePaid: (item.installment != null)
+              onTogglePaid: item.installment != null
                   ? () {
                       HapticFeedback.mediumImpact();
                       ref.read(creditsProvider.notifier).toggleInstallmentPaid(
@@ -572,7 +574,13 @@ class _PaymentCoachCard extends ConsumerWidget {
                             item.installment!.number,
                           );
                     }
-                  : null,
+                  // Esta tarjeta solo aparece como "siguiente compromiso"
+                  // cuando ya tiene un extracto exigible (item.amount ya es
+                  // ese monto, no la deuda total — ver PendingPayment.amount).
+                  : (item.credit is CardCredit)
+                      ? () => _confirmarYMarcarExtractoPagado(
+                          context, ref, item.credit as CardCredit, item.amount)
+                      : null,
             ),
           ],
 
@@ -712,7 +720,9 @@ class _NextPaymentBlock extends StatelessWidget {
             if (onTogglePaid != null) ...[
               const SizedBox(width: 10),
               IconButton.outlined(
-                tooltip: 'Marcar cuota como pagada',
+                tooltip: item.isLoanInstallment
+                    ? 'Marcar cuota como pagada'
+                    : 'Marcar extracto como pagado',
                 onPressed: onTogglePaid,
                 icon: const Icon(Icons.done, size: AppIconSize.small),
                 style: IconButton.styleFrom(
@@ -727,6 +737,33 @@ class _NextPaymentBlock extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Marcar un extracto como pagado registra un pago real (motor FIFO), a
+/// diferencia del toggle de cuota de préstamo — por eso pide confirmación
+/// explícita antes de aplicarlo.
+Future<void> _confirmarYMarcarExtractoPagado(
+  BuildContext context,
+  WidgetRef ref,
+  CardCredit card,
+  double amount,
+) async {
+  final confirmado = await showAppConfirmSheet(
+    context,
+    title: 'Marcar extracto como pagado',
+    message:
+        '¿Marcar el extracto de "${card.name}" como pagado por ${formatCOP(amount)}? '
+        'Esto registra un pago real por ese monto.',
+    confirmLabel: 'Marcar pagado',
+  );
+  if (!confirmado) return;
+  HapticFeedback.mediumImpact();
+  await ref.read(creditsProvider.notifier).registerMovement(
+        card.id,
+        CardMovementType.payment,
+        amount,
+        'Extracto marcado como pagado',
+      );
 }
 
 Color _severityColor(
@@ -750,12 +787,17 @@ class _CreditListRow extends StatelessWidget {
   final VoidCallback onTap;
   final PendingPayment? nextPayment;
   final void Function(String creditId, int installmentNumber)? onTogglePaid;
+  // Marca el extracto exigible de una tarjeta como pagado (registra un pago
+  // real vía el motor FIFO) — a diferencia de onTogglePaid (cuota de
+  // préstamo), esto no es reversible con un segundo toque.
+  final Future<void> Function(CardCredit credit, double amount)? onMarkCardPaid;
 
   const _CreditListRow({
     required this.credit,
     required this.onTap,
     this.nextPayment,
     this.onTogglePaid,
+    this.onMarkCardPaid,
   });
 
   @override
@@ -772,7 +814,11 @@ class _CreditListRow extends StatelessWidget {
 
     final String metricValue;
     if (isCard) {
-      metricValue = formatCOP((credit as CardCredit).currentBalance);
+      // Si hay un extracto exigible (ya cerrado, esperando pago), mostrar
+      // ESO — no la deuda total de la tarjeta, que incluye compras que
+      // todavía ni se facturan. Sin extracto exigible, no hay nada puntual
+      // que pagar todavía, así que ahí sí tiene sentido mostrar el saldo.
+      metricValue = formatCOP(nextPayment?.amount ?? (credit as CardCredit).currentBalance);
     } else {
       final remaining =
           (credit as LoanCredit).installments.where((i) => !i.paid).length;
@@ -814,6 +860,12 @@ class _CreditListRow extends StatelessWidget {
         nextPayment != null &&
         nextPayment!.installment != null &&
         onTogglePaid != null;
+    // Tarjetas: siempre se muestra algo en esta posición — deshabilitado
+    // en gris mientras el ciclo sigue abierto (nada que pagar todavía) y
+    // habilitado en cuanto hay un extracto exigible (cerrado, con fecha
+    // límite de pago ya corriendo).
+    final showCardPayAction = isCard && onMarkCardPaid != null;
+    final cardExigible = nextPayment?.amount;
 
     return InkWell(
       onTap: onTap,
@@ -931,6 +983,42 @@ class _CreditListRow extends StatelessWidget {
                             ),
                           );
                         })
+                      else if (showCardPayAction)
+                        Builder(builder: (ctx) {
+                          final accentColor = Theme.of(ctx).colorScheme.primary;
+                          final fgColor = legibleForegroundOn(accentColor);
+                          final habilitado = cardExigible != null;
+                          return InkWell(
+                            onTap: habilitado
+                                ? () => onMarkCardPaid!(
+                                    credit as CardCredit, cardExigible)
+                                : null,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                // Gris mientras el ciclo sigue abierto (nada
+                                // que pagar todavía) — mismo acento que el
+                                // resto de la app solo cuando sí hay algo
+                                // exigible para pagar.
+                                color: habilitado
+                                    ? accentColor
+                                    : kredit.borderCard.withValues(alpha: 0.4),
+                                borderRadius: BorderRadius.circular(AppRadius.chip),
+                              ),
+                              child: Text(
+                                habilitado ? 'Marcar pago' : 'Aún no toca pagar',
+                                style: TextStyle(
+                                  fontSize: AppTextSize.body,
+                                  fontWeight: FontWeight.w700,
+                                  color: habilitado ? fgColor : kredit.textTertiary,
+                                ),
+                              ),
+                            ),
+                          );
+                        })
                       else
                         Icon(
                           Icons.chevron_right,
@@ -997,6 +1085,8 @@ class _CreditsListSection extends ConsumerWidget {
             nextPayment: nextFor(sorted[i]),
             onTogglePaid:
                 ref.read(creditsProvider.notifier).toggleInstallmentPaid,
+            onMarkCardPaid: (card, amount) =>
+                _confirmarYMarcarExtractoPagado(context, ref, card, amount),
             onTap: () => Navigator.of(context).pushNamed(
               '/credit-detail',
               arguments: sorted[i].id,
