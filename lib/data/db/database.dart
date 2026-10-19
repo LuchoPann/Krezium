@@ -851,6 +851,22 @@ class AppDatabase extends _$AppDatabase {
   Future<void> upsertFinanceCategory(FinanceCategoriesCompanion row) =>
       into(financeCategories).insertOnConflictUpdate(row);
 
+  /// Oculta una categoría personalizada (archivada=true, igual patrón que
+  /// archiveFinanceAccount) — nunca un borrado físico: las transacciones
+  /// existentes que la usan deben seguir mostrándola en su historial. Solo
+  /// aplica a categorías personalizadas (las predeterminadas viven en
+  /// `catalogoFinanzas`, en memoria, nunca en esta tabla — no hay fila que
+  /// archivar para ellas). Si [id] es una categoría padre, sus
+  /// subcategorías personalizadas se archivan en cascada: de lo contrario
+  /// quedarían huérfanas (nunca aparecerían bajo ningún padre visible) sin
+  /// estar realmente eliminadas.
+  Future<void> archiveFinanceCategory(String id) async {
+    await (update(financeCategories)..where((t) => t.id.equals(id)))
+        .write(const FinanceCategoriesCompanion(archivada: Value(true)));
+    await (update(financeCategories)..where((t) => t.parentId.equals(id)))
+        .write(const FinanceCategoriesCompanion(archivada: Value(true)));
+  }
+
   // --- Finance Transactions ---
 
   Future<List<FinanceTransactionRow>> getFinanceTransactions({

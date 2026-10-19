@@ -79,6 +79,30 @@ class _CategoriaSelectorSheetState
     }
   }
 
+  // Solo categorías personalizadas llegan acá — las predeterminadas nunca
+  // muestran el botón. Archiva en vez de borrar físicamente: las
+  // transacciones existentes conservan la categoría en su historial.
+  Future<void> _confirmarEliminarCategoria(CatalogoCategoria cat) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar categoría'),
+        content: Text(
+          '¿Eliminar "${cat.nombre}"? Las transacciones ya registradas con '
+          'esta categoría la conservan en su historial, pero no podrás '
+          'elegirla de nuevo.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    if (confirmado != true || !mounted) return;
+    await ref.read(databaseProvider).archiveFinanceCategory(cat.id);
+    ref.invalidate(allFinanceCategoriesProvider);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -195,13 +219,23 @@ class _CategoriaSelectorSheetState
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w600),
                               ),
-                              trailing: hijos.isEmpty
-                                  ? null
-                                  : Icon(
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (padre.esPersonalizada)
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline),
+                                      tooltip: 'Eliminar categoría',
+                                      onPressed: () => _confirmarEliminarCategoria(padre),
+                                    ),
+                                  if (hijos.isNotEmpty)
+                                    Icon(
                                       isExpanded
                                           ? Icons.expand_less
                                           : Icons.expand_more,
                                     ),
+                                ],
+                              ),
                               onTap: () {
                                 setState(() {
                                   if (isExpanded) {
@@ -229,6 +263,13 @@ class _CategoriaSelectorSheetState
                                               color: _colorPorTipo(hijo.tipo),
                                             ),
                                             title: Text(hijo.nombre),
+                                            trailing: hijo.esPersonalizada
+                                                ? IconButton(
+                                                    icon: const Icon(Icons.delete_outline),
+                                                    tooltip: 'Eliminar categoría',
+                                                    onPressed: () => _confirmarEliminarCategoria(hijo),
+                                                  )
+                                                : null,
                                             onTap: () {
                                               HapticFeedback.lightImpact();
                                               Navigator.of(context)

@@ -1456,6 +1456,31 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
     }
   }
 
+  // Solo categorías personalizadas llegan acá (ver esPersonalizada en los
+  // call sites) — las predeterminadas nunca muestran el botón de eliminar.
+  // Archiva en vez de borrar físicamente: las transacciones que ya la usan
+  // siguen mostrándola en su historial.
+  Future<void> _confirmarEliminarCategoria(CatalogoCategoria cat) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar categoría'),
+        content: Text(
+          '¿Eliminar "${cat.nombre}"? Las transacciones ya registradas con '
+          'esta categoría la conservan en su historial, pero no podrás '
+          'elegirla de nuevo.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    if (confirmado != true || !mounted) return;
+    await ref.read(databaseProvider).archiveFinanceCategory(cat.id);
+    ref.invalidate(allFinanceCategoriesProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
     final tc = Theme.of(context).extension<AppThemeColors>()!;
@@ -1529,6 +1554,13 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
                       leading: Icon(c.icono, size: AppIconSize.medium, color: _tipoColor(c.tipo)),
                       title: Text(c.nombre),
                       subtitle: padre != null ? Text(padre.nombre) : null,
+                      trailing: c.esPersonalizada
+                          ? IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'Eliminar categoría',
+                              onPressed: () => _confirmarEliminarCategoria(c),
+                            )
+                          : null,
                       onTap: () {
                         HapticFeedback.lightImpact();
                         widget.onSeleccionar(c);
@@ -1585,20 +1617,34 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
                         icono: padre.icono,
                         color: color,
                         tc: tc,
-                        trailingExtra: IconButton(
-                          icon: Icon(Icons.add, size: AppIconSize.small, color: tc.textTertiary),
-                          tooltip: 'Agregar subcategoría',
-                          onPressed: () async {
-                            final result = await showNuevaCategoriaSheet(
-                              context,
-                              widget.tipo,
-                              parentIdInicial: padre.id,
-                            );
-                            if (result != null) {
-                              ref.invalidate(allFinanceCategoriesProvider);
-                              widget.onSeleccionar(result);
-                            }
-                          },
+                        trailingExtra: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Eliminar: solo categorías creadas por el
+                            // usuario — las predeterminadas del programa
+                            // nunca se pueden borrar.
+                            if (padre.esPersonalizada)
+                              IconButton(
+                                icon: Icon(Icons.delete_outline, size: AppIconSize.small, color: tc.textTertiary),
+                                tooltip: 'Eliminar categoría',
+                                onPressed: () => _confirmarEliminarCategoria(padre),
+                              ),
+                            IconButton(
+                              icon: Icon(Icons.add, size: AppIconSize.small, color: tc.textTertiary),
+                              tooltip: 'Agregar subcategoría',
+                              onPressed: () async {
+                                final result = await showNuevaCategoriaSheet(
+                                  context,
+                                  widget.tipo,
+                                  parentIdInicial: padre.id,
+                                );
+                                if (result != null) {
+                                  ref.invalidate(allFinanceCategoriesProvider);
+                                  widget.onSeleccionar(result);
+                                }
+                              },
+                            ),
+                          ],
                         ),
                         chevron: hijos.isEmpty
                             ? null
@@ -1628,6 +1674,9 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
                                         HapticFeedback.lightImpact();
                                         widget.onSeleccionar(hijo);
                                       },
+                                      onEliminar: hijo.esPersonalizada
+                                          ? () => _confirmarEliminarCategoria(hijo)
+                                          : null,
                                     );
                                   }).toList(),
                                 ),
@@ -1722,6 +1771,7 @@ class _CategoriaHijoTile extends StatelessWidget {
   final Color color;
   final AppThemeColors tc;
   final VoidCallback onTap;
+  final VoidCallback? onEliminar;
 
   const _CategoriaHijoTile({
     required this.nombre,
@@ -1729,6 +1779,7 @@ class _CategoriaHijoTile extends StatelessWidget {
     required this.color,
     required this.tc,
     required this.onTap,
+    this.onEliminar,
   });
 
   @override
@@ -1758,6 +1809,12 @@ class _CategoriaHijoTile extends StatelessWidget {
                   style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w600, color: tc.textPrimary),
                 ),
               ),
+              if (onEliminar != null)
+                IconButton(
+                  icon: Icon(Icons.delete_outline, size: AppIconSize.small, color: tc.textTertiary),
+                  tooltip: 'Eliminar categoría',
+                  onPressed: onEliminar,
+                ),
             ],
           ),
         ),

@@ -10,6 +10,11 @@ class CatalogoCategoria {
   final String tipo; // 'ingreso'|'gasto'|'ambos'
   final String iconoKey; // clave para financeIconMap
   final String? parentId; // null = categoría padre
+  // true solo para categorías creadas por el usuario (fromCustomRow) — las
+  // predeterminadas (catalogoFinanzas/catalogoCategoriaPadres) nunca viven
+  // en la DB, así que no hay fila que borrar para ellas. Usado para decidir
+  // si se ofrece la opción de eliminar en los selectores de categoría.
+  final bool esPersonalizada;
 
   const CatalogoCategoria({
     required this.id,
@@ -19,6 +24,7 @@ class CatalogoCategoria {
     required this.tipo,
     required this.iconoKey,
     this.parentId,
+    this.esPersonalizada = false,
   });
 
   /// Convierte una categoría creada por el usuario (guardada en
@@ -44,6 +50,7 @@ class CatalogoCategoria {
       tipo: tipo,
       iconoKey: iconoKey,
       parentId: parentId,
+      esPersonalizada: true,
     );
   }
 }
