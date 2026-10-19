@@ -20,10 +20,15 @@ final financeTransactionsProvider =
 final financeBudgetsProvider =
     FutureProvider.family<List<FinanceBudgetRow>, (int, int)>((ref, anioMes) {
   final db = ref.watch(databaseProvider);
-  // Continuidad automática: si el mes todavía no tiene presupuestos propios,
-  // se copian del mes anterior más reciente que sí tenga — el usuario no
-  // tiene que recrearlos cada mes, solo editarlos si algo cambió.
-  return db.getFinanceBudgetsConContinuidad(anioMes.$1, anioMes.$2);
+  return db.getFinanceBudgets(anioMes.$1, anioMes.$2);
+});
+
+/// Presupuestos del mes anterior más reciente con datos, para el sheet de
+/// "¿Mantener presupuestos del mes anterior?" al entrar a un mes vacío.
+final financePresupuestosMesAnteriorProvider =
+    FutureProvider.family<List<FinanceBudgetRow>, (int, int)>((ref, anioMes) {
+  final db = ref.watch(databaseProvider);
+  return db.getPresupuestosMesAnteriorConDatos(anioMes.$1, anioMes.$2);
 });
 
 /// Todas las metas/reservas de todos los registros — alimenta la vista

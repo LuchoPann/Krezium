@@ -152,9 +152,32 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
                 _ResumenPresupuesto(limite: totalLimite, gasto: totalGasto, tc: tc),
                 const SizedBox(height: AppSpacing.section),
               ],
-              if (items.isEmpty)
-                _EstadoVacio(tc: tc, hayPadresDisponibles: padresDisponibles.isNotEmpty)
-              else
+              if (items.isEmpty) ...[
+                // Solo se ofrece "mantener del mes anterior" al entrar a un
+                // mes actual/futuro vacío — nunca al navegar hacia atrás a un
+                // mes pasado que de verdad nunca tuvo presupuesto (eso no es
+                // un hueco a llenar, es historia real).
+                if (!DateTime(anio, mes).isBefore(
+                    DateTime(DateTime.now().year, DateTime.now().month)))
+                  Consumer(builder: (context, ref, _) {
+                    final prevAsync = ref.watch(
+                        financePresupuestosMesAnteriorProvider((anio, mes)));
+                    final prev = prevAsync.valueOrNull ?? const [];
+                    if (prev.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.section),
+                      child: _BannerMantenerPresupuestos(
+                        anio: anio,
+                        mes: mes,
+                        tituloMes: _tituloMes(fecha),
+                        prevBudgets: prev,
+                        catPorId: catPorId,
+                        tc: tc,
+                      ),
+                    );
+                  }),
+                _EstadoVacio(tc: tc, hayPadresDisponibles: padresDisponibles.isNotEmpty),
+              ] else
                 for (final item in items) ...[
                   _BudgetCard(
                     data: item,
@@ -344,6 +367,250 @@ class _ResumenCifra extends StatelessWidget {
           style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w700, color: color ?? tc.textPrimary),
         ),
       ],
+    );
+  }
+}
+
+/// Banner que ofrece retomar los presupuestos del mes anterior en vez de
+/// copiarlos en silencio — el usuario decide cuáles quedan y puede ajustar
+/// el monto de cada uno antes de confirmar (ver [_MantenerPresupuestosSheet]).
+class _BannerMantenerPresupuestos extends StatelessWidget {
+  final int anio, mes;
+  final String tituloMes;
+  final List<FinanceBudgetRow> prevBudgets;
+  final Map<String, CatalogoCategoria> catPorId;
+  final AppThemeColors tc;
+
+  const _BannerMantenerPresupuestos({
+    required this.anio,
+    required this.mes,
+    required this.tituloMes,
+    required this.prevBudgets,
+    required this.catPorId,
+    required this.tc,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.card),
+      decoration: BoxDecoration(
+        color: tc.bgCard,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: tc.borderCard.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history_outlined, size: AppIconSize.small, color: tc.textSecondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Tenías ${prevBudgets.length} presupuesto(s) el mes pasado',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: tc.textPrimary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '¿Los mantienes para $tituloMes?',
+            style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary),
+          ),
+          const SizedBox(height: AppSpacing.tile),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => _MantenerPresupuestosSheet(
+                  anio: anio,
+                  mes: mes,
+                  tituloMes: tituloMes,
+                  prevBudgets: prevBudgets,
+                  catPorId: catPorId,
+                ),
+              ),
+              child: const Text('Revisar y elegir'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Un presupuesto del mes anterior a decidir: queda seleccionado por
+/// defecto (lo más común es repetirlo igual) con su monto editable inline.
+class _MantenerPresupuestosSheet extends ConsumerStatefulWidget {
+  final int anio, mes;
+  final String tituloMes;
+  final List<FinanceBudgetRow> prevBudgets;
+  final Map<String, CatalogoCategoria> catPorId;
+
+  const _MantenerPresupuestosSheet({
+    required this.anio,
+    required this.mes,
+    required this.tituloMes,
+    required this.prevBudgets,
+    required this.catPorId,
+  });
+
+  @override
+  ConsumerState<_MantenerPresupuestosSheet> createState() => _MantenerPresupuestosSheetState();
+}
+
+class _MantenerPresupuestosSheetState extends ConsumerState<_MantenerPresupuestosSheet> {
+  late final Map<String, bool> _seleccionado = {
+    for (final b in widget.prevBudgets) b.categoryId: true,
+  };
+  late final Map<String, TextEditingController> _montoCtrls = {
+    for (final b in widget.prevBudgets)
+      b.categoryId: TextEditingController(text: agruparMiles(b.montoLimite.round())),
+  };
+  bool _guardando = false;
+
+  @override
+  void dispose() {
+    for (final c in _montoCtrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  double? _montoDe(String categoryId) {
+    final digitos = _montoCtrls[categoryId]!.text.replaceAll('.', '');
+    if (digitos.isEmpty) return null;
+    final v = double.tryParse(digitos);
+    return (v != null && v > 0) ? v : null;
+  }
+
+  int get _cantidadSeleccionada =>
+      _seleccionado.values.where((v) => v).length;
+
+  Future<void> _confirmar() async {
+    final seleccion = <String, double>{};
+    for (final b in widget.prevBudgets) {
+      if (_seleccionado[b.categoryId] != true) continue;
+      final monto = _montoDe(b.categoryId);
+      if (monto == null) continue;
+      seleccion[b.categoryId] = monto;
+    }
+    if (seleccion.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _guardando = true);
+    await ref.read(databaseProvider).crearPresupuestosDesdeMesAnterior(
+          widget.anio,
+          widget.mes,
+          seleccion,
+        );
+    ref.invalidate(financeBudgetsProvider((widget.anio, widget.mes)));
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tc = Theme.of(context).extension<AppThemeColors>()!;
+    return Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      clipBehavior: Clip.antiAlias,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Presupuestos para ${widget.tituloMes}',
+                style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Desmarca los que no quieras repetir, o ajusta el monto.',
+                style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary),
+              ),
+              const SizedBox(height: AppSpacing.section),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: widget.prevBudgets.length,
+                  separatorBuilder: (context, index) => Divider(height: 1, color: tc.borderCard),
+                  itemBuilder: (context, i) {
+                    final b = widget.prevBudgets[i];
+                    final cat = widget.catPorId[b.categoryId];
+                    final activo = _seleccionado[b.categoryId] ?? true;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: activo,
+                            onChanged: (v) => setState(() => _seleccionado[b.categoryId] = v ?? false),
+                          ),
+                          if (cat != null) Icon(cat.icono, color: cat.color, size: AppIconSize.small),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              cat?.nombre ?? b.categoryId,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: activo ? tc.textPrimary : tc.textTertiary,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 110,
+                            child: TextFormField(
+                              controller: _montoCtrls[b.categoryId],
+                              enabled: activo,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [MontoInputFormatter()],
+                              onChanged: (_) => setState(() {}),
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: activo ? tc.textPrimary : tc.textTertiary,
+                              ),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                prefixText: '\$',
+                                contentPadding: EdgeInsets.symmetric(vertical: 8),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: AppSpacing.section),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton(
+                  onPressed: _guardando ? null : _confirmar,
+                  child: _guardando
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text(_cantidadSeleccionada == 0
+                          ? 'Omitir este mes'
+                          : 'Mantener $_cantidadSeleccionada presupuesto(s)'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -751,14 +1018,50 @@ class _CategoriaChips extends StatelessWidget {
           style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w700, color: tc.textTertiary),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        // Grid de 2 columnas con altura uniforme en vez de Wrap: con nombres
+        // de distinta longitud, los chips quedaban en filas irregulares,
+        // difíciles de escanear rápido. Una grilla pareja es más fácil de
+        // mirar de un vistazo.
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 2.6,
           children: categorias
-              .map((c) => ActionChip(
-                    avatar: Icon(c.icono, color: c.color, size: AppIconSize.small),
-                    label: Text(c.nombre),
-                    onPressed: () => onSeleccionar(c),
+              .map((c) => Material(
+                    color: tc.bgCard,
+                    borderRadius: BorderRadius.circular(AppRadius.tile),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.tile),
+                      onTap: () => onSeleccionar(c),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(AppRadius.tile),
+                          border: Border.all(color: tc.borderCard),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Row(
+                          children: [
+                            Icon(c.icono, color: c.color, size: AppIconSize.small),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                c.nombre,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: AppTextSize.body,
+                                  color: tc.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ))
               .toList(),
         ),
