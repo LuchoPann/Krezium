@@ -370,7 +370,7 @@ class _EstadoVacio extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               hayPadresDisponibles
-                  ? 'Crea un límite de gasto por categoría para ver cuánto llevas consumido.'
+                  ? 'Ej. "Transporte: 120.000 al mes" — cada gasto que registres en esa categoría se descuenta solo. Se repite igual cada mes; edítalo solo si cambia.'
                   : 'Ya tienes un presupuesto en cada categoría de gasto disponible.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary),
@@ -665,7 +665,9 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Un límite mensual para controlar el gasto en una categoría.',
+                _editando
+                    ? 'Este cambio aplica desde este mes — los meses anteriores quedan igual.'
+                    : 'Se repite automáticamente cada mes con este mismo límite; solo edítalo cuando cambie.',
                 style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary),
               ),
               const SizedBox(height: AppSpacing.section),

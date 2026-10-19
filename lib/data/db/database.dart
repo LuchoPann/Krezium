@@ -968,6 +968,43 @@ class AppDatabase extends _$AppDatabase {
             ..where((t) => t.anio.equals(anio) & t.mes.equals(mes)))
           .get();
 
+  /// Igual que [getFinanceBudgets], pero si [anio]/[mes] es el mes actual (o
+  /// uno futuro) y todavía no tiene presupuestos propios, los copia del mes
+  /// anterior más reciente que sí tenga — así el usuario no tiene que volver
+  /// a escribir el mismo límite cada mes, solo editarlo si cambia. Nunca
+  /// fabrica datos para un mes YA PASADO sin presupuesto real (eso sería
+  /// reescribir historia). Una vez copiados, cada mes vive independiente:
+  /// editar el límite de un mes no toca los de otros meses, pasados o ya
+  /// copiados — "autonomía" del presupuesto, como pidió el usuario.
+  Future<List<FinanceBudgetRow>> getFinanceBudgetsConContinuidad(
+    int anio,
+    int mes,
+  ) async {
+    final propios = await getFinanceBudgets(anio, mes);
+    if (propios.isNotEmpty) return propios;
+
+    final hoy = DateTime.now();
+    final objetivo = DateTime(anio, mes);
+    final mesActual = DateTime(hoy.year, hoy.month);
+    if (objetivo.isBefore(mesActual)) return propios; // mes pasado: vacío real
+
+    for (var i = 1; i <= 24; i++) {
+      final anterior = DateTime(anio, mes - i);
+      final delAnterior = await getFinanceBudgets(anterior.year, anterior.month);
+      if (delAnterior.isEmpty) continue;
+      for (final b in delAnterior) {
+        await into(financeBudgets).insert(FinanceBudgetsCompanion.insert(
+          categoryId: b.categoryId,
+          anio: anio,
+          mes: mes,
+          montoLimite: b.montoLimite,
+        ));
+      }
+      return getFinanceBudgets(anio, mes);
+    }
+    return propios;
+  }
+
   Future<FinanceBudgetRow?> getFinanceBudgetFor(String categoryId, int anio, int mes) =>
       (select(financeBudgets)
             ..where((t) =>
