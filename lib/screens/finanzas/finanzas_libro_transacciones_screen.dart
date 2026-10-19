@@ -40,6 +40,27 @@ DateTime _parseFecha(String fecha) {
   return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
 }
 
+/// Qué tanta fecha mostrar junto a la hora en cada fila depende de cuán
+/// ancho es el grupo visual que ya la encabeza arriba — si el grupo es
+/// "Octubre 2026" o "Semana del 13 al 19 oct", el día dentro de esa fila
+/// no dice nada por sí solo sin repetir al menos el día (y en año/sin
+/// agrupar, también el mes). Pedido explícito del usuario:
+///   diario       → solo hora (el día ya es el grupo)
+///   semanal/mensual → día + hora (el mes/año ya es el grupo)
+///   anual/sin_agrupar → día + mes + hora (el grupo no fija ninguno de los dos)
+String? _horaMostrada(FinanceTransaction tx, String periodo) {
+  final hora = tx.hora;
+  final tieneHora = hora != null && hora.isNotEmpty;
+  if (periodo == 'diario') {
+    return tieneHora ? hora : null;
+  }
+  final d = _parseFecha(tx.fecha);
+  final diaMes = periodo == 'semanal' || periodo == 'mensual'
+      ? '${d.day}'
+      : '${d.day} ${_kMesesCorto[d.month]}';
+  return tieneHora ? '$diaMes, $hora' : diaMes;
+}
+
 class _FinanzasLibroTransaccionesScreenState
     extends ConsumerState<FinanzasLibroTransaccionesScreen> {
   late FinanceAccount _libroActual;
@@ -444,6 +465,7 @@ class _FinanzasLibroTransaccionesScreenState
                                 final tx = grupoTxs[i ~/ 2];
                                 return _TxRow(
                                   tx: tx,
+                                  periodo: filtros.periodo,
                                   libroActualId: _libroActual.id,
                                   cat: catMap[tx.categoryId],
                                   // catMap ya es el catálogo combinado (fijo
@@ -676,6 +698,7 @@ class _ResumenDato extends StatelessWidget {
 // ─── Fila de transacción ──────────────────────────────────────────────────────
 class _TxRow extends StatelessWidget {
   final FinanceTransaction tx;
+  final String periodo;
   final String libroActualId;
   final CatalogoCategoria? cat;
   final CatalogoCategoria? catPadre;
@@ -686,6 +709,7 @@ class _TxRow extends StatelessWidget {
 
   const _TxRow({
     required this.tx,
+    required this.periodo,
     required this.libroActualId,
     required this.cat,
     required this.catPadre,
@@ -841,10 +865,10 @@ class _TxRow extends StatelessWidget {
                       ),
                     ],
                   ),
-                  if (tx.hora != null && tx.hora!.isNotEmpty) ...[
+                  if (_horaMostrada(tx, periodo) case final texto?) ...[
                     const SizedBox(height: 2),
                     Text(
-                      tx.hora!,
+                      texto,
                       style: TextStyle(
                         fontSize: AppTextSize.caption,
                         color: colors.textTertiary,

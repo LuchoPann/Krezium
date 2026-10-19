@@ -29,6 +29,18 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.3.1',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.nuevo,
+          'Ya puedes eliminar las categorías y subcategorías que creaste tú mismo (las predeterminadas de la app se mantienen).'),
+      ChangeItem(ChangeType.mejora,
+          'En el libro de movimientos, la fecha/hora de cada fila ahora se ajusta a cómo estés agrupando: solo hora por día, día y hora por semana/mes, día+mes y hora por año o sin agrupar.'),
+      ChangeItem(ChangeType.mejora,
+          'Los menús desplegables (como Nueva Transacción) ya no requieren arrastrar hacia arriba para ver el botón de guardar — se ajustan solos a su contenido.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.3.0',
     date: 'Octubre 2026',
     changes: [
