@@ -16,6 +16,7 @@ import 'package:krezium/screens/finanzas/finanzas_presupuesto_screen.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
 import 'package:krezium/utils/monto_input_formatter.dart';
+import 'package:krezium/widgets/app_auto_height_sheet.dart';
 import 'package:krezium/widgets/app_pill_selector.dart';
 import 'package:uuid/uuid.dart';
 
@@ -358,7 +359,6 @@ class _NuevaTransaccionSheetState
   // ── build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final tc = Theme.of(context).extension<AppThemeColors>()!;
     final librosAsync = ref.watch(financeAccountsProvider);
     final libros = librosAsync.valueOrNull?.map(FinanceAccount.fromRow).toList() ?? [];
     final catsAsyncGlobal = ref.watch(allFinanceCategoriesProvider);
@@ -366,49 +366,12 @@ class _NuevaTransaccionSheetState
       _resolverCategoriaPendiente(catsAsyncGlobal.value!);
     }
 
-    // Padding(bottom: viewInsets): un DraggableScrollableSheet no se
-    // reacomoda solo con el teclado (a diferencia de un Scaffold con
-    // resizeToAvoidBottomInset) — sin esto, el teclado tapaba los campos
-    // de más abajo (categoría, notas, guardar).
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      builder: (ctx, scrollCtrl) => Material(
-        // Material (no un Container con color propio): los ListTile de
-        // categoría (Paso 3) pintan su fondo/ripple en el Material más
-        // cercano — con un Container de por medio, Flutter los dejaba sin
-        // efecto visual (warning real visto en vivo, "ListTile background
-        // color or ink splashes may be invisible").
-        // scaffoldBackgroundColor (no tc.bgCard): mismo fondo de sheet que
-        // usa Créditos (add_credit_sheet.dart, edit_credit_sheet.dart,
-        // card_movement_sheet.dart) — bgCard es un tono más claro pensado
-        // para tarjetas dentro de una pantalla, no para el fondo del sheet
-        // completo; usarlo aquí hacía que todo Finanzas se viera más claro
-        // que Créditos, reportado explícitamente por el usuario.
-        color: Theme.of(context).scaffoldBackgroundColor,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            // Handle
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: tc.borderCard,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Expanded(
-              child: AnimatedSwitcher(
+    // AppAutoHeightSheet: el sheet sube hasta mostrar todo su contenido
+    // (tope = 92% del alto de pantalla), nunca requiere arrastrar a mano
+    // para ver el botón Guardar — antes DraggableScrollableSheet abría
+    // siempre al 70% fijo sin importar cuánto contenido hubiera.
+    return AppAutoHeightSheet(
+      child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 280),
                 transitionBuilder: (child, anim) {
                   final offset = child.key == const ValueKey(1)
@@ -424,7 +387,6 @@ class _NuevaTransaccionSheetState
                   3 => _Paso3Categoria(
                       key: const ValueKey(3),
                       tipo: _tipo == 'transferencia' ? 'gasto' : _tipo,
-                      scrollCtrl: scrollCtrl,
                       onVolver: () => setState(() => _paso = 2),
                       onSeleccionar: (cat) => setState(() {
                         _categoriaSeleccionada = cat;
@@ -471,7 +433,6 @@ class _NuevaTransaccionSheetState
                         montoFocus: _montoFocus,
                         guardando: _guardando,
                         montoValido: _montoValido,
-                        scrollCtrl: scrollCtrl,
                         onSeleccionarCategoria: _seleccionarCategoria,
                         onCategoriaChip: _elegirCategoriaChip,
                         onPickFecha: _pickFecha,
@@ -482,11 +443,6 @@ class _NuevaTransaccionSheetState
                         formatHora: _formatHora,
                       ),
                 },
-              ),
-            ),
-          ],
-        ),
-      ),
       ),
     );
   }
@@ -627,7 +583,6 @@ class _Paso2 extends ConsumerWidget {
   final FocusNode montoFocus;
   final bool guardando;
   final bool montoValido;
-  final ScrollController scrollCtrl;
   final VoidCallback onSeleccionarCategoria;
   final ValueChanged<CatalogoCategoria> onCategoriaChip;
   final Future<void> Function() onPickFecha;
@@ -658,7 +613,6 @@ class _Paso2 extends ConsumerWidget {
     required this.montoFocus,
     required this.guardando,
     required this.montoValido,
-    required this.scrollCtrl,
     required this.onSeleccionarCategoria,
     required this.onCategoriaChip,
     required this.onPickFecha,
@@ -687,7 +641,10 @@ class _Paso2 extends ConsumerWidget {
     // borde — pestañas reales arriba, monto suelto sin caja, y todo lo
     // demás como una sola lista fluida separada por líneas finas.
     return ListView(
-      controller: scrollCtrl,
+      // shrinkWrap: el sheet (AppAutoHeightSheet) sube hasta su contenido
+      // real — esta lista debe ocupar solo lo que necesita, no expandirse
+      // a llenar todo el espacio disponible como un ListView normal.
+      shrinkWrap: true,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
         // Encabezado genérico — el título ya no cambia con el tipo, las
@@ -1458,14 +1415,12 @@ class _FlowFieldRow extends StatelessWidget {
 // acordeón completo cada vez no escala. ────────────────────────────────────
 class _Paso3Categoria extends ConsumerStatefulWidget {
   final String tipo;
-  final ScrollController scrollCtrl;
   final VoidCallback onVolver;
   final ValueChanged<CatalogoCategoria> onSeleccionar;
 
   const _Paso3Categoria({
     super.key,
     required this.tipo,
-    required this.scrollCtrl,
     required this.onVolver,
     required this.onSeleccionar,
   });
@@ -1565,7 +1520,6 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
                 }
                 final padresPorId = {for (final p in delTipo) p.id: p};
                 return ListView.builder(
-                  controller: widget.scrollCtrl,
                   padding: const EdgeInsets.only(bottom: 24),
                   itemCount: resultados.length,
                   itemBuilder: (context, i) {
@@ -1602,7 +1556,6 @@ class _Paso3CategoriaState extends ConsumerState<_Paso3Categoria> {
               // mismo chip de ícono con fondo de color que el mockup, en
               // vez de ListTile por defecto).
               return ListView.builder(
-                controller: widget.scrollCtrl,
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 itemCount: padres.length + 1,
                 itemBuilder: (context, index) {
