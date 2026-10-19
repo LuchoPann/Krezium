@@ -16,6 +16,7 @@ import 'package:krezium/screens/finanzas/finanzas_presupuesto_screen.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
 import 'package:krezium/utils/monto_input_formatter.dart';
+import 'package:krezium/widgets/app_pill_selector.dart';
 import 'package:uuid/uuid.dart';
 
 // ─── Color tokens por tipo ────────────────────────────────────────────────────
@@ -692,10 +693,19 @@ class _Paso2 extends ConsumerWidget {
         ),
         const SizedBox(height: 4),
 
-        // Tipo como pestañas reales con subrayado — reemplaza la píldora:
-        // se siente como el primer paso del flujo, no un control flotante
-        // en medio del contenido.
-        _TipoTabs(tipo: tipo, onChanged: onTipoChanged, tc: tc),
+        // Tipo: el selector píldora estandarizado de la app (mismo que
+        // Presupuestos/Metas en Cuenta) en vez de pestañas con subrayado
+        // propias de este formulario — pedido explícito del usuario, ya
+        // soporta color por opción.
+        AppPillSelector<String>(
+          value: tipo,
+          onChanged: onTipoChanged,
+          options: const [
+            PillOption(value: 'ingreso', label: 'Ingreso', color: _colorIngreso),
+            PillOption(value: 'gasto', label: 'Gasto', color: _colorGasto),
+            PillOption(value: 'transferencia', label: 'Transferir', color: _colorTransfer),
+          ],
+        ),
         const SizedBox(height: 8),
 
         // Monto: el verdadero protagonista, suelto (sin caja ni tarjeta),
@@ -727,9 +737,11 @@ class _Paso2 extends ConsumerWidget {
         ),
         const SizedBox(height: 4),
 
-        // ── Lista fluida: Registro, (Destino), Categoría, Fecha, Hora,
-        // Lugar, Nota — todas con el mismo ritmo visual, separadas por
-        // líneas finas, sin agruparlas en tarjetas con borde propio.
+        // ── Lista fluida agrupada por encabezados sutiles (DÓNDE/CUÁNDO/
+        // DETALLE) — mismo ritmo visual de antes (sin tarjetas con borde),
+        // pero ahora se puede escanear por bloques en vez de una lista
+        // plana donde todo pesaba igual.
+        _SeccionLabel('DÓNDE', tc: tc),
         _LibroSelector(
           icon: Icons.account_balance_wallet_outlined,
           label: 'Registro',
@@ -771,6 +783,7 @@ class _Paso2 extends ConsumerWidget {
           if (tipo == 'gasto' && categoriaSeleccionada != null)
             _PresupuestoResumenInline(categoria: categoriaSeleccionada!, fecha: fecha),
         ],
+        _SeccionLabel('CUÁNDO', tc: tc),
         _FlowRow(
           icon: Icons.event_outlined,
           label: 'Fecha',
@@ -786,7 +799,7 @@ class _Paso2 extends ConsumerWidget {
           onTap: onPickHora,
           tc: tc,
         ),
-        const Divider(height: 1),
+        _SeccionLabel('DETALLE', tc: tc),
         _FlowFieldRow(
           icon: Icons.storefront_outlined,
           label: 'Lugar',
@@ -815,7 +828,25 @@ class _Paso2 extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+
+        // Vista previa: cómo se vería ya guardada en el historial — pedido
+        // del usuario al ver el boceto. Solo con monto válido, para no
+        // mostrar "-$0" mientras el campo está vacío.
+        if (montoValido)
+          _VistaPreviaRow(
+            tipo: tipo,
+            color: color,
+            categoria: tipo == 'transferencia' ? null : categoriaSeleccionada,
+            libroNombre: libros.where((l) => l.id == libroId).firstOrNull?.nombre,
+            libroDestinoNombre:
+                libros.where((l) => l.id == libroDestinoId).firstOrNull?.nombre,
+            ordenante: ordenanteCtrl.text.trim(),
+            fecha: _fechaCorta(),
+            hora: formatHora(hora),
+            montoTexto: montoCtrl.text,
+          ),
+        const SizedBox(height: 16),
 
         // Botón Guardar — plano, sin ícono, mismo lenguaje que el
         // "Guardar Movimiento" de Créditos.
@@ -949,52 +980,138 @@ class _OrdenanteFieldState extends State<_OrdenanteField> {
   }
 }
 
-// Pestañas reales (con subrayado en la seleccionada) para elegir el tipo
-// de transacción — reemplaza la píldora flotante en este formulario, que
-// se sentía como un control más entre el contenido en vez del primer paso.
-class _TipoTabs extends StatelessWidget {
-  final String tipo;
-  final ValueChanged<String> onChanged;
+// Encabezado sutil de sección (CUÁNDO/DÓNDE/DETALLE) — separa la lista
+// fluida en bloques escaneables sin volver a tarjetas con borde.
+class _SeccionLabel extends StatelessWidget {
+  final String texto;
   final AppThemeColors tc;
 
-  const _TipoTabs({required this.tipo, required this.onChanged, required this.tc});
+  const _SeccionLabel(this.texto, {required this.tc});
 
   @override
   Widget build(BuildContext context) {
-    const opciones = [
-      ('ingreso', 'Ingreso'),
-      ('gasto', 'Gasto'),
-      ('transferencia', 'Transferir'),
-    ];
-    return Row(
-      children: [
-        for (final (valor, etiqueta) in opciones)
-          Expanded(
-            child: InkWell(
-              onTap: () => onChanged(valor),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: tipo == valor ? _tipoColor(valor) : tc.borderCard,
-                      width: tipo == valor ? 3 : 1,
-                    ),
-                  ),
-                ),
-                child: Text(
-                  etiqueta,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: tipo == valor ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: AppTextSize.body,
-                    color: tipo == valor ? _tipoColor(valor) : tc.textSecondary,
-                  ),
-                ),
-              ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 18, bottom: 4),
+      child: Text(
+        texto,
+        style: TextStyle(
+          fontSize: AppTextSize.caption,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1,
+          color: tc.textTertiary,
+        ),
+      ),
+    );
+  }
+}
+
+// Vista previa de cómo quedaría la transacción en el historial — pedido
+// del usuario tras ver el boceto de diseño, para confirmar de un vistazo
+// antes de guardar.
+class _VistaPreviaRow extends StatelessWidget {
+  final String tipo;
+  final Color color;
+  final CatalogoCategoria? categoria;
+  final String? libroNombre;
+  final String? libroDestinoNombre;
+  final String ordenante;
+  final String fecha;
+  final String hora;
+  final String montoTexto;
+
+  const _VistaPreviaRow({
+    required this.tipo,
+    required this.color,
+    required this.categoria,
+    required this.libroNombre,
+    required this.libroDestinoNombre,
+    required this.ordenante,
+    required this.fecha,
+    required this.hora,
+    required this.montoTexto,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tc = Theme.of(context).extension<AppThemeColors>()!;
+    final esTransferencia = tipo == 'transferencia';
+    final icono = esTransferencia
+        ? Icons.sync_alt
+        : (categoria?.icono ?? Icons.category_outlined);
+    final titulo = esTransferencia
+        ? '${libroNombre ?? '—'} → ${libroDestinoNombre ?? '—'}'
+        : [categoria?.nombre, ordenante.isEmpty ? null : ordenante]
+            .whereType<String>()
+            .join(' · ');
+    final subtitulo = [fecha, hora, if (!esTransferencia) libroNombre]
+        .whereType<String>()
+        .join(' · ');
+    final signo = tipo == 'ingreso' ? '+' : (tipo == 'gasto' ? '-' : '');
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ASÍ SE VERÁ',
+            style: TextStyle(
+              fontSize: AppTextSize.caption,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1,
+              color: tc.textTertiary,
             ),
           ),
-      ],
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: tc.bgCard,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icono, size: AppIconSize.medium, color: color),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        titulo.isEmpty ? 'Sin categoría' : titulo,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w700, color: tc.textPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitulo,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$signo${montoTexto.isEmpty ? '0' : montoTexto} \$',
+                  style: TextStyle(fontSize: AppTextSize.body, fontWeight: FontWeight.w800, color: color),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
