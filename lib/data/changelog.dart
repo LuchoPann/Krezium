@@ -29,6 +29,20 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.3.0',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.nuevo,
+          'Nueva Transacción tiene un diseño nuevo: selector de tipo rediseñado, campos agrupados por secciones y una vista previa antes de guardar.'),
+      ChangeItem(ChangeType.nuevo,
+          'Al registrar un gasto puedes marcar "Cargar a otro presupuesto" — útil cuando pagas algo de una categoría con la plata que tenías apartada para otra (ej. una gaseosa pagada con el dinero de Transporte).'),
+      ChangeItem(ChangeType.mejora,
+          'Crear o editar un presupuesto ahora es una sola pantalla con categorías en grilla, en vez de un asistente de varios pasos.'),
+      ChangeItem(ChangeType.mejora,
+          'Al entrar a un mes sin presupuestos, Krezium pregunta si quieres mantener los del mes anterior y te deja elegir cuáles, con el monto editable.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.2.1',
     date: 'Octubre 2026',
     changes: [

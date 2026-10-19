@@ -114,12 +114,18 @@ class FinanceTransaction {
   final String? hora;
   final String? transferToAccountId;
   final String? revisionNota;
+  // Cargar este gasto al presupuesto de OTRA categoría padre en vez de la
+  // suya propia (ej. una gaseosa pagada con la plata apartada para
+  // Transporte). Nullable: por defecto cuenta contra el presupuesto de su
+  // propia categoría, como siempre — ver gastoCategoriaPeriodo.
+  final String? cargaPresupuestoCategoryId;
 
   const FinanceTransaction({
     required this.id, required this.accountId, required this.categoryId,
     required this.tipo, required this.monto, required this.fecha,
     required this.nota, required this.esRecurrente, this.recurrenciaConfig,
     this.personaSitio, this.hora, this.transferToAccountId, this.revisionNota,
+    this.cargaPresupuestoCategoryId,
   });
 
   factory FinanceTransaction.fromRow(FinanceTransactionRow row) => FinanceTransaction(
@@ -136,6 +142,7 @@ class FinanceTransaction {
     hora: row.hora,
     transferToAccountId: row.transferToAccountId,
     revisionNota: row.revisionNota,
+    cargaPresupuestoCategoryId: row.cargaPresupuestoCategoryId,
   );
 
   Map<String, dynamic> toJson() => {
@@ -145,6 +152,7 @@ class FinanceTransaction {
     'personaSitio': personaSitio, 'hora': hora,
     'transferToAccountId': transferToAccountId,
     'revisionNota': revisionNota,
+    'cargaPresupuestoCategoryId': cargaPresupuestoCategoryId,
   };
 
   factory FinanceTransaction.fromJson(Map<String, dynamic> json) => FinanceTransaction(
@@ -161,6 +169,7 @@ class FinanceTransaction {
     hora: json['hora'] as String?,
     transferToAccountId: json['transferToAccountId'] as String?,
     revisionNota: json['revisionNota'] as String?,
+    cargaPresupuestoCategoryId: json['cargaPresupuestoCategoryId'] as String?,
   );
 }
 

@@ -50,6 +50,13 @@ class FinanceTransactions extends Table {
   TextColumn get transferToAccountId => text().nullable()
       .references(FinanceAccounts, #id, onDelete: KeyAction.setNull)();
   TextColumn get revisionNota => text().nullable()();
+  // Cargar este gasto al presupuesto de OTRA categoría padre en vez de la
+  // suya propia — ej. una gaseosa (categoryId = Alimentación) pagada con
+  // el dinero que tenías apartado para Transporte: el gasto real es de
+  // Alimentación, pero el usuario quiere que descuente del presupuesto de
+  // Transporte porque de ahí salió la plata. Nullable: por defecto el gasto
+  // cuenta contra el presupuesto de su propia categoría, como siempre.
+  TextColumn get cargaPresupuestoCategoryId => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

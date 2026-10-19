@@ -7649,6 +7649,17 @@ class $FinanceTransactionsTable extends FinanceTransactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _cargaPresupuestoCategoryIdMeta =
+      const VerificationMeta('cargaPresupuestoCategoryId');
+  @override
+  late final GeneratedColumn<String> cargaPresupuestoCategoryId =
+      GeneratedColumn<String>(
+        'carga_presupuesto_category_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -7664,6 +7675,7 @@ class $FinanceTransactionsTable extends FinanceTransactions
     hora,
     transferToAccountId,
     revisionNota,
+    cargaPresupuestoCategoryId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -7779,6 +7791,15 @@ class $FinanceTransactionsTable extends FinanceTransactions
         ),
       );
     }
+    if (data.containsKey('carga_presupuesto_category_id')) {
+      context.handle(
+        _cargaPresupuestoCategoryIdMeta,
+        cargaPresupuestoCategoryId.isAcceptableOrUnknown(
+          data['carga_presupuesto_category_id']!,
+          _cargaPresupuestoCategoryIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -7840,6 +7861,10 @@ class $FinanceTransactionsTable extends FinanceTransactions
         DriftSqlType.string,
         data['${effectivePrefix}revision_nota'],
       ),
+      cargaPresupuestoCategoryId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}carga_presupuesto_category_id'],
+      ),
     );
   }
 
@@ -7864,6 +7889,7 @@ class FinanceTransactionRow extends DataClass
   final String? hora;
   final String? transferToAccountId;
   final String? revisionNota;
+  final String? cargaPresupuestoCategoryId;
   const FinanceTransactionRow({
     required this.id,
     required this.accountId,
@@ -7878,6 +7904,7 @@ class FinanceTransactionRow extends DataClass
     this.hora,
     this.transferToAccountId,
     this.revisionNota,
+    this.cargaPresupuestoCategoryId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7905,6 +7932,11 @@ class FinanceTransactionRow extends DataClass
     if (!nullToAbsent || revisionNota != null) {
       map['revision_nota'] = Variable<String>(revisionNota);
     }
+    if (!nullToAbsent || cargaPresupuestoCategoryId != null) {
+      map['carga_presupuesto_category_id'] = Variable<String>(
+        cargaPresupuestoCategoryId,
+      );
+    }
     return map;
   }
 
@@ -7931,6 +7963,10 @@ class FinanceTransactionRow extends DataClass
       revisionNota: revisionNota == null && nullToAbsent
           ? const Value.absent()
           : Value(revisionNota),
+      cargaPresupuestoCategoryId:
+          cargaPresupuestoCategoryId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cargaPresupuestoCategoryId),
     );
   }
 
@@ -7957,6 +7993,9 @@ class FinanceTransactionRow extends DataClass
         json['transferToAccountId'],
       ),
       revisionNota: serializer.fromJson<String?>(json['revisionNota']),
+      cargaPresupuestoCategoryId: serializer.fromJson<String?>(
+        json['cargaPresupuestoCategoryId'],
+      ),
     );
   }
   @override
@@ -7976,6 +8015,9 @@ class FinanceTransactionRow extends DataClass
       'hora': serializer.toJson<String?>(hora),
       'transferToAccountId': serializer.toJson<String?>(transferToAccountId),
       'revisionNota': serializer.toJson<String?>(revisionNota),
+      'cargaPresupuestoCategoryId': serializer.toJson<String?>(
+        cargaPresupuestoCategoryId,
+      ),
     };
   }
 
@@ -7993,6 +8035,7 @@ class FinanceTransactionRow extends DataClass
     Value<String?> hora = const Value.absent(),
     Value<String?> transferToAccountId = const Value.absent(),
     Value<String?> revisionNota = const Value.absent(),
+    Value<String?> cargaPresupuestoCategoryId = const Value.absent(),
   }) => FinanceTransactionRow(
     id: id ?? this.id,
     accountId: accountId ?? this.accountId,
@@ -8011,6 +8054,9 @@ class FinanceTransactionRow extends DataClass
         ? transferToAccountId.value
         : this.transferToAccountId,
     revisionNota: revisionNota.present ? revisionNota.value : this.revisionNota,
+    cargaPresupuestoCategoryId: cargaPresupuestoCategoryId.present
+        ? cargaPresupuestoCategoryId.value
+        : this.cargaPresupuestoCategoryId,
   );
   FinanceTransactionRow copyWithCompanion(FinanceTransactionsCompanion data) {
     return FinanceTransactionRow(
@@ -8039,6 +8085,9 @@ class FinanceTransactionRow extends DataClass
       revisionNota: data.revisionNota.present
           ? data.revisionNota.value
           : this.revisionNota,
+      cargaPresupuestoCategoryId: data.cargaPresupuestoCategoryId.present
+          ? data.cargaPresupuestoCategoryId.value
+          : this.cargaPresupuestoCategoryId,
     );
   }
 
@@ -8057,7 +8106,8 @@ class FinanceTransactionRow extends DataClass
           ..write('personaSitio: $personaSitio, ')
           ..write('hora: $hora, ')
           ..write('transferToAccountId: $transferToAccountId, ')
-          ..write('revisionNota: $revisionNota')
+          ..write('revisionNota: $revisionNota, ')
+          ..write('cargaPresupuestoCategoryId: $cargaPresupuestoCategoryId')
           ..write(')'))
         .toString();
   }
@@ -8077,6 +8127,7 @@ class FinanceTransactionRow extends DataClass
     hora,
     transferToAccountId,
     revisionNota,
+    cargaPresupuestoCategoryId,
   );
   @override
   bool operator ==(Object other) =>
@@ -8094,7 +8145,8 @@ class FinanceTransactionRow extends DataClass
           other.personaSitio == this.personaSitio &&
           other.hora == this.hora &&
           other.transferToAccountId == this.transferToAccountId &&
-          other.revisionNota == this.revisionNota);
+          other.revisionNota == this.revisionNota &&
+          other.cargaPresupuestoCategoryId == this.cargaPresupuestoCategoryId);
 }
 
 class FinanceTransactionsCompanion
@@ -8112,6 +8164,7 @@ class FinanceTransactionsCompanion
   final Value<String?> hora;
   final Value<String?> transferToAccountId;
   final Value<String?> revisionNota;
+  final Value<String?> cargaPresupuestoCategoryId;
   final Value<int> rowid;
   const FinanceTransactionsCompanion({
     this.id = const Value.absent(),
@@ -8127,6 +8180,7 @@ class FinanceTransactionsCompanion
     this.hora = const Value.absent(),
     this.transferToAccountId = const Value.absent(),
     this.revisionNota = const Value.absent(),
+    this.cargaPresupuestoCategoryId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FinanceTransactionsCompanion.insert({
@@ -8143,6 +8197,7 @@ class FinanceTransactionsCompanion
     this.hora = const Value.absent(),
     this.transferToAccountId = const Value.absent(),
     this.revisionNota = const Value.absent(),
+    this.cargaPresupuestoCategoryId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        accountId = Value(accountId),
@@ -8164,6 +8219,7 @@ class FinanceTransactionsCompanion
     Expression<String>? hora,
     Expression<String>? transferToAccountId,
     Expression<String>? revisionNota,
+    Expression<String>? cargaPresupuestoCategoryId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -8181,6 +8237,8 @@ class FinanceTransactionsCompanion
       if (transferToAccountId != null)
         'transfer_to_account_id': transferToAccountId,
       if (revisionNota != null) 'revision_nota': revisionNota,
+      if (cargaPresupuestoCategoryId != null)
+        'carga_presupuesto_category_id': cargaPresupuestoCategoryId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -8199,6 +8257,7 @@ class FinanceTransactionsCompanion
     Value<String?>? hora,
     Value<String?>? transferToAccountId,
     Value<String?>? revisionNota,
+    Value<String?>? cargaPresupuestoCategoryId,
     Value<int>? rowid,
   }) {
     return FinanceTransactionsCompanion(
@@ -8215,6 +8274,8 @@ class FinanceTransactionsCompanion
       hora: hora ?? this.hora,
       transferToAccountId: transferToAccountId ?? this.transferToAccountId,
       revisionNota: revisionNota ?? this.revisionNota,
+      cargaPresupuestoCategoryId:
+          cargaPresupuestoCategoryId ?? this.cargaPresupuestoCategoryId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -8263,6 +8324,11 @@ class FinanceTransactionsCompanion
     if (revisionNota.present) {
       map['revision_nota'] = Variable<String>(revisionNota.value);
     }
+    if (cargaPresupuestoCategoryId.present) {
+      map['carga_presupuesto_category_id'] = Variable<String>(
+        cargaPresupuestoCategoryId.value,
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -8285,6 +8351,7 @@ class FinanceTransactionsCompanion
           ..write('hora: $hora, ')
           ..write('transferToAccountId: $transferToAccountId, ')
           ..write('revisionNota: $revisionNota, ')
+          ..write('cargaPresupuestoCategoryId: $cargaPresupuestoCategoryId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -16083,6 +16150,7 @@ typedef $$FinanceTransactionsTableCreateCompanionBuilder =
       Value<String?> hora,
       Value<String?> transferToAccountId,
       Value<String?> revisionNota,
+      Value<String?> cargaPresupuestoCategoryId,
       Value<int> rowid,
     });
 typedef $$FinanceTransactionsTableUpdateCompanionBuilder =
@@ -16100,6 +16168,7 @@ typedef $$FinanceTransactionsTableUpdateCompanionBuilder =
       Value<String?> hora,
       Value<String?> transferToAccountId,
       Value<String?> revisionNota,
+      Value<String?> cargaPresupuestoCategoryId,
       Value<int> rowid,
     });
 
@@ -16218,6 +16287,11 @@ class $$FinanceTransactionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get cargaPresupuestoCategoryId => $composableBuilder(
+    column: $table.cargaPresupuestoCategoryId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$FinanceAccountsTableFilterComposer get accountId {
     final $$FinanceAccountsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -16329,6 +16403,11 @@ class $$FinanceTransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get cargaPresupuestoCategoryId => $composableBuilder(
+    column: $table.cargaPresupuestoCategoryId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$FinanceAccountsTableOrderingComposer get accountId {
     final $$FinanceAccountsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -16428,6 +16507,11 @@ class $$FinanceTransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get cargaPresupuestoCategoryId => $composableBuilder(
+    column: $table.cargaPresupuestoCategoryId,
+    builder: (column) => column,
+  );
+
   $$FinanceAccountsTableAnnotationComposer get accountId {
     final $$FinanceAccountsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -16524,6 +16608,8 @@ class $$FinanceTransactionsTableTableManager
                 Value<String?> hora = const Value.absent(),
                 Value<String?> transferToAccountId = const Value.absent(),
                 Value<String?> revisionNota = const Value.absent(),
+                Value<String?> cargaPresupuestoCategoryId =
+                    const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FinanceTransactionsCompanion(
                 id: id,
@@ -16539,6 +16625,7 @@ class $$FinanceTransactionsTableTableManager
                 hora: hora,
                 transferToAccountId: transferToAccountId,
                 revisionNota: revisionNota,
+                cargaPresupuestoCategoryId: cargaPresupuestoCategoryId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -16556,6 +16643,8 @@ class $$FinanceTransactionsTableTableManager
                 Value<String?> hora = const Value.absent(),
                 Value<String?> transferToAccountId = const Value.absent(),
                 Value<String?> revisionNota = const Value.absent(),
+                Value<String?> cargaPresupuestoCategoryId =
+                    const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FinanceTransactionsCompanion.insert(
                 id: id,
@@ -16571,6 +16660,7 @@ class $$FinanceTransactionsTableTableManager
                 hora: hora,
                 transferToAccountId: transferToAccountId,
                 revisionNota: revisionNota,
+                cargaPresupuestoCategoryId: cargaPresupuestoCategoryId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

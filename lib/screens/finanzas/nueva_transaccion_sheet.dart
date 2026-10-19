@@ -95,6 +95,11 @@ class _NuevaTransaccionSheetState
   String? _libroId;
   String? _libroDestinoId; // solo transferencia
   CatalogoCategoria? _categoriaSeleccionada;
+  // "Cargar a otro presupuesto": el gasto real es de _categoriaSeleccionada,
+  // pero descuenta del presupuesto de ESTA categoría padre en vez de la
+  // suya — ej. una gaseosa (Alimentación) pagada con la plata apartada
+  // para Transporte. Null = cuenta contra su propia categoría, de siempre.
+  String? _cargaPresupuestoCategoryId;
   late DateTime _fecha;
   late TimeOfDay _hora;
   final _montoCtrl = TextEditingController();
@@ -158,6 +163,7 @@ class _NuevaTransaccionSheetState
       _hora = TimeOfDay(hour: int.parse(hParts[0]), minute: int.parse(hParts[1]));
       _categoriaIdPendiente = e.categoryId;
       _categoriaSeleccionada = catalogoFinanzas.where((c) => c.id == e.categoryId).firstOrNull;
+      _cargaPresupuestoCategoryId = e.cargaPresupuestoCategoryId;
       _paso = 2;
     }
   }
@@ -287,6 +293,12 @@ class _NuevaTransaccionSheetState
         hora: Value(horaStr),
         personaSitio: Value(ordenante.isEmpty ? null : ordenante),
         transferToAccountId: Value(_tipo == 'transferencia' ? _libroDestinoId : null),
+        // Solo tiene sentido para gasto — se limpia explícitamente en
+        // cualquier otro caso (igual criterio que revisionNota abajo: un
+        // companion vía insertOnConflictUpdate no toca lo que no se
+        // menciona, así que hay que apagarlo a mano si dejó de aplicar).
+        cargaPresupuestoCategoryId:
+            Value(_tipo == 'gasto' ? _cargaPresupuestoCategoryId : null),
         // Si la transacción pasa a ser una transferencia válida (o deja de
         // serlo) tras una edición, cualquier aviso de "transferencia dudosa"
         // que tuviera de antes queda obsoleto — insertOnConflictUpdate deja
@@ -416,6 +428,7 @@ class _NuevaTransaccionSheetState
                       onVolver: () => setState(() => _paso = 2),
                       onSeleccionar: (cat) => setState(() {
                         _categoriaSeleccionada = cat;
+                        _cargaPresupuestoCategoryId = null;
                         _paso = 2;
                       }),
                     ),
@@ -444,8 +457,12 @@ class _NuevaTransaccionSheetState
                         onTipoChanged: (v) => setState(() {
                           _tipo = v;
                           _categoriaSeleccionada = null;
+                          _cargaPresupuestoCategoryId = null;
                         }),
                         categoriaSeleccionada: _categoriaSeleccionada,
+                        cargaPresupuestoCategoryId: _cargaPresupuestoCategoryId,
+                        onCargaPresupuestoChanged: (v) =>
+                            setState(() => _cargaPresupuestoCategoryId = v),
                         fecha: _fecha,
                         hora: _hora,
                         montoCtrl: _montoCtrl,
@@ -600,6 +617,8 @@ class _Paso2 extends ConsumerWidget {
   final ValueChanged<String?> onLibroDestinoChanged;
   final ValueChanged<String> onTipoChanged;
   final CatalogoCategoria? categoriaSeleccionada;
+  final String? cargaPresupuestoCategoryId;
+  final ValueChanged<String?> onCargaPresupuestoChanged;
   final DateTime fecha;
   final TimeOfDay hora;
   final TextEditingController montoCtrl;
@@ -629,6 +648,8 @@ class _Paso2 extends ConsumerWidget {
     required this.onLibroDestinoChanged,
     required this.onTipoChanged,
     required this.categoriaSeleccionada,
+    required this.cargaPresupuestoCategoryId,
+    required this.onCargaPresupuestoChanged,
     required this.fecha,
     required this.hora,
     required this.montoCtrl,
@@ -737,96 +758,121 @@ class _Paso2 extends ConsumerWidget {
         ),
         const SizedBox(height: 4),
 
-        // ── Lista fluida agrupada por encabezados sutiles (DÓNDE/CUÁNDO/
-        // DETALLE) — mismo ritmo visual de antes (sin tarjetas con borde),
-        // pero ahora se puede escanear por bloques en vez de una lista
-        // plana donde todo pesaba igual.
+        // ── Secciones agrupadas en tarjetas (DÓNDE/CUÁNDO/DETALLE) — el
+        // fondo general del sheet no cambia (sigue scaffoldBackgroundColor),
+        // pero cada grupo de campos ahora vive en su propia tarjeta con
+        // fondo bgCard, como en el boceto de diseño — antes era una lista
+        // plana con solo líneas finas entre filas, que no se parecía al
+        // mockup aprobado.
         _SeccionLabel('DÓNDE', tc: tc),
-        _LibroSelector(
-          icon: Icons.account_balance_wallet_outlined,
-          label: 'Registro',
-          libros: libros,
-          libroId: libroId,
-          onChanged: onLibroChanged,
+        _SeccionCard(
           tc: tc,
-        ),
-        const Divider(height: 1),
-        // Destino: solo para transferencia. Sin esto tampoco había forma
-        // de corregir el destino de una transferencia dudosa al editarla.
-        if (tipo == 'transferencia') ...[
-          _LibroSelector(
-            icon: Icons.account_balance_outlined,
-            label: 'Destino',
-            libros: libros,
-            libroId: libroDestinoId,
-            onChanged: onLibroDestinoChanged,
-            tc: tc,
-            excludeId: libroId,
-          ),
-          const Divider(height: 1),
-        ],
-        // Categoría: una fila que abre el selector completo (acordeón con
-        // píldoras de ícono) directamente — ya no hay chips rápidos acá,
-        // el acordeón quedó bien resuelto y no hace falta un atajo previo.
-        if (tipo != 'transferencia') ...[
-          _FlowRow(
-            icon: categoriaSeleccionada != null ? categoriaSeleccionada!.icono : Icons.category_outlined,
-            label: 'Categoría',
-            value: categoriaSeleccionada?.nombre ?? 'Elegir categoría',
-            onTap: onSeleccionarCategoria,
-            tc: tc,
-            valueColor: categoriaSeleccionada != null ? null : tc.textTertiary,
-          ),
-          const Divider(height: 1),
-          // Fase C1: resumen de presupuesto de la categoría elegida — solo
-          // para gastos, nunca bloquea guardar (ni excedido).
-          if (tipo == 'gasto' && categoriaSeleccionada != null)
-            _PresupuestoResumenInline(categoria: categoriaSeleccionada!, fecha: fecha),
-        ],
-        _SeccionLabel('CUÁNDO', tc: tc),
-        _FlowRow(
-          icon: Icons.event_outlined,
-          label: 'Fecha',
-          value: _fechaCorta(),
-          onTap: onPickFecha,
-          tc: tc,
-        ),
-        const Divider(height: 1),
-        _FlowRow(
-          icon: Icons.schedule_outlined,
-          label: 'Hora',
-          value: formatHora(hora),
-          onTap: onPickHora,
-          tc: tc,
-        ),
-        _SeccionLabel('DETALLE', tc: tc),
-        _FlowFieldRow(
-          icon: Icons.storefront_outlined,
-          label: 'Lugar',
-          tc: tc,
-          child: _OrdenanteField(
-            ordenanteCtrl: ordenanteCtrl,
-            placesSorted: placesSorted,
-            tc: tc,
-          ),
-        ),
-        const Divider(height: 1),
-        _FlowFieldRow(
-          icon: Icons.edit_note_outlined,
-          label: 'Nota',
-          tc: tc,
-          child: TextField(
-            controller: notaCtrl,
-            minLines: 1,
-            maxLines: null,
-            textAlign: TextAlign.right,
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              isDense: true,
-              hintText: 'Opcional',
-              contentPadding: EdgeInsets.zero,
+          children: [
+            _LibroSelector(
+              icon: Icons.account_balance_wallet_outlined,
+              label: 'Registro',
+              libros: libros,
+              libroId: libroId,
+              onChanged: onLibroChanged,
+              tc: tc,
             ),
+            // Destino: solo para transferencia. Sin esto tampoco había forma
+            // de corregir el destino de una transferencia dudosa al editarla.
+            if (tipo == 'transferencia')
+              _LibroSelector(
+                icon: Icons.account_balance_outlined,
+                label: 'Destino',
+                libros: libros,
+                libroId: libroDestinoId,
+                onChanged: onLibroDestinoChanged,
+                tc: tc,
+                excludeId: libroId,
+              ),
+            // Categoría: una fila que abre el selector completo (acordeón
+            // con píldoras de ícono) directamente — ya no hay chips rápidos
+            // acá, el acordeón quedó bien resuelto y no hace falta un atajo
+            // previo.
+            if (tipo != 'transferencia')
+              _FlowRow(
+                icon: categoriaSeleccionada != null ? categoriaSeleccionada!.icono : Icons.category_outlined,
+                label: 'Categoría',
+                value: categoriaSeleccionada?.nombre ?? 'Elegir categoría',
+                onTap: onSeleccionarCategoria,
+                tc: tc,
+                valueColor: categoriaSeleccionada != null ? null : tc.textTertiary,
+              ),
+          ],
+        ),
+        // Fase C1: resumen de presupuesto de la categoría elegida — solo
+        // para gastos, nunca bloquea guardar (ni excedido). Fuera de la
+        // tarjeta (es informativo, no un campo a rellenar).
+        if (tipo == 'gasto' && categoriaSeleccionada != null) ...[
+          _PresupuestoResumenInline(
+            categoria: categoriaSeleccionada!,
+            fecha: fecha,
+            cargaPresupuestoCategoryId: cargaPresupuestoCategoryId,
           ),
+          _CargaPresupuestoSelector(
+            categoria: categoriaSeleccionada!,
+            fecha: fecha,
+            valor: cargaPresupuestoCategoryId,
+            onChanged: onCargaPresupuestoChanged,
+          ),
+        ],
+
+        _SeccionLabel('CUÁNDO', tc: tc),
+        _SeccionCard(
+          tc: tc,
+          children: [
+            _FlowRow(
+              icon: Icons.event_outlined,
+              label: 'Fecha',
+              value: _fechaCorta(),
+              onTap: onPickFecha,
+              tc: tc,
+            ),
+            _FlowRow(
+              icon: Icons.schedule_outlined,
+              label: 'Hora',
+              value: formatHora(hora),
+              onTap: onPickHora,
+              tc: tc,
+            ),
+          ],
+        ),
+
+        _SeccionLabel('DETALLE', tc: tc),
+        _SeccionCard(
+          tc: tc,
+          children: [
+            _FlowFieldRow(
+              icon: Icons.storefront_outlined,
+              label: 'Lugar',
+              tc: tc,
+              child: _OrdenanteField(
+                ordenanteCtrl: ordenanteCtrl,
+                placesSorted: placesSorted,
+                tc: tc,
+              ),
+            ),
+            _FlowFieldRow(
+              icon: Icons.edit_note_outlined,
+              label: 'Nota',
+              tc: tc,
+              child: TextField(
+                controller: notaCtrl,
+                minLines: 1,
+                maxLines: null,
+                textAlign: TextAlign.right,
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  isDense: true,
+                  hintText: 'Opcional',
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
 
@@ -1127,8 +1173,17 @@ class _VistaPreviaRow extends StatelessWidget {
 class _PresupuestoResumenInline extends ConsumerWidget {
   final CatalogoCategoria categoria;
   final DateTime fecha;
+  // Si el usuario eligió "cargar a otro presupuesto", el resumen debe
+  // reflejar el presupuesto que REALMENTE se va a descontar, no el de la
+  // categoría propia — si no, el usuario vería un número que no es el que
+  // termina afectado.
+  final String? cargaPresupuestoCategoryId;
 
-  const _PresupuestoResumenInline({required this.categoria, required this.fecha});
+  const _PresupuestoResumenInline({
+    required this.categoria,
+    required this.fecha,
+    this.cargaPresupuestoCategoryId,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1141,7 +1196,7 @@ class _PresupuestoResumenInline extends ConsumerWidget {
     if (!catsAsync.hasValue || !budgetsAsync.hasValue) return const SizedBox.shrink();
 
     final cats = catsAsync.value!;
-    final padreId = categoria.parentId ?? categoria.id;
+    final padreId = cargaPresupuestoCategoryId ?? categoria.parentId ?? categoria.id;
     final padre = cats.where((c) => c.id == padreId).firstOrNull ?? categoria;
     final budget = budgetsAsync.value!.where((b) => b.categoryId == padreId).firstOrNull;
 
@@ -1204,6 +1259,114 @@ class _PresupuestoResumenInline extends ConsumerWidget {
   }
 }
 
+/// "Cargar a otro presupuesto": chip opcional que deja marcar que este gasto
+/// (de [categoria]) debe descontar del presupuesto de otra categoría padre
+/// en vez de la suya — ej. una gaseosa (Alimentación) pagada con la plata
+/// apartada para Transporte. Solo ofrece categorías que YA tienen un
+/// presupuesto este mes (si no tiene límite, no hay nada que "cargarle");
+/// si no hay ninguna otra disponible, no muestra nada.
+class _CargaPresupuestoSelector extends ConsumerWidget {
+  final CatalogoCategoria categoria;
+  final DateTime fecha;
+  final String? valor;
+  final ValueChanged<String?> onChanged;
+
+  const _CargaPresupuestoSelector({
+    required this.categoria,
+    required this.fecha,
+    required this.valor,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tc = Theme.of(context).extension<AppThemeColors>()!;
+    final catsAsync = ref.watch(allFinanceCategoriesProvider);
+    final budgetsAsync = ref.watch(financeBudgetsProvider((fecha.year, fecha.month)));
+    if (!catsAsync.hasValue || !budgetsAsync.hasValue) return const SizedBox.shrink();
+
+    final cats = catsAsync.value!;
+    final propiaPadreId = categoria.parentId ?? categoria.id;
+    final catsPorId = {for (final c in cats) c.id: c};
+    final opciones = budgetsAsync.value!
+        .map((b) => catsPorId[b.categoryId])
+        .whereType<CatalogoCategoria>()
+        .where((c) => c.id != propiaPadreId)
+        .toList();
+    if (opciones.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          Text(
+            'Cargar a:',
+            style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary),
+          ),
+          for (final opcion in opciones)
+            ChoiceChip(
+              label: Text(opcion.nombre),
+              selected: valor == opcion.id,
+              onSelected: (selected) => onChanged(selected ? opcion.id : null),
+              labelStyle: TextStyle(fontSize: AppTextSize.caption),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// Tarjeta que agrupa los campos de una sección (DÓNDE/CUÁNDO/DETALLE) —
+// fondo bgCard redondeado con los campos adentro separados por líneas
+// finas, como en el boceto de diseño. El fondo general del sheet sigue
+// siendo scaffoldBackgroundColor; solo los grupos de campos llevan tarjeta.
+class _SeccionCard extends StatelessWidget {
+  final List<Widget> children;
+  final AppThemeColors tc;
+
+  const _SeccionCard({required this.children, required this.tc});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: tc.bgCard,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            children[i],
+            if (i != children.length - 1) Divider(height: 1, color: tc.borderCard),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// Ícono en chip redondeado con fondo tenue — mismo lenguaje que los chips
+// de categoría, para que los campos de este formulario no se vean como
+// texto suelto sobre la tarjeta.
+Widget _iconChip(IconData icon, AppThemeColors tc) {
+  return Container(
+    width: 30,
+    height: 30,
+    decoration: BoxDecoration(
+      color: tc.borderCard.withValues(alpha: 0.5),
+      borderRadius: BorderRadius.circular(9),
+    ),
+    alignment: Alignment.center,
+    child: Icon(icon, size: AppIconSize.small, color: tc.textSecondary),
+  );
+}
+
 class _FlowRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1226,10 +1389,10 @@ class _FlowRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            Icon(icon, size: AppIconSize.small, color: tc.textSecondary),
+            _iconChip(icon, tc),
             const SizedBox(width: 12),
             Expanded(
               child: Text(label, style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary)),
@@ -1279,7 +1442,7 @@ class _FlowFieldRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: AppIconSize.small, color: tc.textSecondary),
+          _iconChip(icon, tc),
           const SizedBox(width: 12),
           Text(label, style: TextStyle(fontSize: AppTextSize.body, color: tc.textSecondary)),
           const SizedBox(width: 12),

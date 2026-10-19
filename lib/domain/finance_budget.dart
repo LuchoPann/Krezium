@@ -9,6 +9,13 @@ import 'package:krezium/data/models/finance_models.dart';
 /// vería gasto real, porque las transacciones casi siempre se registran
 /// contra la subcategoría específica, no contra el padre.
 /// Ingresos y transferencias nunca cuentan, aunque compartan `categoryId`.
+///
+/// Si una transacción trae `cargaPresupuestoCategoryId` (el usuario marcó
+/// "cargar a otro presupuesto" — ej. una gaseosa pagada con la plata
+/// apartada para Transporte), cuenta contra ESE presupuesto en vez del de
+/// su propia categoría: la categoría real sigue siendo Alimentación para
+/// estadísticas/historial, pero el gasto descuenta del presupuesto de
+/// Transporte, que es de donde salió la plata.
 double gastoCategoriaPeriodo({
   required String categoryId,
   required List<FinanceTransaction> transacciones,
@@ -17,8 +24,9 @@ double gastoCategoriaPeriodo({
   var total = 0.0;
   for (final t in transacciones) {
     if (t.tipo != 'gasto') continue;
-    final esDirecta = t.categoryId == categoryId;
-    final esSubcategoria = parentPorCategoria[t.categoryId] == categoryId;
+    final categoriaEfectiva = t.cargaPresupuestoCategoryId ?? t.categoryId;
+    final esDirecta = categoriaEfectiva == categoryId;
+    final esSubcategoria = parentPorCategoria[categoriaEfectiva] == categoryId;
     if (esDirecta || esSubcategoria) total += t.monto;
   }
   return total;

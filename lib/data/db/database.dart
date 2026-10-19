@@ -58,7 +58,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 21;
+  int get schemaVersion => 22;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -299,6 +299,13 @@ class AppDatabase extends _$AppDatabase {
               await customStatement('DROP TABLE finance_reservations');
               await customStatement(
                   'ALTER TABLE finance_reservations_new RENAME TO finance_reservations');
+            }
+          }
+          if (from < 22) {
+            final txCols = await colsOf('finance_transactions');
+            if (!txCols.contains('carga_presupuesto_category_id')) {
+              await m.addColumn(
+                  financeTransactions, financeTransactions.cargaPresupuestoCategoryId);
             }
           }
         },
