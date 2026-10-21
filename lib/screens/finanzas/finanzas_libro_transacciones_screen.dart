@@ -373,7 +373,21 @@ class _FinanzasLibroTransaccionesScreenState
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                 child: AppSectionCard(
-                  children: [_ResumenCard(tot: tot, balance: balance, cantidad: txs.length)],
+                  children: [_ResumenCard(
+                    tot: tot,
+                    balance: balance,
+                    cantidad: txs.length,
+                    // Neto de transferencias de ESTE registro — nunca entra
+                    // en tot.ingresos/tot.gastos (calcularIngresosGastos las
+                    // excluye a propósito), pero sí mueve el balance real
+                    // (signedEffectForLibro resta si salió, suma si entró).
+                    // Sin esta línea, un balance muy distinto de
+                    // ingresos-gastos se sentía como un bug — pedido
+                    // explícito del usuario tras verlo en vivo.
+                    transferenciasNeto: txs
+                        .where((t) => t.tipo == 'transferencia')
+                        .fold(0.0, (s, t) => s + signedEffectForLibro(t, _libroActual.id)),
+                  )],
                 ),
               ),
             ),
@@ -552,8 +566,14 @@ class _ResumenCard extends StatelessWidget {
   final ({double ingresos, double gastos}) tot;
   final double balance;
   final int cantidad;
+  final double transferenciasNeto;
 
-  const _ResumenCard({required this.tot, required this.balance, required this.cantidad});
+  const _ResumenCard({
+    required this.tot,
+    required this.balance,
+    required this.cantidad,
+    required this.transferenciasNeto,
+  });
 
   String _insight() {
     if (cantidad == 0) return 'Aún no hay registros.';
@@ -634,6 +654,21 @@ class _ResumenCard extends StatelessWidget {
                   pct: pctGastos,
                   colors: colors,
                 ),
+                // Transferencias: nunca suma a ingresos/gastos (por eso no
+                // tiene "% del total" como esas dos), pero sí explica la
+                // diferencia entre el balance y (ingresos − gastos) cuando
+                // este registro envió o recibió plata de otro.
+                if (transferenciasNeto != 0) ...[
+                  const SizedBox(height: 10),
+                  _ResumenDato(
+                    icono: Icons.swap_horiz,
+                    iconoColor: const Color(0xFF3B82F6),
+                    texto:
+                        '${transferenciasNeto > 0 ? '+' : ''}${formatCOP(transferenciasNeto)}',
+                    pct: null,
+                    colors: colors,
+                  ),
+                ],
               ],
             ),
           ],
@@ -652,7 +687,9 @@ class _ResumenDato extends StatelessWidget {
   final IconData icono;
   final Color iconoColor;
   final String texto;
-  final double pct;
+  // null para una cifra sin "% del total" propio (ej. transferencias, que
+  // no participan de la proporción ingresos/gastos).
+  final double? pct;
   final AppThemeColors colors;
 
   const _ResumenDato({
@@ -685,7 +722,7 @@ class _ResumenDato extends StatelessWidget {
               ),
             ),
             Text(
-              '${pct.toStringAsFixed(0)}% del total',
+              pct != null ? '${pct!.toStringAsFixed(0)}% del total' : 'transferencias',
               style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
             ),
           ],
@@ -730,12 +767,17 @@ class _TxRow extends StatelessWidget {
     final isIngreso = tx.tipo == 'ingreso' || esTransferenciaEntrante;
     // Una transferencia no es ni ingreso ni gasto — es plata que sigue
     // siendo tuya, solo cambia de registro. Pintarla roja con "-" (como
-    // antes) se leía como una pérdida real, que no es lo que pasó; pedido
-    // explícito del usuario: que no deje ningún "residuo" de gasto/ingreso
-    // en ningún lado, ni siquiera visual.
-    final montoColor = esTransferencia
-        ? colors.textSecondary
+    // antes) se leía como una pérdida real, que no es lo que pasó. Pedido
+    // explícito del usuario (tras ver las dos versiones en vivo): el monto
+    // y el ícono de una transferencia van en azul, consistente en ambas
+    // puntas (enviada/recibida) — rojo=gasto, verde=ingreso, azul=
+    // transferencia, aplicado también al ícono (reversa deliberada de
+    // "colores solo en el monto", ver feedback_finanzas_color_restraint).
+    const colorTransferencia = Color(0xFF3B82F6);
+    final accentColor = esTransferencia
+        ? colorTransferencia
         : (isIngreso ? const Color(0xFF22C55E) : const Color(0xFFEF4444));
+    final montoColor = accentColor;
     final montoStr = esTransferencia
         ? formatCOP(tx.monto)
         : '${isIngreso ? '+' : '-'}${formatCOP(tx.monto)}';
@@ -789,20 +831,22 @@ class _TxRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Ícono neutro (ni verde ni rojo): el único color admitido
-              // en la fila es el monto, a la derecha — así no hay dos
-              // bloques de color compitiendo por la misma señal.
+              // Ícono coloreado por tipo (rojo=gasto, verde=ingreso,
+              // azul=transferencia) — pedido explícito del usuario para
+              // coherencia visual con el monto, aunque reversa la regla
+              // anterior de "color solo en el monto" (ver
+              // feedback_finanzas_color_restraint: esto la reemplaza).
               Container(
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.1),
+                  color: accentColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   esTransferencia ? Icons.swap_horiz : (cat?.icono ?? Icons.label_outline),
                   size: AppIconSize.small,
-                  color: colors.textSecondary,
+                  color: accentColor,
                 ),
               ),
               const SizedBox(width: 12),

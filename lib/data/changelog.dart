@@ -29,6 +29,16 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.3.3',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.mejora,
+          'El resumen del libro de movimientos ahora muestra una línea de "Transferencias" cuando aplica, para explicar la diferencia entre el balance y tus ingresos/gastos.'),
+      ChangeItem(ChangeType.mejora,
+          'Los íconos de cada movimiento ya tienen color según el tipo: rojo (gasto), verde (ingreso), azul (transferencia) — antes solo el monto llevaba color.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.3.2',
     date: 'Octubre 2026',
     changes: [
