@@ -376,7 +376,6 @@ class _FinanzasLibroTransaccionesScreenState
                   children: [_ResumenCard(
                     tot: tot,
                     balance: balance,
-                    cantidad: txs.length,
                     // Neto de transferencias de ESTE registro — nunca entra
                     // en tot.ingresos/tot.gastos (calcularIngresosGastos las
                     // excluye a propósito), pero sí mueve el balance real
@@ -565,28 +564,13 @@ class _FinanzasLibroTransaccionesScreenState
 class _ResumenCard extends StatelessWidget {
   final ({double ingresos, double gastos}) tot;
   final double balance;
-  final int cantidad;
   final double transferenciasNeto;
 
   const _ResumenCard({
     required this.tot,
     required this.balance,
-    required this.cantidad,
     required this.transferenciasNeto,
   });
-
-  String _insight() {
-    if (cantidad == 0) return 'Aún no hay registros.';
-    if (tot.gastos == 0) {
-      return '$cantidad ${cantidad == 1 ? 'registro' : 'registros'} · aún no tienes gastos.';
-    }
-    if (tot.ingresos == 0) {
-      return '$cantidad ${cantidad == 1 ? 'registro' : 'registros'} · aún no tienes ingresos.';
-    }
-    final diff = ((tot.ingresos - tot.gastos).abs() / tot.gastos * 100).round();
-    final quien = tot.ingresos >= tot.gastos ? 'ingresos superan gastos' : 'gastos superan ingresos';
-    return '$cantidad ${cantidad == 1 ? 'registro' : 'registros'} · $quien en un $diff%.';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -626,6 +610,20 @@ class _ResumenCard extends StatelessWidget {
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
+                  // Segunda visual del balance, "sin transferencias" — solo
+                  // si hubo alguna: deja ver de un vistazo que el balance
+                  // real difiere de (ingresos - gastos) por plata movida
+                  // entre registros, no por un gasto/ingreso extra. Pedido
+                  // explícito del usuario tras ver que solo la línea de
+                  // "Transferencias" a la derecha no bastaba para que el
+                  // número grande se sintiera explicado.
+                  if (transferenciasNeto != 0) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Sin transferencias: ${formatCOP(balance - transferenciasNeto)}',
+                      style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -672,11 +670,6 @@ class _ResumenCard extends StatelessWidget {
               ],
             ),
           ],
-        ),
-        const SizedBox(height: 14),
-        Text(
-          _insight(),
-          style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
         ),
       ],
     );

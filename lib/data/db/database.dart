@@ -58,7 +58,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 22;
+  int get schemaVersion => 23;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -306,6 +306,12 @@ class AppDatabase extends _$AppDatabase {
             if (!txCols.contains('carga_presupuesto_category_id')) {
               await m.addColumn(
                   financeTransactions, financeTransactions.cargaPresupuestoCategoryId);
+            }
+          }
+          if (from < 23) {
+            final budgetCols = await colsOf('finance_budgets');
+            if (!budgetCols.contains('auto_repetir')) {
+              await m.addColumn(financeBudgets, financeBudgets.autoRepetir);
             }
           }
         },
@@ -1040,7 +1046,7 @@ class AppDatabase extends _$AppDatabase {
     final existente = await getFinanceBudgetFor(row.categoryId.value, row.anio.value, row.mes.value);
     if (existente != null) {
       await (update(financeBudgets)..where((t) => t.rowId.equals(existente.rowId)))
-          .write(FinanceBudgetsCompanion(montoLimite: row.montoLimite));
+          .write(FinanceBudgetsCompanion(montoLimite: row.montoLimite, autoRepetir: row.autoRepetir));
     } else {
       await into(financeBudgets).insert(row);
     }
@@ -1048,6 +1054,39 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> deleteFinanceBudget(int rowId) =>
       (delete(financeBudgets)..where((t) => t.rowId.equals(rowId))).go();
+
+  /// Copia SIN preguntar al mes [anio]/[mes] los presupuestos del mes
+  /// anterior más reciente que tengan `autoRepetir=true` y que todavía no
+  /// existan en el mes destino — el opt-in ya quedó dado por el usuario al
+  /// marcar esa casilla en el presupuesto, así que acá no hace falta
+  /// confirmar de nuevo (a diferencia de getPresupuestosMesAnteriorConDatos,
+  /// que sigue preguntando para los que NO tienen el flag). El flag viaja
+  /// con la copia, para que siga repitiéndose solo los meses siguientes.
+  /// Nunca toca un mes ya pasado respecto a hoy.
+  Future<void> asegurarPresupuestosAutomaticos(int anio, int mes) async {
+    final hoy = DateTime.now();
+    if (DateTime(anio, mes).isBefore(DateTime(hoy.year, hoy.month))) return;
+
+    final actuales = await getFinanceBudgets(anio, mes);
+    final idsExistentes = actuales.map((b) => b.categoryId).toSet();
+
+    for (var i = 1; i <= 24; i++) {
+      final anterior = DateTime(anio, mes - i);
+      final delAnterior = await getFinanceBudgets(anterior.year, anterior.month);
+      if (delAnterior.isEmpty) continue;
+      for (final b in delAnterior) {
+        if (!b.autoRepetir || idsExistentes.contains(b.categoryId)) continue;
+        await into(financeBudgets).insert(FinanceBudgetsCompanion.insert(
+          categoryId: b.categoryId,
+          anio: anio,
+          mes: mes,
+          montoLimite: b.montoLimite,
+          autoRepetir: const Value(true),
+        ));
+      }
+      return;
+    }
+  }
 
   // --- Finance Reservations ---
 

@@ -18,8 +18,13 @@ final financeTransactionsProvider =
 });
 
 final financeBudgetsProvider =
-    FutureProvider.family<List<FinanceBudgetRow>, (int, int)>((ref, anioMes) {
+    FutureProvider.family<List<FinanceBudgetRow>, (int, int)>((ref, anioMes) async {
   final db = ref.watch(databaseProvider);
+  // Copia sin preguntar los presupuestos marcados "repetir automáticamente"
+  // — opt-in ya dado por el usuario al crear/editar ese presupuesto. Los
+  // que no lo tienen siguen pasando por el aviso de "¿mantener?" de
+  // siempre (ver financePresupuestosMesAnteriorProvider).
+  await db.asegurarPresupuestosAutomaticos(anioMes.$1, anioMes.$2);
   return db.getFinanceBudgets(anioMes.$1, anioMes.$2);
 });
 

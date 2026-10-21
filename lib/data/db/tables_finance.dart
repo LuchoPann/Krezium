@@ -95,6 +95,12 @@ class FinanceBudgets extends Table {
   IntColumn get anio => integer()();
   IntColumn get mes => integer()(); // 1-12
   RealColumn get montoLimite => real()();
+  // Si true, este presupuesto se copia solo (sin preguntar) al mes
+  // siguiente cuando el usuario entra a un mes vacío — opt-in explícito
+  // por presupuesto, no un ajuste global. Los que NO lo tienen activado
+  // siguen pasando por el aviso "¿mantener presupuestos del mes
+  // anterior?" de siempre.
+  BoolColumn get autoRepetir => boolean().withDefault(const Constant(false))();
 }
 
 /// Metas de ahorro (Fase 05): el dinero reservado vive dentro del saldo de

@@ -29,6 +29,18 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.4.0',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.nuevo,
+          'Presupuestos: ahora puedes marcar uno para que se repita automáticamente cada mes, sin que vuelva a aparecer el aviso de "¿mantener presupuestos del mes anterior?".'),
+      ChangeItem(ChangeType.mejora,
+          'El resumen del libro de movimientos ahora muestra el balance con y sin transferencias, para que quede claro de dónde sale cada cambio.'),
+      ChangeItem(ChangeType.mejora,
+          'El cuadro de balance ocupa menos espacio en altura, dejando más aire para el histórico de movimientos.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.3.3',
     date: 'Octubre 2026',
     changes: [

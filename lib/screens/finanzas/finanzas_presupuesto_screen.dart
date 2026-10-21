@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -96,6 +97,7 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
               finPeriodo: finPeriodo,
               hoy: hoy,
             ),
+            autoRepetir: b.autoRepetir,
           );
         }).toList()
           ..sort((a, b) => b.progreso.compareTo(a.progreso));
@@ -152,32 +154,37 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
                 _ResumenPresupuesto(limite: totalLimite, gasto: totalGasto, tc: tc),
                 const SizedBox(height: AppSpacing.section),
               ],
-              if (items.isEmpty) ...[
-                // Solo se ofrece "mantener del mes anterior" al entrar a un
-                // mes actual/futuro vacío — nunca al navegar hacia atrás a un
-                // mes pasado que de verdad nunca tuvo presupuesto (eso no es
-                // un hueco a llenar, es historia real).
-                if (!DateTime(anio, mes).isBefore(
-                    DateTime(DateTime.now().year, DateTime.now().month)))
-                  Consumer(builder: (context, ref, _) {
-                    final prevAsync = ref.watch(
-                        financePresupuestosMesAnteriorProvider((anio, mes)));
-                    final prev = prevAsync.valueOrNull ?? const [];
-                    if (prev.isEmpty) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.section),
-                      child: _BannerMantenerPresupuestos(
-                        anio: anio,
-                        mes: mes,
-                        tituloMes: _tituloMes(fecha),
-                        prevBudgets: prev,
-                        catPorId: catPorId,
-                        tc: tc,
-                      ),
-                    );
-                  }),
-                _EstadoVacio(tc: tc, hayPadresDisponibles: padresDisponibles.isNotEmpty),
-              ] else
+              // Aviso "¿mantener presupuestos del mes anterior?" — ya no
+              // depende de que el mes esté completamente vacío: con
+              // presupuestos "repetir automáticamente" algunos ya pueden
+              // estar autollenados. Solo pregunta por los del mes anterior
+              // que NO tengan ese flag y que aún no existan este mes; nunca
+              // al navegar hacia atrás a un mes pasado real.
+              if (!DateTime(anio, mes).isBefore(
+                  DateTime(DateTime.now().year, DateTime.now().month)))
+                Consumer(builder: (context, ref, _) {
+                  final prevAsync = ref.watch(
+                      financePresupuestosMesAnteriorProvider((anio, mes)));
+                  final prevTodos = prevAsync.valueOrNull ?? const [];
+                  final pendientes = prevTodos
+                      .where((b) => !b.autoRepetir && !idsConPresupuesto.contains(b.categoryId))
+                      .toList();
+                  if (pendientes.isEmpty) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.section),
+                    child: _BannerMantenerPresupuestos(
+                      anio: anio,
+                      mes: mes,
+                      tituloMes: _tituloMes(fecha),
+                      prevBudgets: pendientes,
+                      catPorId: catPorId,
+                      tc: tc,
+                    ),
+                  );
+                }),
+              if (items.isEmpty)
+                _EstadoVacio(tc: tc, hayPadresDisponibles: padresDisponibles.isNotEmpty)
+              else
                 for (final item in items) ...[
                   _BudgetCard(
                     data: item,
@@ -232,6 +239,7 @@ class FinanzasPresupuestoScreen extends ConsumerWidget {
         categoriasDisponibles: disponiblesParaSheet,
         categoriaInicial: editando?.cat,
         montoInicial: editando?.limite,
+        autoRepetirInicial: editando?.autoRepetir ?? false,
       ),
     );
   }
@@ -286,6 +294,7 @@ class _BudgetItemData {
   final double progreso;
   final EstadoPresupuesto estado;
   final bool vaRapido;
+  final bool autoRepetir;
 
   _BudgetItemData({
     required this.rowId,
@@ -296,6 +305,7 @@ class _BudgetItemData {
     required this.progreso,
     required this.estado,
     required this.vaRapido,
+    required this.autoRepetir,
   });
 }
 
@@ -849,6 +859,7 @@ class _PresupuestoFormSheet extends ConsumerStatefulWidget {
   // a diferencia de categoriaInicial, esto NO activa el modo edición,
   // solo evita mostrar el selector de categoría porque ya se conoce.
   final CatalogoCategoria? categoriaPreseleccionada;
+  final bool autoRepetirInicial;
 
   const _PresupuestoFormSheet({
     required this.anio,
@@ -857,6 +868,7 @@ class _PresupuestoFormSheet extends ConsumerStatefulWidget {
     this.categoriaInicial,
     this.montoInicial,
     this.categoriaPreseleccionada,
+    this.autoRepetirInicial = false,
   });
 
   @override
@@ -875,6 +887,7 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
     text: widget.montoInicial != null ? agruparMiles(widget.montoInicial!.round()) : '',
   );
   bool _guardando = false;
+  late bool _autoRepetir = widget.autoRepetirInicial;
 
   bool get _editando => widget.categoriaInicial != null;
   // Solo se puede volver a elegir categoría si esta pantalla la dejó elegir
@@ -905,6 +918,7 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
           anio: widget.anio,
           mes: widget.mes,
           montoLimite: monto,
+          autoRepetir: Value(_autoRepetir),
         ));
     ref.invalidate(financeBudgetsProvider((widget.anio, widget.mes)));
     if (mounted) Navigator.of(context).pop();
@@ -977,6 +991,16 @@ class _PresupuestoFormSheetState extends ConsumerState<_PresupuestoFormSheet> {
                   anio: widget.anio,
                   mes: widget.mes,
                   onChanged: () => setState(() {}),
+                ),
+                const SizedBox(height: AppSpacing.tile),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  value: _autoRepetir,
+                  onChanged: (v) => setState(() => _autoRepetir = v),
+                  title: const Text('Repetir automáticamente cada mes'),
+                  subtitle: const Text(
+                    'Este presupuesto se sumará solo al mes siguiente, sin preguntar.',
+                  ),
                 ),
               ],
               const SizedBox(height: AppSpacing.section),

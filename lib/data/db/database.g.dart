@@ -8417,6 +8417,21 @@ class $FinanceBudgetsTable extends FinanceBudgets
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _autoRepetirMeta = const VerificationMeta(
+    'autoRepetir',
+  );
+  @override
+  late final GeneratedColumn<bool> autoRepetir = GeneratedColumn<bool>(
+    'auto_repetir',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_repetir" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     rowId,
@@ -8424,6 +8439,7 @@ class $FinanceBudgetsTable extends FinanceBudgets
     anio,
     mes,
     montoLimite,
+    autoRepetir,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -8478,6 +8494,15 @@ class $FinanceBudgetsTable extends FinanceBudgets
     } else if (isInserting) {
       context.missing(_montoLimiteMeta);
     }
+    if (data.containsKey('auto_repetir')) {
+      context.handle(
+        _autoRepetirMeta,
+        autoRepetir.isAcceptableOrUnknown(
+          data['auto_repetir']!,
+          _autoRepetirMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -8507,6 +8532,10 @@ class $FinanceBudgetsTable extends FinanceBudgets
         DriftSqlType.double,
         data['${effectivePrefix}monto_limite'],
       )!,
+      autoRepetir: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_repetir'],
+      )!,
     );
   }
 
@@ -8523,12 +8552,14 @@ class FinanceBudgetRow extends DataClass
   final int anio;
   final int mes;
   final double montoLimite;
+  final bool autoRepetir;
   const FinanceBudgetRow({
     required this.rowId,
     required this.categoryId,
     required this.anio,
     required this.mes,
     required this.montoLimite,
+    required this.autoRepetir,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -8538,6 +8569,7 @@ class FinanceBudgetRow extends DataClass
     map['anio'] = Variable<int>(anio);
     map['mes'] = Variable<int>(mes);
     map['monto_limite'] = Variable<double>(montoLimite);
+    map['auto_repetir'] = Variable<bool>(autoRepetir);
     return map;
   }
 
@@ -8548,6 +8580,7 @@ class FinanceBudgetRow extends DataClass
       anio: Value(anio),
       mes: Value(mes),
       montoLimite: Value(montoLimite),
+      autoRepetir: Value(autoRepetir),
     );
   }
 
@@ -8562,6 +8595,7 @@ class FinanceBudgetRow extends DataClass
       anio: serializer.fromJson<int>(json['anio']),
       mes: serializer.fromJson<int>(json['mes']),
       montoLimite: serializer.fromJson<double>(json['montoLimite']),
+      autoRepetir: serializer.fromJson<bool>(json['autoRepetir']),
     );
   }
   @override
@@ -8573,6 +8607,7 @@ class FinanceBudgetRow extends DataClass
       'anio': serializer.toJson<int>(anio),
       'mes': serializer.toJson<int>(mes),
       'montoLimite': serializer.toJson<double>(montoLimite),
+      'autoRepetir': serializer.toJson<bool>(autoRepetir),
     };
   }
 
@@ -8582,12 +8617,14 @@ class FinanceBudgetRow extends DataClass
     int? anio,
     int? mes,
     double? montoLimite,
+    bool? autoRepetir,
   }) => FinanceBudgetRow(
     rowId: rowId ?? this.rowId,
     categoryId: categoryId ?? this.categoryId,
     anio: anio ?? this.anio,
     mes: mes ?? this.mes,
     montoLimite: montoLimite ?? this.montoLimite,
+    autoRepetir: autoRepetir ?? this.autoRepetir,
   );
   FinanceBudgetRow copyWithCompanion(FinanceBudgetsCompanion data) {
     return FinanceBudgetRow(
@@ -8600,6 +8637,9 @@ class FinanceBudgetRow extends DataClass
       montoLimite: data.montoLimite.present
           ? data.montoLimite.value
           : this.montoLimite,
+      autoRepetir: data.autoRepetir.present
+          ? data.autoRepetir.value
+          : this.autoRepetir,
     );
   }
 
@@ -8610,13 +8650,15 @@ class FinanceBudgetRow extends DataClass
           ..write('categoryId: $categoryId, ')
           ..write('anio: $anio, ')
           ..write('mes: $mes, ')
-          ..write('montoLimite: $montoLimite')
+          ..write('montoLimite: $montoLimite, ')
+          ..write('autoRepetir: $autoRepetir')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(rowId, categoryId, anio, mes, montoLimite);
+  int get hashCode =>
+      Object.hash(rowId, categoryId, anio, mes, montoLimite, autoRepetir);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -8625,7 +8667,8 @@ class FinanceBudgetRow extends DataClass
           other.categoryId == this.categoryId &&
           other.anio == this.anio &&
           other.mes == this.mes &&
-          other.montoLimite == this.montoLimite);
+          other.montoLimite == this.montoLimite &&
+          other.autoRepetir == this.autoRepetir);
 }
 
 class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
@@ -8634,12 +8677,14 @@ class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
   final Value<int> anio;
   final Value<int> mes;
   final Value<double> montoLimite;
+  final Value<bool> autoRepetir;
   const FinanceBudgetsCompanion({
     this.rowId = const Value.absent(),
     this.categoryId = const Value.absent(),
     this.anio = const Value.absent(),
     this.mes = const Value.absent(),
     this.montoLimite = const Value.absent(),
+    this.autoRepetir = const Value.absent(),
   });
   FinanceBudgetsCompanion.insert({
     this.rowId = const Value.absent(),
@@ -8647,6 +8692,7 @@ class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
     required int anio,
     required int mes,
     required double montoLimite,
+    this.autoRepetir = const Value.absent(),
   }) : categoryId = Value(categoryId),
        anio = Value(anio),
        mes = Value(mes),
@@ -8657,6 +8703,7 @@ class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
     Expression<int>? anio,
     Expression<int>? mes,
     Expression<double>? montoLimite,
+    Expression<bool>? autoRepetir,
   }) {
     return RawValuesInsertable({
       if (rowId != null) 'row_id': rowId,
@@ -8664,6 +8711,7 @@ class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
       if (anio != null) 'anio': anio,
       if (mes != null) 'mes': mes,
       if (montoLimite != null) 'monto_limite': montoLimite,
+      if (autoRepetir != null) 'auto_repetir': autoRepetir,
     });
   }
 
@@ -8673,6 +8721,7 @@ class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
     Value<int>? anio,
     Value<int>? mes,
     Value<double>? montoLimite,
+    Value<bool>? autoRepetir,
   }) {
     return FinanceBudgetsCompanion(
       rowId: rowId ?? this.rowId,
@@ -8680,6 +8729,7 @@ class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
       anio: anio ?? this.anio,
       mes: mes ?? this.mes,
       montoLimite: montoLimite ?? this.montoLimite,
+      autoRepetir: autoRepetir ?? this.autoRepetir,
     );
   }
 
@@ -8701,6 +8751,9 @@ class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
     if (montoLimite.present) {
       map['monto_limite'] = Variable<double>(montoLimite.value);
     }
+    if (autoRepetir.present) {
+      map['auto_repetir'] = Variable<bool>(autoRepetir.value);
+    }
     return map;
   }
 
@@ -8711,7 +8764,8 @@ class FinanceBudgetsCompanion extends UpdateCompanion<FinanceBudgetRow> {
           ..write('categoryId: $categoryId, ')
           ..write('anio: $anio, ')
           ..write('mes: $mes, ')
-          ..write('montoLimite: $montoLimite')
+          ..write('montoLimite: $montoLimite, ')
+          ..write('autoRepetir: $autoRepetir')
           ..write(')'))
         .toString();
   }
@@ -16757,6 +16811,7 @@ typedef $$FinanceBudgetsTableCreateCompanionBuilder =
       required int anio,
       required int mes,
       required double montoLimite,
+      Value<bool> autoRepetir,
     });
 typedef $$FinanceBudgetsTableUpdateCompanionBuilder =
     FinanceBudgetsCompanion Function({
@@ -16765,6 +16820,7 @@ typedef $$FinanceBudgetsTableUpdateCompanionBuilder =
       Value<int> anio,
       Value<int> mes,
       Value<double> montoLimite,
+      Value<bool> autoRepetir,
     });
 
 class $$FinanceBudgetsTableFilterComposer
@@ -16798,6 +16854,11 @@ class $$FinanceBudgetsTableFilterComposer
 
   ColumnFilters<double> get montoLimite => $composableBuilder(
     column: $table.montoLimite,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoRepetir => $composableBuilder(
+    column: $table.autoRepetir,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -16835,6 +16896,11 @@ class $$FinanceBudgetsTableOrderingComposer
     column: $table.montoLimite,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get autoRepetir => $composableBuilder(
+    column: $table.autoRepetir,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FinanceBudgetsTableAnnotationComposer
@@ -16862,6 +16928,11 @@ class $$FinanceBudgetsTableAnnotationComposer
 
   GeneratedColumn<double> get montoLimite => $composableBuilder(
     column: $table.montoLimite,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get autoRepetir => $composableBuilder(
+    column: $table.autoRepetir,
     builder: (column) => column,
   );
 }
@@ -16908,12 +16979,14 @@ class $$FinanceBudgetsTableTableManager
                 Value<int> anio = const Value.absent(),
                 Value<int> mes = const Value.absent(),
                 Value<double> montoLimite = const Value.absent(),
+                Value<bool> autoRepetir = const Value.absent(),
               }) => FinanceBudgetsCompanion(
                 rowId: rowId,
                 categoryId: categoryId,
                 anio: anio,
                 mes: mes,
                 montoLimite: montoLimite,
+                autoRepetir: autoRepetir,
               ),
           createCompanionCallback:
               ({
@@ -16922,12 +16995,14 @@ class $$FinanceBudgetsTableTableManager
                 required int anio,
                 required int mes,
                 required double montoLimite,
+                Value<bool> autoRepetir = const Value.absent(),
               }) => FinanceBudgetsCompanion.insert(
                 rowId: rowId,
                 categoryId: categoryId,
                 anio: anio,
                 mes: mes,
                 montoLimite: montoLimite,
+                autoRepetir: autoRepetir,
               ),
           withReferenceMapper: (p0) => p0
               .map(
