@@ -29,6 +29,14 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.3.2',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.correccion,
+          'Las transferencias entre tus propios registros ya no se ven como un gasto (rojo, con signo "-") en el libro de movimientos — ahora son neutras, con su propio ícono y etiqueta ("Transferencia enviada/recibida"), porque mover dinero entre registros no es ni ingreso ni gasto.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.3.1',
     date: 'Octubre 2026',
     changes: [

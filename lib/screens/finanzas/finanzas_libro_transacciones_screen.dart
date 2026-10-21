@@ -724,17 +724,25 @@ class _TxRow extends StatelessWidget {
     // Una transferencia entrante (este libro es el destino, no el origen)
     // siempre suma, sin importar que tx.tipo siga siendo 'transferencia' —
     // esa marca describe la transacción desde el lado del origen.
+    final esTransferencia = tx.tipo == 'transferencia';
     final esTransferenciaEntrante =
-        tx.tipo == 'transferencia' && tx.accountId != libroActualId;
+        esTransferencia && tx.accountId != libroActualId;
     final isIngreso = tx.tipo == 'ingreso' || esTransferenciaEntrante;
-    final montoColor =
-        isIngreso ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
-    final montoStr =
-        '${isIngreso ? '+' : '-'}${formatCOP(tx.monto)}';
+    // Una transferencia no es ni ingreso ni gasto — es plata que sigue
+    // siendo tuya, solo cambia de registro. Pintarla roja con "-" (como
+    // antes) se leía como una pérdida real, que no es lo que pasó; pedido
+    // explícito del usuario: que no deje ningún "residuo" de gasto/ingreso
+    // en ningún lado, ni siquiera visual.
+    final montoColor = esTransferencia
+        ? colors.textSecondary
+        : (isIngreso ? const Color(0xFF22C55E) : const Color(0xFFEF4444));
+    final montoStr = esTransferencia
+        ? formatCOP(tx.monto)
+        : '${isIngreso ? '+' : '-'}${formatCOP(tx.monto)}';
 
-    final catNombre = esTransferenciaEntrante
-        ? 'Transferencia recibida'
-        : (cat?.nombre ?? tx.categoryId);
+    final catNombre = !esTransferencia
+        ? (cat?.nombre ?? tx.categoryId)
+        : (esTransferenciaEntrante ? 'Transferencia recibida' : 'Transferencia enviada');
 
     // La subcategoría es el título (protagonista de la fila); la categoría
     // padre pasa al subtítulo junto con nota y ordenante. catPadre viene
@@ -792,7 +800,7 @@ class _TxRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  cat?.icono ?? Icons.label_outline,
+                  esTransferencia ? Icons.swap_horiz : (cat?.icono ?? Icons.label_outline),
                   size: AppIconSize.small,
                   color: colors.textSecondary,
                 ),
