@@ -14,15 +14,8 @@ import 'package:krezium/screens/finanzas/finanzas_libro_transacciones_screen.dar
 import 'package:krezium/screens/finanzas/nueva_transaccion_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
-import 'package:krezium/widgets/color_picker_field.dart';
 import 'package:krezium/widgets/krezium_logo.dart';
 import 'package:uuid/uuid.dart';
-
-// ─── Color helper ─────────────────────────────────────────────────────────────
-Color _colorFromHex(String hex) {
-  final h = hex.replaceAll('#', '');
-  return Color(int.parse('FF$h', radix: 16));
-}
 
 String _fmt(double v) =>
     v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
@@ -808,9 +801,14 @@ class _LibroCard extends ConsumerWidget {
     required this.onEliminar,
   });
 
+  // Color fijo del ★ de favorito — ya no distingue registros por color
+  // propio (rediseño "caja + contenido simple": sin avatar ni franja
+  // lateral), así que una sola insignia dorada identifica el favorito
+  // igual en todas las tarjetas.
+  static const _favoritoColor = Color(0xFFFACC15);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final libroColor = _colorFromHex(libro.color);
     final colors = Theme.of(context).extension<AppThemeColors>()!;
     final balanceAsync = ref.watch(financeAccountBalanceProvider(libro.id));
 
@@ -821,17 +819,17 @@ class _LibroCard extends ConsumerWidget {
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.only(left: AppSpacing.card),
         decoration: BoxDecoration(
-          color: libroColor.withValues(alpha: 0.15),
+          color: _favoritoColor.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(AppRadius.card),
         ),
-        child: Row(
+        child: const Row(
           children: [
-            Icon(Icons.star_rounded, color: libroColor),
-            const SizedBox(width: 8),
+            Icon(Icons.star_rounded, color: _favoritoColor),
+            SizedBox(width: 8),
             Text(
               'Predeterminado',
               style: TextStyle(
-                color: libroColor,
+                color: _favoritoColor,
                 fontWeight: FontWeight.w600,
                 fontSize: AppTextSize.body,
               ),
@@ -851,183 +849,193 @@ class _LibroCard extends ConsumerWidget {
           border: Border.all(color: colors.borderCard.withValues(alpha: 0.6)),
         ),
         clipBehavior: Clip.antiAlias,
-        // IntrinsicHeight: la franja de color de 4px necesita una altura
-        // acotada para poder estirarse (ver bug en movements_tab.dart con
-        // el mismo patrón — Row+stretch sin esto fuerza altura infinita).
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(width: 4, color: libroColor),
-              Expanded(
-                child: InkWell(
-                  onTap: onTap,
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.card),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ── Nombre + chip "Principal" + flecha ────────────
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                libro.nombre,
-                                style: TextStyle(
-                                  fontSize: AppTextSize.body,
-                                  fontWeight: FontWeight.w700,
-                                  color: colors.textSecondary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.card, 10, AppSpacing.tile, AppSpacing.card),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Nombre + ★ favorito + menú — pegado arriba, menú
+                // desplazado hacia el borde derecho de la tarjeta.
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              libro.nombre,
+                              style: TextStyle(
+                                fontSize: AppTextSize.body,
+                                fontWeight: FontWeight.w700,
+                                color: colors.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (libro.esFavorito) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              'PRINCIPAL',
+                              style: TextStyle(
+                                fontSize: AppTextSize.caption,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
+                                color: _favoritoColor,
                               ),
                             ),
-                            if (libro.esFavorito) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: libroColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(AppRadius.chip),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.star_rounded, color: libroColor, size: AppIconSize.micro),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      'PRINCIPAL',
-                                      style: TextStyle(
-                                        fontSize: AppTextSize.caption,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 0.5,
-                                        color: libroColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            const SizedBox(width: 4),
-                            PopupMenuButton<String>(
-                              padding: EdgeInsets.zero,
-                              icon: Icon(Icons.more_vert_rounded, size: AppIconSize.small, color: colors.textTertiary),
-                              onSelected: (value) {
-                                switch (value) {
-                                  case 'editar':
-                                    onEditar();
-                                    break;
-                                  case 'archivar':
-                                    onArchivar();
-                                    break;
-                                  case 'eliminar':
-                                    onEliminar();
-                                    break;
-                                }
-                              },
-                              itemBuilder: (context) => const [
-                                PopupMenuItem(
-                                  value: 'editar',
-                                  child: ListTile(
-                                    leading: Icon(Icons.edit_outlined),
-                                    title: Text('Editar'),
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'archivar',
-                                  child: ListTile(
-                                    leading: Icon(Icons.archive_outlined),
-                                    title: Text('Archivar'),
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'eliminar',
-                                  child: ListTile(
-                                    leading: Icon(Icons.delete_outline),
-                                    title: Text('Eliminar'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(Icons.arrow_forward_rounded, size: AppIconSize.small, color: colors.textTertiary),
                           ],
-                        ),
-                        if (libro.descripcion.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            libro.descripcion,
-                            style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        ],
+                      ),
+                    ),
+                    Transform.translate(
+                      offset: const Offset(8, 0),
+                      child: PopupMenuButton<String>(
+                        padding: EdgeInsets.zero,
+                        icon: Icon(Icons.more_vert_rounded, size: AppIconSize.small, color: colors.textTertiary),
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'editar':
+                              onEditar();
+                              break;
+                            case 'archivar':
+                              onArchivar();
+                              break;
+                            case 'eliminar':
+                              onEliminar();
+                              break;
+                          }
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: 'editar',
+                            child: ListTile(
+                              leading: Icon(Icons.edit_outlined),
+                              title: Text('Editar'),
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'archivar',
+                            child: ListTile(
+                              leading: Icon(Icons.archive_outlined),
+                              title: Text('Archivar'),
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'eliminar',
+                            child: ListTile(
+                              leading: Icon(Icons.delete_outline),
+                              title: Text('Eliminar'),
+                            ),
                           ),
                         ],
-                        const SizedBox(height: 8),
-                        // ── Balance: protagonista, grande y contundente —
-                        // lo primero que se lee al escanear la tarjeta.
-                        balanceAsync.when(
-                          loading: () => SizedBox(
-                            height: AppTextSize.emphasis,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: SizedBox(
-                                width: 16, height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 1.5, color: libroColor),
+                      ),
+                    ),
+                  ],
+                ),
+                if (libro.descripcion.isNotEmpty)
+                  Transform.translate(
+                    offset: const Offset(0, -10),
+                    child: Text(
+                      libro.descripcion,
+                      style: TextStyle(
+                        fontSize: AppTextSize.caption,
+                        fontStyle: FontStyle.italic,
+                        color: colors.textTertiary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                // ── Split: balance a la izquierda, Ingresos/Gastos a la
+                // derecha — mismo patrón que el resumen dentro de un
+                // registro, pensado para ahorrar altura en vez de apilar
+                // balance y montos en filas separadas.
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'BALANCE',
+                              style: TextStyle(
+                                fontSize: AppTextSize.caption,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                                color: colors.textTertiary,
                               ),
                             ),
-                          ),
-                          error: (e, st) => const SizedBox(height: AppTextSize.emphasis),
-                          data: (b) {
-                            final balance = b.saldo;
-                            final positivo = balance >= 0;
-                            final balanceColor = positivo
-                                ? const Color(0xFF22C55E)
-                                : const Color(0xFFEF4444);
-                            return Text(
-                              '${positivo ? '' : '-'}${formatCOP(balance.abs())}',
-                              style: TextStyle(
-                                fontSize: AppTextSize.emphasis,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.6,
-                                color: balanceColor,
-                                fontFeatures: const [FontFeature.tabularFigures()],
+                            const SizedBox(height: 2),
+                            balanceAsync.when(
+                              loading: () => SizedBox(
+                                width: 16, height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 1.5, color: colors.textTertiary),
                               ),
-                            );
-                          },
+                              error: (e, st) => const SizedBox(height: AppTextSize.emphasis),
+                              data: (b) {
+                                final balance = b.saldoSinTransferencias;
+                                final positivo = balance >= 0;
+                                final balanceColor = positivo
+                                    ? const Color(0xFF22C55E)
+                                    : const Color(0xFFEF4444);
+                                return Text(
+                                  '${positivo ? '' : '-'}${formatCOP(balance.abs())}',
+                                  style: TextStyle(
+                                    fontSize: AppTextSize.emphasis,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.6,
+                                    color: balanceColor,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 12),
-                        Divider(height: 1, color: colors.borderCard),
-                        const SizedBox(height: 10),
-                        // Ingresos/Gastos en texto neutro — el balance de
-                        // arriba ya es el único color de la tarjeta; una
-                        // barra y cifras verdes/rojas acá encima saturaban.
-                        balanceAsync.when(
+                      ),
+                      const SizedBox(width: 14),
+                      Container(width: 1, color: colors.borderCard.withValues(alpha: 0.6)),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: balanceAsync.when(
                           loading: () => const SizedBox.shrink(),
                           error: (e, st) => const SizedBox.shrink(),
-                          data: (b) => Row(
+                          data: (b) => Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _StatColumn(
+                              _RegistroStat(
+                                icono: Icons.north_east_rounded,
+                                iconoColor: const Color(0xFF22C55E),
                                 label: 'Ingresos',
-                                value: formatCOP(b.ingresos),
-                                valueColor: colors.textPrimary,
+                                valor: formatCOP(b.ingresos),
                                 colors: colors,
                               ),
-                              const SizedBox(width: AppSpacing.section),
-                              _StatColumn(
+                              const SizedBox(height: 6),
+                              _RegistroStat(
+                                icono: Icons.south_east_rounded,
+                                iconoColor: const Color(0xFFEF4444),
                                 label: 'Gastos',
-                                value: formatCOP(b.gastos),
-                                valueColor: colors.textPrimary,
+                                valor: formatCOP(b.gastos),
                                 colors: colors,
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1035,16 +1043,18 @@ class _LibroCard extends ConsumerWidget {
   }
 }
 
-class _StatColumn extends StatelessWidget {
+class _RegistroStat extends StatelessWidget {
+  final IconData icono;
+  final Color iconoColor;
   final String label;
-  final String value;
-  final Color valueColor;
+  final String valor;
   final AppThemeColors colors;
 
-  const _StatColumn({
+  const _RegistroStat({
+    required this.icono,
+    required this.iconoColor,
     required this.label,
-    required this.value,
-    required this.valueColor,
+    required this.valor,
     required this.colors,
   });
 
@@ -1053,20 +1063,22 @@ class _StatColumn extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: AppTextSize.caption,
-            color: colors.textTertiary,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icono, size: AppIconSize.micro, color: iconoColor),
+            const SizedBox(width: 5),
+            Text(label, style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary)),
+          ],
         ),
         const SizedBox(height: 2),
         Text(
-          value,
+          valor,
           style: TextStyle(
             fontSize: AppTextSize.body,
             fontWeight: FontWeight.w700,
-            color: valueColor,
+            color: colors.textPrimary,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
       ],
@@ -1195,9 +1207,6 @@ class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
       text: widget.editar != null ? _fmt(widget.editar!.saldoInicial) : '');
   late final _descripcionController =
       TextEditingController(text: widget.editar?.descripcion ?? '');
-  late Color _color = widget.editar != null
-      ? _colorFromHex(widget.editar!.color)
-      : const Color(0xFFEF4444);
   bool _guardando = false;
 
   bool get _esEdicion => widget.editar != null;
@@ -1223,7 +1232,10 @@ class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
       nombre: Value(nombre),
       tipo: Value(widget.editar?.tipo ?? 'registro'),
       icono: Value(widget.editar?.icono ?? nombre),
-      color: Value('#${colorToHex(_color)}'),
+      // La tarjeta ya no distingue registros por color (diseño sin avatar
+      // ni franja lateral) — se conserva el que ya tenía al editar, y uno
+      // neutro fijo al crear, solo para no dejar la columna sin valor.
+      color: Value(widget.editar?.color ?? '#EF4444'),
       saldoInicial: Value(inicial),
       activa: Value(widget.editar?.activa ?? true),
       orden: Value(widget.editar?.orden ?? '0'),
@@ -1288,13 +1300,6 @@ class _NuevoRegistroSheetState extends ConsumerState<_NuevoRegistroSheet> {
               hintText: '0',
               prefixText: '\$ ',
             ),
-          ),
-          const SizedBox(height: 16),
-          Text('Color', style: TextStyle(fontSize: AppTextSize.caption, color: kredit.textSecondary)),
-          const SizedBox(height: 8),
-          ColorPickerField(
-            color: _color,
-            onColorChanged: (c) => setState(() => _color = c),
           ),
           const SizedBox(height: 24),
           SizedBox(

@@ -997,41 +997,6 @@ class AppDatabase extends _$AppDatabase {
             ..where((t) => t.anio.equals(anio) & t.mes.equals(mes)))
           .get();
 
-  /// Busca el mes anterior más reciente (hasta 24 meses atrás) que SÍ tenga
-  /// presupuestos — para ofrecerle al usuario "¿mantener estos?" al entrar a
-  /// un mes vacío, en vez de copiarlos en silencio. Nunca mira meses
-  /// posteriores a [anio]/[mes]. Devuelve lista vacía si no encuentra nada.
-  Future<List<FinanceBudgetRow>> getPresupuestosMesAnteriorConDatos(
-    int anio,
-    int mes,
-  ) async {
-    for (var i = 1; i <= 24; i++) {
-      final anterior = DateTime(anio, mes - i);
-      final delAnterior = await getFinanceBudgets(anterior.year, anterior.month);
-      if (delAnterior.isNotEmpty) return delAnterior;
-    }
-    return const [];
-  }
-
-  /// Crea presupuestos para [anio]/[mes] a partir de [seleccion]
-  /// (categoryId → monto, ya editado si el usuario lo ajustó al confirmar
-  /// el sheet de "mantener presupuestos del mes anterior"). No toca ningún
-  /// otro mes — cada uno queda independiente tras crearse.
-  Future<void> crearPresupuestosDesdeMesAnterior(
-    int anio,
-    int mes,
-    Map<String, double> seleccion,
-  ) async {
-    for (final entry in seleccion.entries) {
-      await into(financeBudgets).insert(FinanceBudgetsCompanion.insert(
-        categoryId: entry.key,
-        anio: anio,
-        mes: mes,
-        montoLimite: entry.value,
-      ));
-    }
-  }
-
   Future<FinanceBudgetRow?> getFinanceBudgetFor(String categoryId, int anio, int mes) =>
       (select(financeBudgets)
             ..where((t) =>
@@ -1058,11 +1023,10 @@ class AppDatabase extends _$AppDatabase {
   /// Copia SIN preguntar al mes [anio]/[mes] los presupuestos del mes
   /// anterior más reciente que tengan `autoRepetir=true` y que todavía no
   /// existan en el mes destino — el opt-in ya quedó dado por el usuario al
-  /// marcar esa casilla en el presupuesto, así que acá no hace falta
-  /// confirmar de nuevo (a diferencia de getPresupuestosMesAnteriorConDatos,
-  /// que sigue preguntando para los que NO tienen el flag). El flag viaja
-  /// con la copia, para que siga repitiéndose solo los meses siguientes.
-  /// Nunca toca un mes ya pasado respecto a hoy.
+  /// marcar esa casilla en el presupuesto. Los que NO tienen el flag ya no
+  /// se repiten de ninguna forma: el usuario decidió no marcarlos. El flag
+  /// viaja con la copia, para que siga repitiéndose solo los meses
+  /// siguientes. Nunca toca un mes ya pasado respecto a hoy.
   Future<void> asegurarPresupuestosAutomaticos(int anio, int mes) async {
     final hoy = DateTime.now();
     if (DateTime(anio, mes).isBefore(DateTime(hoy.year, hoy.month))) return;

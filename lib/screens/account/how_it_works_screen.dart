@@ -2,8 +2,42 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
 
-class HowItWorksScreen extends StatelessWidget {
+class HowItWorksScreen extends StatefulWidget {
   const HowItWorksScreen({super.key});
+
+  @override
+  State<HowItWorksScreen> createState() => _HowItWorksScreenState();
+}
+
+class _HowItWorksScreenState extends State<HowItWorksScreen> {
+  final _scrollController = ScrollController();
+  // Una GlobalKey por sección — el índice las usa para saltar con
+  // Scrollable.ensureVisible en vez de ser solo una tabla de contenidos
+  // de lectura.
+  final Map<String, GlobalKey> _sectionKeys = {
+    for (final id in [
+      ..._IndexData.creditos.map((e) => e.id),
+      ..._IndexData.finanzas.map((e) => e.id),
+    ])
+      id: GlobalKey(),
+  };
+
+  void _irA(String id) {
+    final ctx = _sectionKeys[id]?.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+      alignment: 0.02,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -11,6 +45,7 @@ class HowItWorksScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Cómo funciona Krezium')),
       body: ListView(
+        controller: _scrollController,
         padding: const EdgeInsets.all(AppSpacing.card),
         children: [
           // ── Introducción ─────────────────────────────────────────────────
@@ -19,16 +54,29 @@ class HowItWorksScreen extends StatelessWidget {
             'sin internet y sin servidores. Todos tus datos viven únicamente en tu '
             'dispositivo.',
           ),
+          _Note(
+            kredit: kredit,
+            text: 'Créditos y Finanzas son hoy dos módulos independientes: cada '
+                'uno guarda y calcula sus propios datos por separado. Si en el '
+                'futuro se unifican, esta guía se actualizará para reflejarlo.',
+          ),
+          const SizedBox(height: 20),
 
           // ── Índice ───────────────────────────────────────────────────────
-          _Index(kredit: kredit),
+          _Index(kredit: kredit, onTap: _irA),
           const SizedBox(height: 8),
           Divider(height: 1, color: kredit.borderCard),
 
+          _ModuleHeader(title: 'Módulo Créditos', kredit: kredit),
+
           // 1 ── Qué es y qué no es ─────────────────────────────────────────
-          const _SectionTitle(number: '1', title: 'Qué es Krezium — y qué no es'),
+          _SectionTitle(
+            key: _sectionKeys['c1'],
+            number: '1',
+            title: 'Qué es Créditos — y qué no es',
+          ),
           const _Body(
-            'Krezium es una herramienta de control y planificación financiera personal. '
+            'Créditos es una herramienta de control y planificación financiera personal. '
             'Funciona como un cuaderno de registro inteligente para tus créditos: '
             'calcula proyecciones, organiza cronogramas y te muestra el panorama '
             'completo de tu deuda.',
@@ -47,7 +95,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 2 ── Tipos de crédito ────────────────────────────────────────────
-          const _SectionTitle(number: '2', title: 'Los tres tipos de crédito'),
+          _SectionTitle(key: _sectionKeys['c2'], number: '2', title: 'Los tres tipos de crédito'),
           const _SubSection(title: 'Préstamo / Cuotas fijas'),
           const _Body(
             'Compraste algo o tomaste un crédito y pagas cuotas iguales hasta una fecha '
@@ -77,7 +125,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 3 ── Pantallas principales ───────────────────────────────────────
-          const _SectionTitle(number: '3', title: 'Pantallas principales'),
+          _SectionTitle(key: _sectionKeys['c3'], number: '3', title: 'Pantallas principales'),
           const _SubSection(title: 'Dashboard'),
           const _Body(
             '• Deuda total y ProgressRing: porcentaje pagado del mes en curso.\n'
@@ -105,7 +153,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 4 ── Registrar un crédito ────────────────────────────────────────
-          const _SectionTitle(number: '4', title: 'Registrar un crédito'),
+          _SectionTitle(key: _sectionKeys['c4'], number: '4', title: 'Registrar un crédito'),
           const _Body(
             'Toca el botón "+" en la pantalla de Créditos. Krezium te pide '
             'primero el tipo (préstamo, tarjeta o cupo de tienda) y luego la '
@@ -132,7 +180,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 5 ── Pagos y movimientos ─────────────────────────────────────────
-          const _SectionTitle(number: '5', title: 'Registrar pagos y movimientos'),
+          _SectionTitle(key: _sectionKeys['c5'], number: '5', title: 'Registrar pagos y movimientos'),
           const _SubSection(title: 'Préstamo — marcar cuota pagada'),
           const _Body(
             'En el detalle del crédito, abre la pestaña "Cronograma" y marca '
@@ -156,7 +204,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 6 ── Abonos extra ────────────────────────────────────────────────
-          const _SectionTitle(number: '6', title: 'Abonos extra a capital'),
+          _SectionTitle(key: _sectionKeys['c6'], number: '6', title: 'Abonos extra a capital'),
           const _Body(
             'En cualquier préstamo activo puedes registrar un abono extraordinario '
             'desde el menú del detalle. El monto se aplica directamente al capital '
@@ -172,7 +220,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 7 ── Simulador ───────────────────────────────────────────────────
-          const _SectionTitle(number: '7', title: 'Simulador financiero'),
+          _SectionTitle(key: _sectionKeys['c7'], number: '7', title: 'Simulador financiero'),
           const _Body(
             'Disponible en el detalle de cualquier crédito activo. Calcula el '
             'impacto de una acción futura sin modificar los datos reales.',
@@ -201,7 +249,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 8 ── Alertas y mora ──────────────────────────────────────────────
-          const _SectionTitle(number: '8', title: 'Alertas y mora estimada'),
+          _SectionTitle(key: _sectionKeys['c8'], number: '8', title: 'Alertas y mora estimada'),
           const _SubSection(title: 'Notificaciones de vencimiento'),
           const _Body(
             'Krezium puede enviarte recordatorios cuando una cuota está próxima '
@@ -226,7 +274,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 9 ── Seguridad ───────────────────────────────────────────────────
-          const _SectionTitle(number: '9', title: 'Seguridad y privacidad'),
+          _SectionTitle(key: _sectionKeys['c9'], number: '9', title: 'Seguridad y privacidad'),
           const _Body(
             'Protege la apertura de Krezium con:\n'
             '• PIN: código numérico de 4 a 6 dígitos.\n'
@@ -242,7 +290,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 10 ── Respaldo ───────────────────────────────────────────────────
-          const _SectionTitle(number: '10', title: 'Respaldo de datos'),
+          _SectionTitle(key: _sectionKeys['c10'], number: '10', title: 'Respaldo de datos'),
           const _SubSection(title: 'Exportación / importación manual'),
           const _Body(
             'Desde Cuenta → Datos y respaldos, exporta un archivo JSON con '
@@ -263,7 +311,7 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 11 ── Personalización ────────────────────────────────────────────
-          const _SectionTitle(number: '11', title: 'Personalización'),
+          _SectionTitle(key: _sectionKeys['c11'], number: '11', title: 'Personalización'),
           const _SubSection(title: 'Tema'),
           const _Body(
             'Oscuro — Puro (negro intenso), Frío (azul medianoche) o Cálido '
@@ -285,9 +333,9 @@ class HowItWorksScreen extends StatelessWidget {
           Divider(height: 1, color: kredit.borderCard),
 
           // 12 ── Limitaciones ───────────────────────────────────────────────
-          const _SectionTitle(number: '12', title: 'Limitaciones importantes'),
+          _SectionTitle(key: _sectionKeys['c12'], number: '12', title: 'Limitaciones importantes'),
           const _Body(
-            'Para usarla bien, es importante saber qué no hace Krezium:',
+            'Para usarla bien, es importante saber qué no hace Créditos:',
           ),
           const SizedBox(height: 10),
           const _LimitationBlock(items: [
@@ -332,14 +380,210 @@ class HowItWorksScreen extends StatelessWidget {
           _Note(
             kredit: kredit,
             text: 'La fuente de verdad es siempre el estado de cuenta o la app '
-                'oficial de tu entidad. Usa Krezium para planear y controlar tu '
+                'oficial de tu entidad. Usa Créditos para planear y controlar tu '
                 'deuda; confirma las cifras exactas directamente con el banco.',
+          ),
+          const SizedBox(height: AppSpacing.section * 2),
+
+          _ModuleHeader(title: 'Módulo Finanzas', kredit: kredit),
+
+          // F1 ── Qué es Finanzas ─────────────────────────────────────────────
+          _SectionTitle(key: _sectionKeys['f1'], number: '1', title: 'Qué es Finanzas — y qué no es'),
+          const _Body(
+            'Finanzas es tu registro de ingresos, gastos y ahorros del día a día — '
+            'independiente del módulo Créditos. Llevas uno o varios "registros" '
+            '(cuentas: efectivo, digital o bancaria), cada uno con su propio saldo, '
+            'historial y presupuestos asociados a sus categorías.',
+          ),
+          const SizedBox(height: 14),
+          const _CannotBlock(items: [
+            'Conectarse a bancos ni leer tus movimientos reales — todo se registra a mano.',
+            'Mover dinero de verdad entre cuentas — una "transferencia" aquí solo '
+                'refleja en la app que el dinero cambió de lugar.',
+            'Sincronizarse con el módulo Créditos — por ahora son completamente '
+                'independientes: sus datos nunca se cruzan.',
+            'Operar con monedas distintas al peso colombiano (COP).',
+          ]),
+          Divider(height: 1, color: kredit.borderCard),
+
+          // F2 ── Registros ─────────────────────────────────────────────────
+          _SectionTitle(key: _sectionKeys['f2'], number: '2', title: 'Registros (cuentas)'),
+          const _Body(
+            'Un registro es dónde vive tu plata: efectivo, una cuenta digital '
+            '(Nequi, Daviplata, etc.) o una cuenta bancaria. Cada uno tiene nombre, '
+            'ícono, color, saldo inicial y puede marcarse como favorito para '
+            'abrirlo primero.\n\n'
+            'El saldo de un registro es siempre saldo inicial + ingresos − gastos, '
+            'más lo que entró o salió por transferencias con otros registros. '
+            'Archivar un registro lo oculta de la lista sin borrar su historial.',
+          ),
+          Divider(height: 1, color: kredit.borderCard),
+
+          // F3 ── Transacciones ──────────────────────────────────────────────
+          _SectionTitle(key: _sectionKeys['f3'], number: '3', title: 'Transacciones'),
+          const _SubSection(title: 'Ingreso y gasto'),
+          const _Body(
+            'Un movimiento normal: monto, categoría, fecha/hora y nota opcional. '
+            'Un ingreso suma al saldo del registro; un gasto resta. Ambos cuentan '
+            'para el presupuesto de su categoría y para las estadísticas del mes.',
+          ),
+          const _SubSection(title: 'Transferencia entre registros'),
+          const _Body(
+            'Mueve dinero de un registro a otro — por ejemplo, de Efectivo a tu '
+            'cuenta bancaria. Nunca se cuenta como ingreso ni como gasto: en el '
+            'registro de origen se ve como una notificación azul de "salió" y en '
+            'el de destino como "entró", pero ninguno de los dos mueve tus '
+            'ingresos/gastos totales, solo el saldo de cada registro involucrado.\n\n'
+            'Por eso el balance de un registro se muestra en dos cifras cuando hay '
+            'transferencias de por medio: el balance "limpio" (solo ingresos menos '
+            'gastos) como protagonista, y el balance "con transferencias" como '
+            'dato secundario debajo, por si necesitas ver cuánto hay realmente '
+            'ahora mismo en ese registro.',
+          ),
+          const _SubSection(title: 'Cargar un gasto a otro presupuesto'),
+          const _Body(
+            'Si gastaste en una categoría (p. ej. Alimentación) pero con dinero '
+            'que tenías apartado para otra (p. ej. Transporte), puedes indicar al '
+            'registrar el gasto que descuente del presupuesto de Transporte en '
+            'vez del de Alimentación. La categoría del gasto no cambia, solo el '
+            'presupuesto del que se descuenta.',
+          ),
+          Divider(height: 1, color: kredit.borderCard),
+
+          // F4 ── Categorías ─────────────────────────────────────────────────
+          _SectionTitle(key: _sectionKeys['f4'], number: '4', title: 'Categorías'),
+          const _Body(
+            'Krezium trae un catálogo de categorías predefinidas (padre e hijo, '
+            'p. ej. Alimentación → Restaurantes) y puedes crear las tuyas propias '
+            'con ícono y color a elección. Una categoría puede ser de ingreso, de '
+            'gasto o de ambos tipos.\n\n'
+            'Las categorías que tú creaste se pueden eliminar cuando ya no las '
+            'uses; las predefinidas del catálogo no se borran, solo puedes dejar '
+            'de usarlas.',
+          ),
+          Divider(height: 1, color: kredit.borderCard),
+
+          // F5 ── Presupuestos ───────────────────────────────────────────────
+          _SectionTitle(key: _sectionKeys['f5'], number: '5', title: 'Presupuestos'),
+          const _Body(
+            'Un presupuesto limita cuánto planeas gastar en una categoría durante '
+            'un mes. Se crea desde Planificación → Presupuestos, eligiendo la '
+            'categoría y el monto límite; cada gasto que registres en esa '
+            'categoría (o que le cargues manualmente) descuenta del límite.',
+          ),
+          const _SubSection(title: 'Repetir automáticamente'),
+          const _Body(
+            'Al crear o editar un presupuesto puedes activar "Repetir '
+            'automáticamente cada mes": al entrar a un mes nuevo, ese presupuesto '
+            'se crea solo, con el mismo monto, sin preguntarte nada. Es opt-in por '
+            'presupuesto — tú decides cuáles se repiten y cuáles no.\n\n'
+            'Un presupuesto sin esa casilla activada simplemente no vuelve a '
+            'aparecer el mes siguiente: si lo quieres de nuevo, lo creas tú '
+            'manualmente ese mes.',
+          ),
+          Divider(height: 1, color: kredit.borderCard),
+
+          // F6 ── Metas ──────────────────────────────────────────────────────
+          _SectionTitle(key: _sectionKeys['f6'], number: '6', title: 'Metas de ahorro'),
+          const _Body(
+            'Aparta dinero para un objetivo (monto meta y, opcionalmente, fecha '
+            'límite). Una meta "vinculada" vive dentro del saldo de un registro '
+            'puntual; una meta "virtual" descuenta del disponible global, sin '
+            'atarse a ningún registro. En ambos casos, lo reservado para una meta '
+            'se resta del "disponible estimado" aunque siga contando como parte '
+            'del saldo real.\n\n'
+            'Puedes aportar o retirar dinero de una meta en cualquier momento; '
+            'cancelarla libera lo reservado, finalizarla lo mantiene apartado '
+            'hasta que lo retires explícitamente.',
+          ),
+          Divider(height: 1, color: kredit.borderCard),
+
+          // F7 ── Estadísticas ───────────────────────────────────────────────
+          _SectionTitle(key: _sectionKeys['f7'], number: '7', title: 'Estadísticas'),
+          const _Body(
+            'Muestra el desglose de ingresos y gastos por categoría, la '
+            'tendencia del periodo y la comparación contra el mes anterior. Las '
+            'transferencias entre registros nunca entran en estas cifras — solo '
+            'ingresos y gastos reales.',
+          ),
+          Divider(height: 1, color: kredit.borderCard),
+
+          // F8 ── Limitaciones ───────────────────────────────────────────────
+          _SectionTitle(key: _sectionKeys['f8'], number: '8', title: 'Limitaciones importantes'),
+          const _LimitationBlock(items: [
+            _Limitation(
+              icon: Icons.wifi_off_outlined,
+              label: 'Sin conexión a bancos',
+              detail: 'Todo se registra manualmente. Finanzas no lee tus '
+                  'movimientos reales ni tu saldo bancario.',
+            ),
+            _Limitation(
+              icon: Icons.sync_disabled_outlined,
+              label: 'Sin sincronización',
+              detail: 'No existe nube ni cuenta. Al cambiar de teléfono necesitas '
+                  'importar el backup manualmente.',
+            ),
+            _Limitation(
+              icon: Icons.hub_outlined,
+              label: 'Independiente de Créditos',
+              detail: 'Hoy Finanzas y Créditos no comparten datos entre sí. Un '
+                  'pago de crédito no aparece automáticamente como gasto acá.',
+            ),
+            _Limitation(
+              icon: Icons.flag_outlined,
+              label: 'Solo pesos colombianos',
+              detail: 'La app está diseñada para el mercado colombiano (COP). '
+                  'No admite otras monedas.',
+            ),
+          ]),
+          const SizedBox(height: AppSpacing.section),
+          _Note(
+            kredit: kredit,
+            text: 'Finanzas es un registro, no un banco: lo que ves acá es tan '
+                'exacto como lo que tú registres. Para el saldo real, confirma '
+                'siempre con tu banco o billetera digital.',
           ),
           const SizedBox(height: AppSpacing.section),
         ],
       ),
     );
   }
+}
+
+// ── Datos del índice ────────────────────────────────────────────────────────
+
+class _IndexEntry {
+  final String id;
+  final String title;
+  const _IndexEntry(this.id, this.title);
+}
+
+class _IndexData {
+  static const creditos = [
+    _IndexEntry('c1', 'Qué es Créditos — y qué no es'),
+    _IndexEntry('c2', 'Los tres tipos de crédito'),
+    _IndexEntry('c3', 'Pantallas principales'),
+    _IndexEntry('c4', 'Registrar un crédito'),
+    _IndexEntry('c5', 'Registrar pagos y movimientos'),
+    _IndexEntry('c6', 'Abonos extra a capital'),
+    _IndexEntry('c7', 'Simulador financiero'),
+    _IndexEntry('c8', 'Alertas y mora estimada'),
+    _IndexEntry('c9', 'Seguridad y privacidad'),
+    _IndexEntry('c10', 'Respaldo de datos'),
+    _IndexEntry('c11', 'Personalización'),
+    _IndexEntry('c12', 'Limitaciones importantes'),
+  ];
+
+  static const finanzas = [
+    _IndexEntry('f1', 'Qué es Finanzas — y qué no es'),
+    _IndexEntry('f2', 'Registros (cuentas)'),
+    _IndexEntry('f3', 'Transacciones'),
+    _IndexEntry('f4', 'Categorías'),
+    _IndexEntry('f5', 'Presupuestos'),
+    _IndexEntry('f6', 'Metas de ahorro'),
+    _IndexEntry('f7', 'Estadísticas'),
+    _IndexEntry('f8', 'Limitaciones importantes'),
+  ];
 }
 
 // ── Componentes ───────────────────────────────────────────────────────────────
@@ -352,7 +596,7 @@ class _Lead extends StatelessWidget {
   Widget build(BuildContext context) {
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Text(
         text,
         style: TextStyle(
@@ -366,24 +610,38 @@ class _Lead extends StatelessWidget {
   }
 }
 
+class _ModuleHeader extends StatelessWidget {
+  final String title;
+  final AppThemeColors kredit;
+  const _ModuleHeader({required this.title, required this.kredit});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 12),
+      child: Row(
+        children: [
+          Container(width: 4, height: 22, color: accent, margin: const EdgeInsets.only(right: 10)),
+          Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: AppTextSize.body,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.1,
+              color: kredit.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Index extends StatelessWidget {
   final AppThemeColors kredit;
-  const _Index({required this.kredit});
-
-  static const _entries = [
-    (n: '1', title: 'Qué es Krezium — y qué no es'),
-    (n: '2', title: 'Los tres tipos de crédito'),
-    (n: '3', title: 'Pantallas principales'),
-    (n: '4', title: 'Registrar un crédito'),
-    (n: '5', title: 'Registrar pagos y movimientos'),
-    (n: '6', title: 'Abonos extra a capital'),
-    (n: '7', title: 'Simulador financiero'),
-    (n: '8', title: 'Alertas y mora estimada'),
-    (n: '9', title: 'Seguridad y privacidad'),
-    (n: '10', title: 'Respaldo de datos'),
-    (n: '11', title: 'Personalización'),
-    (n: '12', title: 'Limitaciones importantes'),
-  ];
+  final void Function(String id) onTap;
+  const _Index({required this.kredit, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -408,14 +666,53 @@ class _Index extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...(_entries.map((e) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
+          _IndexGroup(label: 'Créditos', entries: _IndexData.creditos, kredit: kredit, onTap: onTap),
+          const SizedBox(height: 12),
+          _IndexGroup(label: 'Finanzas', entries: _IndexData.finanzas, kredit: kredit, onTap: onTap),
+        ],
+      ),
+    );
+  }
+}
+
+class _IndexGroup extends StatelessWidget {
+  final String label;
+  final List<_IndexEntry> entries;
+  final AppThemeColors kredit;
+  final void Function(String id) onTap;
+  const _IndexGroup({
+    required this.label,
+    required this.entries,
+    required this.kredit,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: AppTextSize.caption,
+            fontWeight: FontWeight.w700,
+            color: accent,
+          ),
+        ),
+        const SizedBox(height: 4),
+        ...entries.map((e) => InkWell(
+              onTap: () => onTap(e.id),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
                     SizedBox(
-                      width: 24,
+                      width: 22,
                       child: Text(
-                        '${e.n}.',
+                        e.id.replaceAll(RegExp('[^0-9]'), ''),
                         style: TextStyle(
                           fontSize: AppTextSize.body,
                           fontWeight: FontWeight.w700,
@@ -427,17 +724,15 @@ class _Index extends StatelessWidget {
                     Expanded(
                       child: Text(
                         e.title,
-                        style: TextStyle(
-                          fontSize: AppTextSize.body,
-                          color: kredit.textSecondary,
-                        ),
+                        style: TextStyle(fontSize: AppTextSize.body, color: kredit.textSecondary),
                       ),
                     ),
+                    Icon(Icons.chevron_right, size: AppIconSize.small, color: kredit.textTertiary),
                   ],
                 ),
-              ))),
-        ],
-      ),
+              ),
+            )),
+      ],
     );
   }
 }
@@ -445,7 +740,7 @@ class _Index extends StatelessWidget {
 class _SectionTitle extends StatelessWidget {
   final String number;
   final String title;
-  const _SectionTitle({required this.number, required this.title});
+  const _SectionTitle({super.key, required this.number, required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -553,7 +848,7 @@ class _CannotBlock extends StatelessWidget {
               const Icon(Icons.block_outlined, size: 16, color: AppColors.danger),
               const SizedBox(width: 6),
               Text(
-                'KREZIUM NO PUEDE',
+                'NO PUEDE',
                 style: TextStyle(
                   fontSize: AppTextSize.caption,
                   fontWeight: FontWeight.w700,

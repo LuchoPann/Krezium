@@ -22,18 +22,10 @@ final financeBudgetsProvider =
   final db = ref.watch(databaseProvider);
   // Copia sin preguntar los presupuestos marcados "repetir automáticamente"
   // — opt-in ya dado por el usuario al crear/editar ese presupuesto. Los
-  // que no lo tienen siguen pasando por el aviso de "¿mantener?" de
-  // siempre (ver financePresupuestosMesAnteriorProvider).
+  // que no lo tienen ya no se repiten solos: el usuario decidió no
+  // marcarlos, así que no hay un aviso de "¿mantener?" de respaldo.
   await db.asegurarPresupuestosAutomaticos(anioMes.$1, anioMes.$2);
   return db.getFinanceBudgets(anioMes.$1, anioMes.$2);
-});
-
-/// Presupuestos del mes anterior más reciente con datos, para el sheet de
-/// "¿Mantener presupuestos del mes anterior?" al entrar a un mes vacío.
-final financePresupuestosMesAnteriorProvider =
-    FutureProvider.family<List<FinanceBudgetRow>, (int, int)>((ref, anioMes) {
-  final db = ref.watch(databaseProvider);
-  return db.getPresupuestosMesAnteriorConDatos(anioMes.$1, anioMes.$2);
 });
 
 /// Todas las metas/reservas de todos los registros — alimenta la vista
@@ -97,13 +89,20 @@ final finanzasLibroActivoProvider = StateProvider<String?>((_) => null);
 
 class FinanceAccountBalance {
   final double saldo;
+  // saldoInicial + ingresos - gastos, sin el efecto de transferencias —
+  // es el balance "base" que se muestra por defecto en tarjetas y
+  // resúmenes (pedido explícito del usuario: una transferencia entre
+  // registros propios es solo plata que cambió de lugar, no debe hacer
+  // ver un registro como si estuviera en rojo).
+  final double saldoSinTransferencias;
   final double ingresos;
   final double gastos;
   final double reservado;
   final double disponibleEstimado;
   final bool reservasExcedenSaldo;
   const FinanceAccountBalance({
-    required this.saldo, required this.ingresos, required this.gastos,
+    required this.saldo, required this.saldoSinTransferencias,
+    required this.ingresos, required this.gastos,
     required this.reservado, required this.disponibleEstimado,
     required this.reservasExcedenSaldo,
   });
@@ -133,7 +132,9 @@ final financeAccountBalanceProvider =
   final disp = calcularDisponibleEstimado(saldo: saldo, reservado: reservado);
 
   return FinanceAccountBalance(
-    saldo: saldo, ingresos: ig.ingresos, gastos: ig.gastos,
+    saldo: saldo,
+    saldoSinTransferencias: saldoInicial + ig.ingresos - ig.gastos,
+    ingresos: ig.ingresos, gastos: ig.gastos,
     reservado: reservado, disponibleEstimado: disp.disponibleEstimado,
     reservasExcedenSaldo: disp.reservasExcedenSaldo,
   );

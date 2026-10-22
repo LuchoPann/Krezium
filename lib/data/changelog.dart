@@ -29,6 +29,18 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.5.0',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.nuevo,
+          'Guía "Cómo funciona Krezium" renovada: índice clicable y una sección completa dedicada a Finanzas (registros, transacciones, categorías, presupuestos, metas y estadísticas), separada de Créditos.'),
+      ChangeItem(ChangeType.mejora,
+          'Los presupuestos ya no muestran el aviso de "¿mantener los del mes pasado?" — ahora solo se repiten los que marcaste como automáticos; el resto simplemente no vuelve a aparecer si no lo creas de nuevo.'),
+      ChangeItem(ChangeType.mejora,
+          'Tarjetas de registros rediseñadas: balance e ingresos/gastos en paneles separados, menos espacio desperdiciado y mejor jerarquía visual.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.4.1',
     date: 'Octubre 2026',
     changes: [
