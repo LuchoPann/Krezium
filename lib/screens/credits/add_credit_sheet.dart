@@ -65,6 +65,15 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
   CardDesign? _selectedCardDesign;
   bool _saving = false;
 
+  // Memoización de _buildPreviewCredit(): ese método corre
+  // buildLoanInstallments (la amortización completa) cada vez que se
+  // construye, y se reconstruye con cualquier setState mientras el paso 4
+  // (confirmación) está visible — por ejemplo al escribir en "Notas" en
+  // ese mismo paso. Cachear por una clave de los campos que realmente usa
+  // evita recalcular el cronograma cuando ninguno de ellos cambió.
+  String? _previewCacheKey;
+  Credit? _previewCacheResult;
+
   // Stepper state (Tarea 1). Only the fields belonging to the current step
   // are mounted under the single Form below, so `_formKey.currentState!
   // .validate()` naturally scopes itself to what's visible on screen while
@@ -1310,6 +1319,32 @@ class _AddCreditSheetState extends ConsumerState<AddCreditSheet> {
   // complete/parseable enough to render a meaningful card (the real
   // validation/build happens in `_save`).
   Credit? _buildPreviewCredit() {
+    final key = _previewCacheKeyFor();
+    if (key == _previewCacheKey) return _previewCacheResult;
+    final result = _computePreviewCredit();
+    _previewCacheKey = key;
+    _previewCacheResult = result;
+    return result;
+  }
+
+  // Una clave de texto con TODOS los campos que _computePreviewCredit lee
+  // — si ninguno cambió desde la última vez, el resultado cacheado sigue
+  // siendo válido. Barata de construir (solo concatenación de strings)
+  // comparada con volver a correr buildLoanInstallments.
+  String _previewCacheKeyFor() {
+    return [
+      _type, _mode, _nameCtrl.text, _lenderCtrl.text, _notesCtrl.text,
+      _limitCtrl.text, _balanceCtrl.text, _cutoffDayCtrl.text, _cutoffDayInt,
+      _paymentOffsetCtrl.text, _tarjetaPaymentOffsetDays, _interestCtrl.text,
+      _managementFeeCtrl.text, _managementFeeFrequency, _oneInstallmentInterestPolicy,
+      _interestRateType, _selectedCardDesign?.name,
+      _locationCtrl.text, _amountCtrl.text, _installmentsCtrl.text, _quotaCtrl.text,
+      _frequency, _startDate, _interestUnknown, _earlyPaymentWaivesInterest,
+      _selectedEntityId,
+    ].join('|');
+  }
+
+  Credit? _computePreviewCredit() {
     final name = _nameCtrl.text.trim().isEmpty ? '(sin nombre)' : _nameCtrl.text.trim();
     final lender = _lenderCtrl.text.trim().isEmpty ? '(sin definir)' : _lenderCtrl.text.trim();
     try {
