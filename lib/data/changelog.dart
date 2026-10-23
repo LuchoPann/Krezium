@@ -29,6 +29,14 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.5.5',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.mejora,
+          'Logos de bancos (Itaú, Occidente, Popular, AV Villas, Tuya) reescalados a su tamaño real de uso — 90% menos peso en la app, sin pérdida de nitidez.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.5.4',
     date: 'Octubre 2026',
     changes: [
