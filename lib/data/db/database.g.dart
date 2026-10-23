@@ -10552,6 +10552,54 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $FinanceReservationsTable(this);
   late final $FinanceGoalMovementsTable financeGoalMovements =
       $FinanceGoalMovementsTable(this);
+  late final Index idxInstallmentsCreditId = Index(
+    'idx_installments_credit_id',
+    'CREATE INDEX idx_installments_credit_id ON installments (credit_id)',
+  );
+  late final Index idxCardMovementsCreditId = Index(
+    'idx_card_movements_credit_id',
+    'CREATE INDEX idx_card_movements_credit_id ON card_movements (credit_id)',
+  );
+  late final Index idxCardStatementsCreditId = Index(
+    'idx_card_statements_credit_id',
+    'CREATE INDEX idx_card_statements_credit_id ON card_statements (credit_id)',
+  );
+  late final Index idxInstallmentPurchasesCreditId = Index(
+    'idx_installment_purchases_credit_id',
+    'CREATE INDEX idx_installment_purchases_credit_id ON installment_purchases (credit_id)',
+  );
+  late final Index idxLoanAbonosCreditId = Index(
+    'idx_loan_abonos_credit_id',
+    'CREATE INDEX idx_loan_abonos_credit_id ON loan_abonos (credit_id)',
+  );
+  late final Index idxPagosRealizadosCreditId = Index(
+    'idx_pagos_realizados_credit_id',
+    'CREATE INDEX idx_pagos_realizados_credit_id ON pagos_realizados (credit_id)',
+  );
+  late final Index idxFinanceTxAccount = Index(
+    'idx_finance_tx_account',
+    'CREATE INDEX idx_finance_tx_account ON finance_transactions (account_id)',
+  );
+  late final Index idxFinanceTxTransferTo = Index(
+    'idx_finance_tx_transfer_to',
+    'CREATE INDEX idx_finance_tx_transfer_to ON finance_transactions (transfer_to_account_id)',
+  );
+  late final Index idxFinanceTxFecha = Index(
+    'idx_finance_tx_fecha',
+    'CREATE INDEX idx_finance_tx_fecha ON finance_transactions (fecha)',
+  );
+  late final Index idxFinanceBudgetsKey = Index(
+    'idx_finance_budgets_key',
+    'CREATE UNIQUE INDEX idx_finance_budgets_key ON finance_budgets (category_id, anio, mes)',
+  );
+  late final Index idxFinanceReservationsAccount = Index(
+    'idx_finance_reservations_account',
+    'CREATE INDEX idx_finance_reservations_account ON finance_reservations (account_id)',
+  );
+  late final Index idxFinanceGoalMovementsGoal = Index(
+    'idx_finance_goal_movements_goal',
+    'CREATE INDEX idx_finance_goal_movements_goal ON finance_goal_movements (goal_id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -10573,6 +10621,18 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     financeTemplates,
     financeReservations,
     financeGoalMovements,
+    idxInstallmentsCreditId,
+    idxCardMovementsCreditId,
+    idxCardStatementsCreditId,
+    idxInstallmentPurchasesCreditId,
+    idxLoanAbonosCreditId,
+    idxPagosRealizadosCreditId,
+    idxFinanceTxAccount,
+    idxFinanceTxTransferTo,
+    idxFinanceTxFecha,
+    idxFinanceBudgetsKey,
+    idxFinanceReservationsAccount,
+    idxFinanceGoalMovementsGoal,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([

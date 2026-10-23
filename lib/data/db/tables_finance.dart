@@ -32,6 +32,9 @@ class FinanceCategories extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@TableIndex(name: 'idx_finance_tx_account', columns: {#accountId})
+@TableIndex(name: 'idx_finance_tx_transfer_to', columns: {#transferToAccountId})
+@TableIndex(name: 'idx_finance_tx_fecha', columns: {#fecha})
 @DataClassName('FinanceTransactionRow')
 class FinanceTransactions extends Table {
   TextColumn get id => text()();
@@ -88,6 +91,11 @@ class FinanceTemplates extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@TableIndex(
+  name: 'idx_finance_budgets_key',
+  columns: {#categoryId, #anio, #mes},
+  unique: true,
+)
 @DataClassName('FinanceBudgetRow')
 class FinanceBudgets extends Table {
   IntColumn get rowId => integer().autoIncrement()();
@@ -110,6 +118,7 @@ class FinanceBudgets extends Table {
 /// [montoObjetivo] es la meta. Cancelar libera el dinero (deja de contar
 /// como reservado); finalizar lo mantiene reservado hasta que el usuario lo
 /// retire explícitamente.
+@TableIndex(name: 'idx_finance_reservations_account', columns: {#accountId})
 @DataClassName('FinanceReservationRow')
 class FinanceReservations extends Table {
   TextColumn get id => text()();
@@ -137,6 +146,7 @@ class FinanceReservations extends Table {
 /// Historial de aportes/retiros de una meta (Planificación v2) — antes
 /// solo existía el acumulado en FinanceReservations.monto, sin forma de
 /// reconstruir qué pasó y cuándo.
+@TableIndex(name: 'idx_finance_goal_movements_goal', columns: {#goalId})
 @DataClassName('FinanceGoalMovementRow')
 class FinanceGoalMovements extends Table {
   TextColumn get id => text()();

@@ -366,10 +366,13 @@ class _GlobalHeader extends ConsumerWidget {
     double balance = 0;
     bool loading = false;
 
+    // Una sola consulta batcheada para todas las cuentas, en vez de un
+    // watch por cuenta (antes: 3×N queries para N cuentas visibles).
+    final balancesAsync = ref.watch(allFinanceAccountBalancesProvider);
     for (final libro in libros) {
-      final balanceAsync = ref.watch(financeAccountBalanceProvider(libro.id));
+      final balanceAsync = balancesAsync.whenData((m) => m[libro.id]);
       balanceAsync.when(
-        data: (b) => balance += b.saldo,
+        data: (b) => balance += b?.saldo ?? 0,
         loading: () => loading = true,
         error: (e, st) {},
       );

@@ -131,6 +131,7 @@ class CommercialQuotas extends Table {
 
 /// One row per loan/cupo installment. Mirrors app.js's `installments[]`
 /// (buildLoanInstallments ~L388-418, applyInstallmentPayment ~L627-648).
+@TableIndex(name: 'idx_installments_credit_id', columns: {#creditId})
 @DataClassName('InstallmentRow')
 class Installments extends Table {
   IntColumn get rowId => integer().autoIncrement()();
@@ -149,6 +150,7 @@ class Installments extends Table {
 
 /// One row per card movement. Mirrors app.js's `movements[]`
 /// (registerCardMovement ~L763-773, accrueCardCredit ~L703-756).
+@TableIndex(name: 'idx_card_movements_credit_id', columns: {#creditId})
 @DataClassName('CardMovementRow')
 class CardMovements extends Table {
   IntColumn get rowId => integer().autoIncrement()();
@@ -190,6 +192,7 @@ class CardMovements extends Table {
 }
 
 /// Una compra a plazos. Ver lib/data/models/installment_purchase.dart.
+@TableIndex(name: 'idx_installment_purchases_credit_id', columns: {#creditId})
 @DataClassName('InstallmentPurchaseRow')
 class InstallmentPurchases extends Table {
   TextColumn get id => text()();
@@ -212,6 +215,7 @@ class InstallmentPurchases extends Table {
 
 /// Un extracto de tarjeta ya cerrado (histórico). Ver
 /// lib/data/models/card_statement.dart.
+@TableIndex(name: 'idx_card_statements_credit_id', columns: {#creditId})
 @DataClassName('CardStatementRow')
 class CardStatements extends Table {
   TextColumn get id => text()();
@@ -232,6 +236,7 @@ class CardStatements extends Table {
 /// Pagos reales registrados manualmente por el usuario para préstamos
 /// (cuotas) y tarjetas (pagos del extracto). Complementa la marca
 /// `paid = true` en Installments con el monto y fecha reales.
+@TableIndex(name: 'idx_pagos_realizados_credit_id', columns: {#creditId})
 @DataClassName('PagoRealizadoRow')
 class PagosRealizados extends Table {
   IntColumn get rowId => integer().autoIncrement()();
@@ -258,6 +263,7 @@ class PagosRealizados extends Table {
 /// lib/data/models/loan_abono.dart; see applyLoanAbono in
 /// lib/domain/loan_calculator.dart for how the amount/installmentsSkipped
 /// are derived.
+@TableIndex(name: 'idx_loan_abonos_credit_id', columns: {#creditId})
 @DataClassName('LoanAbonoRow')
 class LoanAbonos extends Table {
   IntColumn get rowId => integer().autoIncrement()();

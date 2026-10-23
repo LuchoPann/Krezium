@@ -11,6 +11,8 @@ import '../models/credit.dart';
 import '../models/installment.dart';
 import '../models/loan_abono.dart';
 import '../models/pago_realizado.dart';
+import '../models/finance_models.dart';
+import '../../domain/finance_ledger.dart';
 import 'connection.dart';
 import 'tables.dart';
 import 'tables_finance.dart';
@@ -58,7 +60,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 23;
+  int get schemaVersion => 24;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -312,6 +314,47 @@ class AppDatabase extends _$AppDatabase {
             final budgetCols = await colsOf('finance_budgets');
             if (!budgetCols.contains('auto_repetir')) {
               await m.addColumn(financeBudgets, financeBudgets.autoRepetir);
+            }
+          }
+          if (from < 24) {
+            // Ninguna tabla tenía índices hasta ahora — toda consulta
+            // filtrada por credit_id/account_id/fecha hacía table scan
+            // completo. CREATE INDEX IF NOT EXISTS es idempotente, así
+            // que es seguro repetir esta migración si acaso.
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_installments_credit_id ON installments(credit_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_card_movements_credit_id ON card_movements(credit_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_installment_purchases_credit_id ON installment_purchases(credit_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_card_statements_credit_id ON card_statements(credit_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_pagos_realizados_credit_id ON pagos_realizados(credit_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_loan_abonos_credit_id ON loan_abonos(credit_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_finance_tx_account ON finance_transactions(account_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_finance_tx_transfer_to ON finance_transactions(transfer_to_account_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_finance_tx_fecha ON finance_transactions(fecha)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_finance_reservations_account ON finance_reservations(account_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_finance_goal_movements_goal ON finance_goal_movements(goal_id)');
+            // Único por ser también la clave de negocio real del
+            // presupuesto (ver upsertFinanceBudget) — envuelto en
+            // try/catch porque una base con datos duplicados preexistentes
+            // (que no deberían existir, dado que upsertFinanceBudget
+            // siempre busca antes de insertar) no debe romper el resto de
+            // esta migración ni dejar la app sin abrir.
+            try {
+              await customStatement(
+                  'CREATE UNIQUE INDEX IF NOT EXISTS idx_finance_budgets_key ON finance_budgets(category_id, anio, mes)');
+            } catch (_) {
+              await customStatement(
+                  'CREATE INDEX IF NOT EXISTS idx_finance_budgets_key ON finance_budgets(category_id, anio, mes)');
             }
           }
         },
@@ -793,6 +836,44 @@ class AppDatabase extends _$AppDatabase {
     return q.get();
   }
 
+  /// Busca una cuenta por id sin traer toda la tabla — reemplaza el patrón
+  /// `getFinanceAccounts(...).where((c) => c.id == id).firstOrNull` que
+  /// escaneaba la tabla completa solo para encontrar una fila.
+  Future<FinanceAccountRow?> getFinanceAccountById(String id) =>
+      (select(financeAccounts)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  /// Saldo/ingresos/gastos/reservado de TODAS las cuentas en una sola
+  /// pasada — reemplaza N llamadas individuales (antes: 3×N queries para
+  /// N cuentas visibles en la pantalla de registros, una por tarjeta más
+  /// una del encabezado global).
+  Future<Map<String, ({double saldo, double saldoSinTransferencias, double ingresos, double gastos, double reservado})>>
+      getAllFinanceAccountBalancesRaw() async {
+    final cuentas = await getFinanceAccounts(incluirArchivadas: true);
+    final todasLasTx = await select(financeTransactions).get();
+    final todasLasReservas = await select(financeReservations).get();
+
+    final resultado = <String,
+        ({double saldo, double saldoSinTransferencias, double ingresos, double gastos, double reservado})>{};
+    for (final cuenta in cuentas) {
+      final txsInvolucradas = todasLasTx.where((t) =>
+          t.accountId == cuenta.id || t.transferToAccountId == cuenta.id);
+      final txs = txsInvolucradas.map(FinanceTransaction.fromRow).toList();
+      final saldo = calcularSaldo(
+          saldoInicial: cuenta.saldoInicial, txsInvolucradas: txs, libroId: cuenta.id);
+      final ig = calcularIngresosGastos(txs, cuenta.id);
+      final reservado = totalReservado(
+          todasLasReservas.where((r) => r.accountId == cuenta.id).toList());
+      resultado[cuenta.id] = (
+        saldo: saldo,
+        saldoSinTransferencias: cuenta.saldoInicial + ig.ingresos - ig.gastos,
+        ingresos: ig.ingresos,
+        gastos: ig.gastos,
+        reservado: reservado,
+      );
+    }
+    return resultado;
+  }
+
   Future<void> archiveFinanceAccount(String id) =>
       (update(financeAccounts)..where((t) => t.id.equals(id)))
           .write(const FinanceAccountsCompanion(activa: Value(false)));
@@ -802,11 +883,12 @@ class AppDatabase extends _$AppDatabase {
           .write(const FinanceAccountsCompanion(activa: Value(true)));
 
   Future<int> countTransactionsForAccount(String accountId) async {
-    final rows = await (select(financeTransactions)
-          ..where((t) =>
-              t.accountId.equals(accountId) | t.transferToAccountId.equals(accountId)))
-        .get();
-    return rows.length;
+    final query = selectOnly(financeTransactions)
+      ..addColumns([financeTransactions.id.count()])
+      ..where(financeTransactions.accountId.equals(accountId) |
+          financeTransactions.transferToAccountId.equals(accountId));
+    final row = await query.getSingle();
+    return row.read(financeTransactions.id.count()) ?? 0;
   }
 
   Future<void> deleteFinanceAccountSafely(String id) async {
@@ -943,6 +1025,7 @@ class AppDatabase extends _$AppDatabase {
     required String libroId,
     String? mes,
     String? tipo, // 'ingreso'|'gasto'|null
+    String? categoryId,
     bool ascending = false,
   }) {
     final q = select(financeTransactions)
@@ -950,6 +1033,11 @@ class AppDatabase extends _$AppDatabase {
           t.accountId.equals(libroId) | t.transferToAccountId.equals(libroId));
     if (mes != null) q.where((t) => t.fecha.like('$mes%'));
     if (tipo != null) q.where((t) => t.tipo.equals(tipo));
+    // Filtrar en SQL en vez de traer todo el historial y filtrar en Dart
+    // después (como hacía finanzasLibroTxProvider) — para un registro con
+    // historial largo, evita releer todas las transacciones en cada
+    // rebuild solo para descartar la mayoría por categoría.
+    if (categoryId != null) q.where((t) => t.categoryId.equals(categoryId));
     q.orderBy([(t) => ascending
         ? OrderingTerm.asc(t.fecha)
         : OrderingTerm.desc(t.fecha)]);
@@ -1034,21 +1122,36 @@ class AppDatabase extends _$AppDatabase {
     final actuales = await getFinanceBudgets(anio, mes);
     final idsExistentes = actuales.map((b) => b.categoryId).toSet();
 
-    for (var i = 1; i <= 24; i++) {
-      final anterior = DateTime(anio, mes - i);
-      final delAnterior = await getFinanceBudgets(anterior.year, anterior.month);
-      if (delAnterior.isEmpty) continue;
-      for (final b in delAnterior) {
-        if (!b.autoRepetir || idsExistentes.contains(b.categoryId)) continue;
-        await into(financeBudgets).insert(FinanceBudgetsCompanion.insert(
-          categoryId: b.categoryId,
-          anio: anio,
-          mes: mes,
-          montoLimite: b.montoLimite,
-          autoRepetir: const Value(true),
-        ));
-      }
-      return;
+    // Antes: hasta 24 queries secuenciales (una por mes anterior) buscando
+    // el primero con datos. Ahora: una sola query trae TODOS los
+    // presupuestos autoRepetir de meses anteriores; el más reciente
+    // (anio, mes) entre ellos es el que se copia — misma semántica, una
+    // sola consulta en vez de hasta 24.
+    final candidatos = await (select(financeBudgets)
+          ..where((t) =>
+              t.autoRepetir.equals(true) &
+              (t.anio.isSmallerThanValue(anio) |
+                  (t.anio.equals(anio) & t.mes.isSmallerThanValue(mes)))))
+        .get();
+    if (candidatos.isEmpty) return;
+
+    final masReciente = candidatos.reduce((a, b) {
+      final claveA = a.anio * 12 + a.mes;
+      final claveB = b.anio * 12 + b.mes;
+      return claveB > claveA ? b : a;
+    });
+    final delAnterior = candidatos.where(
+        (b) => b.anio == masReciente.anio && b.mes == masReciente.mes);
+
+    for (final b in delAnterior) {
+      if (idsExistentes.contains(b.categoryId)) continue;
+      await into(financeBudgets).insert(FinanceBudgetsCompanion.insert(
+        categoryId: b.categoryId,
+        anio: anio,
+        mes: mes,
+        montoLimite: b.montoLimite,
+        autoRepetir: const Value(true),
+      ));
     }
   }
 

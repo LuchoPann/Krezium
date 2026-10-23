@@ -112,11 +112,37 @@ class FinanceAccountBalance {
 /// registro — reemplaza los cálculos locales que antes vivían repetidos en
 /// finanzas_cuentas_screen, finanzas_libro_transacciones_screen y
 /// finanzas_estadisticas_screen.
+/// Balances de TODAS las cuentas en una sola consulta batcheada — usar en
+/// pantallas que muestran varias cuentas a la vez (lista de registros, su
+/// encabezado global). `financeAccountBalanceProvider` sigue existiendo
+/// para pantallas de una sola cuenta (detalle de un registro, metas), donde
+/// no hay N+1 que resolver.
+final allFinanceAccountBalancesProvider =
+    FutureProvider<Map<String, FinanceAccountBalance>>((ref) async {
+  final db = ref.watch(databaseProvider);
+  final raw = await db.getAllFinanceAccountBalancesRaw();
+  return {
+    for (final entry in raw.entries)
+      entry.key: FinanceAccountBalance(
+        saldo: entry.value.saldo,
+        saldoSinTransferencias: entry.value.saldoSinTransferencias,
+        ingresos: entry.value.ingresos,
+        gastos: entry.value.gastos,
+        reservado: entry.value.reservado,
+        disponibleEstimado: calcularDisponibleEstimado(
+                saldo: entry.value.saldo, reservado: entry.value.reservado)
+            .disponibleEstimado,
+        reservasExcedenSaldo: calcularDisponibleEstimado(
+                saldo: entry.value.saldo, reservado: entry.value.reservado)
+            .reservasExcedenSaldo,
+      ),
+  };
+});
+
 final financeAccountBalanceProvider =
     FutureProvider.family<FinanceAccountBalance, String>((ref, libroId) async {
   final db = ref.watch(databaseProvider);
-  final cuentas = await db.getFinanceAccounts(incluirArchivadas: true);
-  final cuenta = cuentas.where((c) => c.id == libroId).firstOrNull;
+  final cuenta = await db.getFinanceAccountById(libroId);
   final saldoInicial = cuenta?.saldoInicial ?? 0.0;
 
   final rows = await db.getFinanceTransactionsInvolvingLibro(libroId: libroId);
@@ -169,9 +195,8 @@ final finanzasLibroTxProvider =
     libroId: libroId,
     mes: null,
     tipo: tipo,
+    categoryId: filtros.categoriaId,
     ascending: filtros.ascending,
   );
-  final txs = rows.map(FinanceTransaction.fromRow).toList();
-  if (filtros.categoriaId == null) return txs;
-  return txs.where((t) => t.categoryId == filtros.categoriaId).toList();
+  return rows.map(FinanceTransaction.fromRow).toList();
 });
