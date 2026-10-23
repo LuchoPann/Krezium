@@ -195,14 +195,23 @@ class _CategoriaSelectorSheetState
                         c.parentId == null &&
                         (c.tipo == _tipo || c.tipo == 'ambos')).toList();
 
+                    // Precomputado una sola vez por build (no por fila): evita
+                    // un escaneo O(n) de `all` dentro de itemBuilder por cada
+                    // categoría padre visible, incluyendo cada expandir/colapsar.
+                    final childrenByParent = <String, List<CatalogoCategoria>>{};
+                    for (final c in all) {
+                      final parentId = c.parentId;
+                      if (parentId != null) {
+                        (childrenByParent[parentId] ??= []).add(c);
+                      }
+                    }
+
                     return ListView.builder(
                       controller: scrollController,
                       itemCount: padres.length,
                       itemBuilder: (context, index) {
                         final padre = padres[index];
-                        final hijos = all
-                            .where((c) => c.parentId == padre.id)
-                            .toList();
+                        final hijos = childrenByParent[padre.id] ?? const [];
                         final isExpanded = _expandidos.contains(padre.id);
 
                         return Column(

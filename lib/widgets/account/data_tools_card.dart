@@ -105,7 +105,7 @@ class _DataToolsCardState extends ConsumerState<DataToolsCard> {
     try {
       final credits = ref.read(creditsProvider).value ?? [];
       final quotas = ref.read(commercialQuotasProvider).value ?? [];
-      final json = exportStateToJson(credits, quotas);
+      final json = await exportStateToJson(credits, quotas);
       File? savedFile = await BackupService.saveBackup(json, newFile: true);
       if (savedFile != null) {
         await ref.read(lastBackupProvider.notifier).markBackedUpNow();
@@ -157,7 +157,7 @@ class _DataToolsCardState extends ConsumerState<DataToolsCard> {
     }
     ImportedBackup imported;
     try {
-      imported = importStateFromJson(content);
+      imported = await importStateFromJson(content);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

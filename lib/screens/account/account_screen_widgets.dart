@@ -204,7 +204,9 @@ class _ProfileBanner extends ConsumerWidget {
                   CircleAvatar(
                     radius: 44,
                     backgroundColor: effectiveAvatarBg,
-                    backgroundImage: avatarPath != null ? FileImage(File(avatarPath)) : null,
+                    backgroundImage: avatarPath != null
+                        ? ResizeImage(FileImage(File(avatarPath)), width: 176)
+                        : null,
                     child: avatarPath == null
                         ? Icon(Icons.person_outline_rounded,
                             size: 44, color: legibleForegroundOn(effectiveAvatarBg))

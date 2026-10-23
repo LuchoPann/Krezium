@@ -490,21 +490,61 @@ class AppDatabase extends _$AppDatabase {
   /// equivalent to app.js's `state.credits` after loadState().
   Future<List<Credit>> loadAllCredits() async {
     final rows = await select(credits).get();
+    final allCreditIds = rows.map((r) => r.id).toList();
+
+    // Batched per-table queries instead of 2-3 queries PER credit. `.isIn([])`
+    // returns an empty result set in Drift (not "everything"), so the
+    // empty-credits edge case naturally yields empty maps below.
+    final movementRows = await (select(cardMovements)
+          ..where((m) => m.creditId.isIn(allCreditIds))
+          ..orderBy([(m) => OrderingTerm.asc(m.rowId)]))
+        .get();
+    final statementRows = await (select(cardStatements)
+          ..where((s) => s.creditId.isIn(allCreditIds))
+          ..orderBy([(s) => OrderingTerm.asc(s.cutoffDate)]))
+        .get();
+    final installmentPurchaseRows = await (select(installmentPurchases)
+          ..where((p) => p.creditId.isIn(allCreditIds))
+          ..orderBy([(p) => OrderingTerm.asc(p.purchaseDate)]))
+        .get();
+    final instRowsAll = await (select(installments)
+          ..where((i) => i.creditId.isIn(allCreditIds))
+          ..orderBy([(i) => OrderingTerm.asc(i.number)]))
+        .get();
+    final abonoRowsAll = await (select(loanAbonos)
+          ..where((a) => a.creditId.isIn(allCreditIds))
+          ..orderBy([(a) => OrderingTerm.asc(a.rowId)]))
+        .get();
+
+    final movementsByCredit = <String, List<CardMovementRow>>{};
+    for (final m in movementRows) {
+      (movementsByCredit[m.creditId] ??= []).add(m);
+    }
+    final statementsByCredit = <String, List<CardStatementRow>>{};
+    for (final s in statementRows) {
+      (statementsByCredit[s.creditId] ??= []).add(s);
+    }
+    final installmentPurchasesByCredit =
+        <String, List<InstallmentPurchaseRow>>{};
+    for (final p in installmentPurchaseRows) {
+      (installmentPurchasesByCredit[p.creditId] ??= []).add(p);
+    }
+    final installmentsByCredit = <String, List<InstallmentRow>>{};
+    for (final i in instRowsAll) {
+      (installmentsByCredit[i.creditId] ??= []).add(i);
+    }
+    final abonosByCredit = <String, List<LoanAbonoRow>>{};
+    for (final a in abonoRowsAll) {
+      (abonosByCredit[a.creditId] ??= []).add(a);
+    }
+
     final result = <Credit>[];
     for (final row in rows) {
       if (row.type == CreditType.card) {
-        final movementRows = await (select(cardMovements)
-              ..where((m) => m.creditId.equals(row.id))
-              ..orderBy([(m) => OrderingTerm.asc(m.rowId)]))
-            .get();
-        final statementRows = await (select(cardStatements)
-              ..where((s) => s.creditId.equals(row.id))
-              ..orderBy([(s) => OrderingTerm.asc(s.cutoffDate)]))
-            .get();
-        final installmentPurchaseRows = await (select(installmentPurchases)
-              ..where((p) => p.creditId.equals(row.id))
-              ..orderBy([(p) => OrderingTerm.asc(p.purchaseDate)]))
-            .get();
+        final movementRows = movementsByCredit[row.id] ?? const [];
+        final statementRows = statementsByCredit[row.id] ?? const [];
+        final installmentPurchaseRows =
+            installmentPurchasesByCredit[row.id] ?? const [];
         result.add(_cardFromRow(
           row,
           movementRows
@@ -556,14 +596,8 @@ class AppDatabase extends _$AppDatabase {
               .toList(),
         ));
       } else {
-        final instRows = await (select(installments)
-              ..where((i) => i.creditId.equals(row.id))
-              ..orderBy([(i) => OrderingTerm.asc(i.number)]))
-            .get();
-        final abonoRows = await (select(loanAbonos)
-              ..where((a) => a.creditId.equals(row.id))
-              ..orderBy([(a) => OrderingTerm.asc(a.rowId)]))
-            .get();
+        final instRows = installmentsByCredit[row.id] ?? const [];
+        final abonoRows = abonosByCredit[row.id] ?? const [];
         result.add(_loanFromRow(
           row,
           instRows
@@ -820,6 +854,24 @@ class AppDatabase extends _$AppDatabase {
               nota: r.nota,
             ))
         .toList();
+  }
+
+  /// Batched variant of [loadPagosRealizados] for multiple credits at once,
+  /// avoiding one query per credit. Grouped by `creditId`; each group keeps
+  /// `rowId` ascending order, matching the per-credit method's ordering.
+  Future<Map<String, List<PagoRealizadoRow>>> loadPagosRealizadosForCredits(
+    List<String> creditIds,
+  ) async {
+    if (creditIds.isEmpty) return {};
+    final rows = await (select(pagosRealizados)
+          ..where((p) => p.creditId.isIn(creditIds))
+          ..orderBy([(p) => OrderingTerm.asc(p.rowId)]))
+        .get();
+    final porCredito = <String, List<PagoRealizadoRow>>{};
+    for (final r in rows) {
+      (porCredito[r.creditId] ??= []).add(r);
+    }
+    return porCredito;
   }
 
   Future<void> deletePagoRealizado(int rowId) async {

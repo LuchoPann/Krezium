@@ -76,7 +76,7 @@ class _SetupLockBodyState extends ConsumerState<SetupLockBody> {
 
   @override
   Widget build(BuildContext context) {
-    final method = ref.watch(appLockProvider).method;
+    final method = ref.watch(appLockProvider.select((s) => s.method));
     final kredit = Theme.of(context).extension<AppThemeColors>()!;
 
     return Padding(

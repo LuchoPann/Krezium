@@ -29,6 +29,14 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.5.2',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.mejora,
+          'Más mejoras de rendimiento: listas y buscadores más ágiles, menos trabajo repetido al cargar créditos, fotos de perfil más livianas y los respaldos (exportar/importar) ya no congelan la pantalla mientras procesan.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.5.1',
     date: 'Octubre 2026',
     changes: [

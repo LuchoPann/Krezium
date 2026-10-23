@@ -263,14 +263,27 @@ class _ScheduleTabState extends ConsumerState<ScheduleTab> {
       // Flutter a hacer layout de cada fila para medir la altura total — no
       // hay forma de virtualizar aquí sin alturas fijas. Estos grupos son
       // casos chicos (compras de un cupo), así que el costo es aceptable.
+      // Reutiliza los mismos slivers (_sectionSlivers) que el caso a
+      // pantalla completa en vez de un ListView anidado con shrinkWrap,
+      // para no mantener dos formas distintas de construir la misma
+      // agrupación visual.
       return Column(
         children: [
           header,
-          ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          CustomScrollView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            children: sections.map((s) => _SectionGroup(spec: s)).toList(),
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                sliver: SliverMainAxisGroup(
+                  slivers: [
+                    for (final s in sections)
+                      ..._sectionSlivers(s, dividerColor: kredit.borderCard),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       );
@@ -500,45 +513,6 @@ class _AbonoTile extends ConsumerWidget {
             visualDensity: VisualDensity.compact,
             onPressed: () => _confirmAndDelete(context, ref),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SectionGroup extends StatelessWidget {
-  final _SectionSpec spec;
-
-  const _SectionGroup({required this.spec});
-
-  @override
-  Widget build(BuildContext context) {
-    final kredit = Theme.of(context).extension<AppThemeColors>()!;
-    final showChildren = !spec.collapsible || spec.expanded;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SectionHeader(
-            title: spec.title,
-            count: spec.count,
-            total: spec.total,
-            emphasized: spec.emphasized,
-            collapsible: spec.collapsible,
-            expanded: spec.expanded,
-            onToggle: spec.onToggle,
-          ),
-          if (showChildren) Divider(height: 1, color: kredit.borderCard),
-          if (showChildren)
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: spec.itemCount,
-              itemBuilder: spec.itemBuilder,
-              separatorBuilder: (context, index) =>
-                  Divider(height: 1, color: kredit.borderCard),
-            ),
         ],
       ),
     );

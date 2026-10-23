@@ -249,7 +249,7 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
     try {
       final credits = ref.read(creditsProvider).value ?? [];
       final quotas = ref.read(commercialQuotasProvider).value ?? [];
-      final json = exportStateToJson(credits, quotas);
+      final json = await exportStateToJson(credits, quotas);
       final mode = prefs.getString('backup_mode') ?? 'overwrite';
       final file = await BackupService.saveBackup(json, newFile: mode == 'new_file');
       if (file != null) {

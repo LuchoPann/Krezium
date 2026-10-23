@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../data/models/commercial_quota.dart';
 import '../data/models/credit.dart';
 
@@ -33,8 +35,8 @@ const String kBackupFormatMarker = 'kredit-backup';
 /// (pretty-printed with 2-space indent):
 /// `{"format": "kredit-backup", "version": 2, "exportedAt": ISO8601 UTC,
 /// "credits": [...] }`.
-String exportStateToJson(List<Credit> credits,
-    [List<CommercialQuota> quotas = const []]) {
+Future<String> exportStateToJson(List<Credit> credits,
+    [List<CommercialQuota> quotas = const []]) async {
   final map = {
     'format': kBackupFormatMarker,
     'version': kBackupFormatVersion,
@@ -46,9 +48,12 @@ String exportStateToJson(List<Credit> credits,
     }).toList(),
     'commercialQuotas': quotas.map((q) => q.toJson()).toList(),
   };
-  const encoder = JsonEncoder.withIndent('  ');
-  return encoder.convert(map);
+  return compute(_encodeBackupJson, map);
 }
+
+/// Top-level so [compute] can run it on a separate isolate.
+String _encodeBackupJson(Map<String, dynamic> data) =>
+    const JsonEncoder.withIndent('  ').convert(data);
 
 /// Thrown when [importStateFromJson] receives a payload that fails the same
 /// basic validation app.js performs before overwriting state
@@ -141,8 +146,8 @@ class ImportedBackup {
 /// Throws [InvalidBackupFormatException] on malformed input, or a
 /// [FormatException] if the JSON itself doesn't parse — same failure split
 /// as importData's try/catch + validation (app.js ~L1630-1658).
-ImportedBackup importStateFromJson(String jsonStr) {
-  final decoded = jsonDecode(jsonStr);
+Future<ImportedBackup> importStateFromJson(String jsonStr) async {
+  final decoded = await compute(_decodeBackupJson, jsonStr);
   if (decoded is! Map<String, dynamic> || decoded['credits'] is! List) {
     throw const InvalidBackupFormatException();
   }
@@ -161,3 +166,9 @@ ImportedBackup importStateFromJson(String jsonStr) {
         .toList(),
   );
 }
+
+/// Top-level so [compute] can run it on a separate isolate. Returns
+/// `dynamic` (not a forced `Map` cast) so a malformed payload falls through
+/// to the same [InvalidBackupFormatException] path as before, instead of
+/// throwing a raw `TypeError` inside the isolate.
+dynamic _decodeBackupJson(String jsonStr) => jsonDecode(jsonStr);

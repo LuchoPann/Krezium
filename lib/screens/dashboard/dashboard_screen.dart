@@ -214,7 +214,7 @@ class _DashboardBody extends ConsumerWidget {
                   context,
                 ).colorScheme.primary.withValues(alpha: 0.18),
                 backgroundImage: avatarPath != null
-                    ? FileImage(File(avatarPath))
+                    ? ResizeImage(FileImage(File(avatarPath)), width: 88)
                     : null,
                 child: avatarPath == null
                     ? Text(

@@ -30,13 +30,10 @@ Future<List<DebtDataPoint>> _buildHistory(
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
 
-  // Collect all PagosRealizados keyed by creditId → list
-  final Map<String, List<dynamic>> allPagos = {};
-  for (final c in credits) {
-    if (c is LoanCredit) {
-      allPagos[c.id] = await db.loadPagosRealizados(c.id);
-    }
-  }
+  // Collect all PagosRealizados keyed by creditId → list, batched in a
+  // single query instead of one per credit.
+  final loanCreditIds = credits.whereType<LoanCredit>().map((c) => c.id).toList();
+  final allPagos = await db.loadPagosRealizadosForCredits(loanCreditIds);
 
   final points = <DebtDataPoint>[];
   for (var i = months; i >= 0; i--) {

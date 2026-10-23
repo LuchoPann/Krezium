@@ -69,7 +69,7 @@ class BackupDetectorService {
 
   Future<ImportedBackup> loadBackup(String path) async {
     final content = await File(path).readAsString();
-    return importStateFromJson(content);
+    return await importStateFromJson(content);
   }
 
   Future<void> _scanDir(
@@ -85,7 +85,7 @@ class BackupDetectorService {
       if (!name.contains('kredit') && !name.contains('backup') && !name.contains('respaldo')) continue;
       try {
         final content = await entity.readAsString();
-        final imported = importStateFromJson(content);
+        final imported = await importStateFromJson(content);
         final stat = await entity.stat();
         // Prefer exportedAt from envelope, fall back to file modification time
         final decoded = _tryDecodeDate(content) ?? stat.modified;

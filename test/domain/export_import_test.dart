@@ -18,8 +18,8 @@ void main() {
       );
 
   group('exportStateToJson', () {
-    test('produces the versioned envelope with format/version/exportedAt', () {
-      final json = exportStateToJson([buildLoan()]);
+    test('produces the versioned envelope with format/version/exportedAt', () async {
+      final json = await exportStateToJson([buildLoan()]);
       final decoded = jsonDecode(json) as Map<String, dynamic>;
 
       expect(decoded['format'], 'kredit-backup');
@@ -32,28 +32,28 @@ void main() {
   });
 
   group('importStateFromJson', () {
-    test('imports the current versioned format', () {
-      final json = exportStateToJson([buildLoan()]);
-      final imported = importStateFromJson(json);
+    test('imports the current versioned format', () async {
+      final json = await exportStateToJson([buildLoan()]);
+      final imported = await importStateFromJson(json);
 
       expect(imported.credits, hasLength(1));
       expect(imported.credits.single, isA<LoanCredit>());
       expect(imported.credits.single.id, 'l1');
     });
 
-    test('imports legacy (unversioned) backups exactly as before', () {
+    test('imports legacy (unversioned) backups exactly as before', () async {
       final legacyJson = jsonEncode({
         'credits': [buildLoan().toJson()],
       });
 
-      final imported = importStateFromJson(legacyJson);
+      final imported = await importStateFromJson(legacyJson);
 
       expect(imported.credits, hasLength(1));
       expect(imported.credits.single, isA<LoanCredit>());
       expect(imported.credits.single.id, 'l1');
     });
 
-    test('imports a backup from a newer, unknown version best-effort', () {
+    test('imports a backup from a newer, unknown version best-effort', () async {
       final futureJson = jsonEncode({
         'format': 'kredit-backup',
         'version': kBackupFormatVersion + 1,
@@ -61,27 +61,27 @@ void main() {
         'credits': [buildLoan().toJson()],
       });
 
-      final imported = importStateFromJson(futureJson);
+      final imported = await importStateFromJson(futureJson);
 
       expect(imported.credits, hasLength(1));
       expect(imported.credits.single.id, 'l1');
     });
 
-    test('throws InvalidBackupFormatException on malformed JSON shape', () {
-      expect(
-        () => importStateFromJson(jsonEncode({'nope': true})),
+    test('throws InvalidBackupFormatException on malformed JSON shape', () async {
+      await expectLater(
+        importStateFromJson(jsonEncode({'nope': true})),
         throwsA(isA<InvalidBackupFormatException>()),
       );
     });
 
-    test('throws InvalidBackupFormatException when credits is not a list', () {
-      expect(
-        () => importStateFromJson(jsonEncode({'credits': 'not-a-list'})),
+    test('throws InvalidBackupFormatException when credits is not a list', () async {
+      await expectLater(
+        importStateFromJson(jsonEncode({'credits': 'not-a-list'})),
         throwsA(isA<InvalidBackupFormatException>()),
       );
     });
 
-    test('round-trips commercial quotas through export/import', () {
+    test('round-trips commercial quotas through export/import', () async {
       final quota = CommercialQuota(id: 'q1', brand: 'Totto', limit: 700000);
       final purchase = LoanCredit(
         id: 'l1',
@@ -95,15 +95,15 @@ void main() {
         quotaId: 'q1',
       );
 
-      final json = exportStateToJson([purchase], [quota]);
-      final imported = importStateFromJson(json);
+      final json = await exportStateToJson([purchase], [quota]);
+      final imported = await importStateFromJson(json);
 
       expect(imported.quotas, hasLength(1));
       expect(imported.quotas.single.brand, 'Totto');
       expect(imported.credits.single.id, 'l1');
     });
 
-    test('a v2 backup (no commercialQuotas key) migrates to an empty quota list', () {
+    test('a v2 backup (no commercialQuotas key) migrates to an empty quota list', () async {
       final v2Json = jsonEncode({
         'format': 'kredit-backup',
         'version': 2,
@@ -111,7 +111,7 @@ void main() {
         'credits': [buildLoan().toJson()],
       });
 
-      final imported = importStateFromJson(v2Json);
+      final imported = await importStateFromJson(v2Json);
 
       expect(imported.quotas, isEmpty);
       expect(imported.credits, hasLength(1));
@@ -123,7 +123,7 @@ void main() {
 
     test('imports a v4 backup (field name "closedStatements", no '
         'installmentPurchases) without error — statements/installmentPurchases '
-        'end up populated/empty correctly', () {
+        'end up populated/empty correctly', () async {
       final v4Json = jsonEncode({
         'format': kBackupFormatMarker,
         'version': 4,
@@ -145,7 +145,7 @@ void main() {
         'commercialQuotas': [],
       });
 
-      final result = importStateFromJson(v4Json);
+      final result = await importStateFromJson(v4Json);
 
       final card = result.credits.first as CardCredit;
       expect(card.statements, hasLength(1));
@@ -154,7 +154,7 @@ void main() {
     });
 
     test('imports a v3 backup (no closedStatements field) without error, '
-        'card credit ends up with empty closedStatements', () {
+        'card credit ends up with empty closedStatements', () async {
       final v3Json = jsonEncode({
         'format': kBackupFormatMarker,
         'version': 3,
@@ -173,7 +173,7 @@ void main() {
         'commercialQuotas': [],
       });
 
-      final result = importStateFromJson(v3Json);
+      final result = await importStateFromJson(v3Json);
 
       expect(result.credits, hasLength(1));
       final card = result.credits.first as CardCredit;

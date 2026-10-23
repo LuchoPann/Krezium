@@ -91,11 +91,35 @@ Future<void> abrirApartarIngresoAMeta(
 ///
 /// Sin Scaffold/FAB propios — vive embebida como pestaña de
 /// FinanzasPlanificacionScreen; su FAB se expone aparte como [MetasFab].
-class FinanzasMetasScreen extends ConsumerWidget {
+class FinanzasMetasScreen extends ConsumerStatefulWidget {
   const FinanzasMetasScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FinanzasMetasScreen> createState() => _FinanzasMetasScreenState();
+}
+
+class _FinanzasMetasScreenState extends ConsumerState<FinanzasMetasScreen> {
+  // Cache por identidad de `metas` — mismo patrón que
+  // `_FilteredListState._apply()` en credits_list_screen.dart (ver Task 12
+  // de la auditoría de performance). Evita re-filtrar/re-ordenar las metas
+  // en cada rebuild no relacionado.
+  List<FinanceReservationRow>? _lastMetas;
+  List<FinanceReservationRow>? _cachedActivas;
+
+  List<FinanceReservationRow> _activas(List<FinanceReservationRow> metas) {
+    if (identical(_lastMetas, metas) && _cachedActivas != null) {
+      return _cachedActivas!;
+    }
+    _lastMetas = metas;
+    _cachedActivas = metas.where((m) => m.estado != 'cancelada').toList()
+      ..sort((a, b) => a.estado == b.estado
+          ? a.nombre.compareTo(b.nombre)
+          : (a.estado == 'activa' ? -1 : 1));
+    return _cachedActivas!;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final tc = Theme.of(context).extension<AppThemeColors>()!;
     final metasAsync = ref.watch(allFinanceReservationsProvider);
     final cuentasAsync = ref.watch(financeAccountsProvider);
@@ -109,10 +133,7 @@ class FinanzasMetasScreen extends ConsumerWidget {
         data: (cuentasRows) {
           final cuentas = cuentasRows.map(FinanceAccount.fromRow).toList();
           final cuentaPorId = {for (final c in cuentas) c.id: c};
-          final activas = metas.where((m) => m.estado != 'cancelada').toList()
-            ..sort((a, b) => a.estado == b.estado
-                ? a.nombre.compareTo(b.nombre)
-                : (a.estado == 'activa' ? -1 : 1));
+          final activas = _activas(metas);
 
           return activas.isEmpty
               ? _EstadoVacio(tc: tc, hayCuentas: cuentas.isNotEmpty)
@@ -1106,7 +1127,7 @@ class MetasFab extends ConsumerWidget {
         if (rows.isEmpty) return const SizedBox.shrink();
         final cuentas = rows.map(FinanceAccount.fromRow).toList();
         return FloatingActionButton.extended(
-          onPressed: () => FinanzasMetasScreen._abrirFormulario(context, ref, cuentas: cuentas),
+          onPressed: () => _FinanzasMetasScreenState._abrirFormulario(context, ref, cuentas: cuentas),
           icon: const Icon(Icons.add),
           label: const Text('Meta'),
         );

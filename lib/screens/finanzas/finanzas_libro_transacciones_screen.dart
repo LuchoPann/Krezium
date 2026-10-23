@@ -35,6 +35,12 @@ const _kMesesCorto = [
 ];
 const _kDiasCorto = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 
+// Colores con alpha ya aplicado en el valor ARGB — evita reconstruir
+// `Color(0xFF...).withValues(alpha: 0.15)` por fila dentro de itemBuilder
+// en _TransaccionesSearchSheet (0x26 ≈ 0.15 * 255).
+const _kIngresoBg = Color(0x2622C55E);
+const _kGastoBg = Color(0x26EF4444);
+
 DateTime _parseFecha(String fecha) {
   final parts = fecha.split('-');
   return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
@@ -94,7 +100,32 @@ class _FinanzasLibroTransaccionesScreenState
     }
   }
 
+  // Cache por identidad de `txs` + filtros relevantes — mismo patrón que
+  // `_FilteredListState._apply()` en credits_list_screen.dart. Evita
+  // re-agrupar/re-ordenar el histórico completo en cada rebuild no
+  // relacionado (abrir/cerrar el sheet de filtros, async de categorías
+  // resolviendo, etc.) — ver Task 11 de la auditoría de performance.
+  List<FinanceTransaction>? _lastAgruparTxs;
+  String? _lastAgruparPeriodo;
+  bool? _lastAgruparAscending;
+  Map<String, List<FinanceTransaction>>? _cachedGrupos;
+
   Map<String, List<FinanceTransaction>> _agrupar(
+      List<FinanceTransaction> txs, String periodo, bool ascending) {
+    if (identical(_lastAgruparTxs, txs) &&
+        _lastAgruparPeriodo == periodo &&
+        _lastAgruparAscending == ascending &&
+        _cachedGrupos != null) {
+      return _cachedGrupos!;
+    }
+    _lastAgruparTxs = txs;
+    _lastAgruparPeriodo = periodo;
+    _lastAgruparAscending = ascending;
+    _cachedGrupos = _computeAgrupar(txs, periodo, ascending);
+    return _cachedGrupos!;
+  }
+
+  Map<String, List<FinanceTransaction>> _computeAgrupar(
       List<FinanceTransaction> txs, String periodo, bool ascending) {
     final mapa = <String, List<FinanceTransaction>>{};
     for (final tx in txs) {
@@ -139,8 +170,17 @@ class _FinanzasLibroTransaccionesScreenState
 
   // ─── Totales ───────────────────────────────────────────────────────────────
 
-  ({double ingresos, double gastos}) _totales(List<FinanceTransaction> txs) =>
-      calcularIngresosGastos(txs, _libroActual.id);
+  List<FinanceTransaction>? _lastTotalesTxs;
+  ({double ingresos, double gastos})? _cachedTotales;
+
+  ({double ingresos, double gastos}) _totales(List<FinanceTransaction> txs) {
+    if (identical(_lastTotalesTxs, txs) && _cachedTotales != null) {
+      return _cachedTotales!;
+    }
+    _lastTotalesTxs = txs;
+    _cachedTotales = calcularIngresosGastos(txs, _libroActual.id);
+    return _cachedTotales!;
+  }
 
   // ─── Filtros sheet ─────────────────────────────────────────────────────────
 
@@ -1154,9 +1194,7 @@ class _BusquedaSheetState extends State<_BusquedaSheet> {
                                 : tx.tipo;
                         return ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: isIngreso
-                                ? const Color(0xFF22C55E).withValues(alpha: 0.15)
-                                : const Color(0xFFEF4444).withValues(alpha: 0.15),
+                            backgroundColor: isIngreso ? _kIngresoBg : _kGastoBg,
                             child: Icon(
                               isIngreso ? Icons.arrow_downward : Icons.arrow_upward,
                               size: 16,

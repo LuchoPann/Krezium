@@ -39,7 +39,7 @@ class FinanzasCuentasScreen extends ConsumerStatefulWidget {
 
 class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
   final _searchCtrl = TextEditingController();
-  String _query = '';
+  final _queryNotifier = ValueNotifier<String>('');
 
   @override
   void initState() {
@@ -48,12 +48,15 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
     // dudosas cada vez que se abre el módulo — idempotente y barato, evita
     // acoplar esta lógica a la migración de schema (Task 7).
     unawaited(aplicarSenalamientoTransferenciasDudosas(ref.read(databaseProvider)));
-    _searchCtrl.addListener(() => setState(() => _query = _searchCtrl.text.trim().toLowerCase()));
+    _searchCtrl.addListener(
+      () => _queryNotifier.value = _searchCtrl.text.trim().toLowerCase(),
+    );
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _queryNotifier.dispose();
     super.dispose();
   }
 
@@ -255,9 +258,6 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
             );
           }
           final libros = rows.map(FinanceAccount.fromRow).toList();
-          final filtered = _query.isEmpty
-              ? libros
-              : libros.where((l) => l.nombre.toLowerCase().contains(_query)).toList();
           return CustomScrollView(
             slivers: [
               _GlobalHeader(
@@ -266,48 +266,59 @@ class _FinanzasCuentasScreenState extends ConsumerState<FinanzasCuentasScreen> {
                 onVerArchivados: _mostrarArchivadosSheet,
               ),
               if (libros.length > 1)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: _SearchField(controller: _searchCtrl, query: _query),
+                ValueListenableBuilder<String>(
+                  valueListenable: _queryNotifier,
+                  builder: (context, query, _) => SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: _SearchField(controller: _searchCtrl, query: query),
+                    ),
                   ),
                 ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                sliver: filtered.isEmpty
-                    ? SliverToBoxAdapter(
-                        child: _NoResultsState(query: _query),
-                      )
-                    : SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final libro = filtered[index];
-                            return _LibroCard(
-                              libro: libro,
-                              onTap: () {
-                                // Entrar por el flujo normal siempre arranca
-                                // sin filtro de categoría — ese filtro solo
-                                // lo activa el drill-down desde Estadísticas
-                                // (ver finanzas_estadisticas_screen.dart).
-                                ref.read(finanzasFiltrosProvider.notifier).state =
-                                    ref.read(finanzasFiltrosProvider).copyWith(limpiarCategoria: true);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        FinanzasLibroTransaccionesScreen(libro: libro),
-                                  ),
+              ValueListenableBuilder<String>(
+                valueListenable: _queryNotifier,
+                builder: (context, query, _) {
+                  final filtered = query.isEmpty
+                      ? libros
+                      : libros.where((l) => l.nombre.toLowerCase().contains(query)).toList();
+                  return SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                    sliver: filtered.isEmpty
+                        ? SliverToBoxAdapter(
+                            child: _NoResultsState(query: query),
+                          )
+                        : SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final libro = filtered[index];
+                                return _LibroCard(
+                                  libro: libro,
+                                  onTap: () {
+                                    // Entrar por el flujo normal siempre arranca
+                                    // sin filtro de categoría — ese filtro solo
+                                    // lo activa el drill-down desde Estadísticas
+                                    // (ver finanzas_estadisticas_screen.dart).
+                                    ref.read(finanzasFiltrosProvider.notifier).state =
+                                        ref.read(finanzasFiltrosProvider).copyWith(limpiarCategoria: true);
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            FinanzasLibroTransaccionesScreen(libro: libro),
+                                      ),
+                                    );
+                                  },
+                                  onFavorito: () => _marcarFavorito(libro),
+                                  onEditar: () => _mostrarEditarRegistroSheet(libro),
+                                  onArchivar: () => _archivarLibro(libro),
+                                  onEliminar: () => _eliminarLibro(context, libro),
                                 );
                               },
-                              onFavorito: () => _marcarFavorito(libro),
-                              onEditar: () => _mostrarEditarRegistroSheet(libro),
-                              onArchivar: () => _archivarLibro(libro),
-                              onEliminar: () => _eliminarLibro(context, libro),
-                            );
-                          },
-                          childCount: filtered.length,
-                        ),
-                      ),
+                              childCount: filtered.length,
+                            ),
+                          ),
+                  );
+                },
               ),
             ],
           );
@@ -402,7 +413,9 @@ class _GlobalHeader extends ConsumerWidget {
                 CircleAvatar(
                   radius: 22,
                   backgroundColor: accentColor.withValues(alpha: 0.18),
-                  backgroundImage: avatarPath != null ? FileImage(File(avatarPath)) : null,
+                  backgroundImage: avatarPath != null
+                      ? ResizeImage(FileImage(File(avatarPath)), width: 88)
+                      : null,
                   child: avatarPath == null
                       ? Text(
                           profileName.isNotEmpty ? profileName[0].toUpperCase() : '?',
