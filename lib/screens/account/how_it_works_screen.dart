@@ -59,9 +59,11 @@ class _HowItWorksScreenState extends State<HowItWorksScreen> {
         children: [
           // ── Introducción ─────────────────────────────────────────────────
           const _Lead(
-            'Krezium es tu registro financiero personal — 100 % local, sin cuentas, '
-            'sin internet y sin servidores. Todos tus datos viven únicamente en tu '
-            'dispositivo.',
+            'Krezium es tu registro financiero personal — 100 % local, sin cuentas '
+            'y sin servidores. Todos tus datos viven únicamente en tu dispositivo. '
+            'La única conexión a internet que usa la app es para revisar e '
+            'instalar actualizaciones (Cuenta → Buscar actualizaciones); nunca '
+            'para enviar ni sincronizar tus datos.',
           ),
           _Note(
             kredit: kredit,
@@ -293,8 +295,10 @@ class _HowItWorksScreenState extends State<HowItWorksScreen> {
             'progresivo antes de permitir un nuevo intento.\n\n'
             'El widget de pantalla de inicio muestra los montos ocultos por '
             'defecto. Puedes activar su visibilidad desde Cuenta → Seguridad.\n\n'
-            'Krezium no transmite ningún dato fuera del dispositivo. No existe '
-            'ninguna telemetría, analítica ni comunicación de red.',
+            'Krezium no transmite ningún dato tuyo fuera del dispositivo. No '
+            'existe telemetría ni analítica. La única comunicación de red de '
+            'toda la app es revisar/descargar actualizaciones (Cuenta → Buscar '
+            'actualizaciones) — no envía ni un solo dato tuyo en esa consulta.',
           ),
           Divider(height: 1, color: kredit.borderCard),
 

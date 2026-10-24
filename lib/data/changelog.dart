@@ -29,6 +29,14 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.7.0',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.nuevo,
+          'La app ya puede revisar si hay una versión nueva (Cuenta → Buscar actualizaciones, o automático al abrir) y descargarla e instalarla desde ahí mismo — tú sigues confirmando la instalación como siempre hace Android.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.6.0',
     date: 'Octubre 2026',
     changes: [

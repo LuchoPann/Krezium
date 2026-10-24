@@ -16,6 +16,7 @@ import 'screens/credits/credits_list_screen.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/stats/stats_screen.dart';
 import 'widgets/backup_restore_sheet.dart';
+import 'widgets/update_available_sheet.dart';
 import 'widgets/krezium_logo.dart';
 import 'widgets/whats_new_sheet.dart';
 import 'providers/app_lock_provider.dart';
@@ -183,6 +184,11 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
       });
       Future.delayed(const Duration(milliseconds: 1800), () {
         if (mounted) showBackupRestoreSheet(context, ref, onlyIfEmpty: true);
+      });
+      // Único chequeo de red de toda la app — silencioso si falla o no hay
+      // internet (la app sigue siendo 100% offline salvo por esto).
+      Future.delayed(const Duration(milliseconds: 2400), () {
+        if (mounted) checkAndShowUpdateSheet(context);
       });
       _loadPreferredEntorno();
     });

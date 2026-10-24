@@ -25,6 +25,7 @@ import '../../providers/widget_privacy_provider.dart';
 import '../../utils/nav_utils.dart';
 import '../../widgets/krezium_bottom_dialogs.dart';
 import '../../providers/entorno_provider.dart';
+import '../../widgets/update_available_sheet.dart';
 
 part 'account_screen_widgets.dart';
 
@@ -358,6 +359,13 @@ class AccountScreen extends ConsumerWidget {
                 ),
                 _Divider(kredit),
                 const _VersionTile(),
+                _Divider(kredit),
+                _SettingsTile(
+                  icon: Icons.system_update_outlined,
+                  title: 'Buscar actualizaciones',
+                  subtitle: 'Revisa si hay una versión nueva disponible',
+                  onTap: () => checkAndShowUpdateSheet(context, avisarSiNoHay: true),
+                ),
 
                 // ── ZONA DE RIESGO ──
                 _SectionDivider(label: 'Zona de riesgo', kredit: kredit, danger: true),
