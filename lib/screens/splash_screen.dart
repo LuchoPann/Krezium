@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_parsing/path_parsing.dart';
 
+import '../data/changelog.dart';
 import '../providers/credits_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
@@ -507,21 +508,52 @@ class _SplashContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return ColoredBox(
       color: bgColor,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _LogoAnimation(
-                segments: segments,
-                animation: logoAnim,
-                color: fgColor,
+      child: Stack(
+        children: [
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _LogoAnimation(
+                    segments: segments,
+                    animation: logoAnim,
+                    color: fgColor,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+          // Versión instalada, discreta — para comparar de un vistazo contra
+          // la que se espera tener, sin ser invasiva sobre el logo. Lee
+          // changelog.first.version (misma fuente síncrona que ya usa
+          // whats_new_sheet como fallback) en vez de PackageInfo para no
+          // introducir un parpadeo async justo en la pantalla que más
+          // importa mostrarla de entrada.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Center(
+                  child: Text(
+                    'v${changelog.first.version}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.3,
+                      color: fgColor.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
