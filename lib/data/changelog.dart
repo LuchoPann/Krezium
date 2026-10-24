@@ -29,14 +29,6 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
-    version: '2.7.0',
-    date: 'Octubre 2026',
-    changes: [
-      ChangeItem(ChangeType.nuevo,
-          'La app ya puede revisar si hay una versión nueva (Cuenta → Buscar actualizaciones, o automático al abrir) y descargarla e instalarla desde ahí mismo — tú sigues confirmando la instalación como siempre hace Android.'),
-    ],
-  ),
-  VersionEntry(
     version: '2.6.0',
     date: 'Octubre 2026',
     changes: [
@@ -48,6 +40,8 @@ const List<VersionEntry> changelog = [
           'El balance de un registro vuelve a mostrar primero el total real (con transferencias incluidas) — mostrarlo sin transferencias hacía que un registro que solo había recibido dinero se viera en \$0.'),
       ChangeItem(ChangeType.correccion,
           'El índice clicable de la guía "Cómo funciona Krezium" ya salta a cualquier sección, no solo a la primera.'),
+      ChangeItem(ChangeType.nuevo,
+          'La app ya puede revisar si hay una versión nueva (Cuenta → Buscar actualizaciones, o automático al abrir) y descargarla e instalarla desde ahí mismo — tú sigues confirmando la instalación como siempre hace Android.'),
     ],
   ),
   VersionEntry(
