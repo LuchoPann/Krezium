@@ -287,6 +287,13 @@ class _FinanzasLibroTransaccionesScreenState
       ref.invalidate(finanzasLibroTxProvider(cuentaId));
       ref.invalidate(financeAccountBalanceProvider(cuentaId));
     }
+    // financeTransactionsProvider (por mes, global entre registros) y
+    // allFinanceAccountBalancesProvider alimentan Presupuestos,
+    // Estadísticas y el encabezado de Registros — sin esto quedaban con
+    // el gasto/saldo de antes de borrar hasta reiniciar la app.
+    ref.invalidate(financeTransactionsProvider(tx.fecha.substring(0, 7)));
+    ref.invalidate(financeTransactionsProvider(null));
+    ref.invalidate(allFinanceAccountBalancesProvider);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transacción eliminada')),
@@ -302,6 +309,7 @@ class _FinanzasLibroTransaccionesScreenState
     final asyncTx = ref.watch(finanzasLibroTxProvider(_libroActual.id));
     final asyncLibros = ref.watch(financeAccountsProvider);
     final asyncCats = ref.watch(allFinanceCategoriesProvider);
+    final asyncMetas = ref.watch(allFinanceReservationsProvider);
     final colors = Theme.of(context).extension<AppThemeColors>()!;
 
     return Scaffold(
@@ -320,6 +328,9 @@ class _FinanzasLibroTransaccionesScreenState
           final catMap = asyncCats.valueOrNull != null
               ? {for (final c in asyncCats.valueOrNull!) c.id: c}
               : <String, CatalogoCategoria>{};
+          final goalNombrePorId = asyncMetas.valueOrNull != null
+              ? {for (final g in asyncMetas.valueOrNull!) g.id: g.nombre}
+              : <String, String>{};
 
           // Build list of slivers
           final slivers = <Widget>[];
@@ -528,6 +539,7 @@ class _FinanzasLibroTransaccionesScreenState
                                   // busque el padre solo en el catálogo
                                   // fijo estático.
                                   catPadre: catMap[catMap[tx.categoryId]?.parentId],
+                                  goalNombre: tx.goalId != null ? goalNombrePorId[tx.goalId] : null,
                                   onConfirmDismiss: () => _confirmarEliminar(context, tx),
                                   onDismissed: () => _eliminar(tx),
                                   onEditar: () => showNuevaTransaccionSheet(
@@ -554,6 +566,7 @@ class _FinanzasLibroTransaccionesScreenState
             onRefresh: () async {
               ref.invalidate(finanzasLibroTxProvider(_libroActual.id));
               ref.invalidate(financeAccountBalanceProvider(_libroActual.id));
+              ref.invalidate(allFinanceAccountBalancesProvider);
             },
             child: CustomScrollView(slivers: slivers),
           );
@@ -657,14 +670,16 @@ class _ResumenCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  // Protagonista: balance "limpio" (ingresos − gastos,
-                  // sin el ruido de plata que solo cambió de lugar entre
-                  // registros). La cifra con transferencias incluidas
-                  // queda como dato secundario debajo — pedido explícito
-                  // del usuario tras ver que el balance con transferencias
-                  // como protagonista no se sentía intuitivo.
+                  // Protagonista: el balance REAL del registro (incluye
+                  // transferencias) — mostrar aquí el balance "sin
+                  // transferencias" confundía más de lo que aclaraba: un
+                  // registro que solo había recibido una transferencia se
+                  // veía en $0 aunque de verdad tuviera esa plata adentro.
+                  // La línea "Transferencias" del panel derecho ya explica
+                  // de dónde sale la diferencia, sin necesitar una segunda
+                  // cifra de balance acá.
                   Text(
-                    formatCOP(balance - transferenciasNeto),
+                    formatCOP(balance),
                     style: TextStyle(
                       fontSize: AppTextSize.hero,
                       fontWeight: FontWeight.w800,
@@ -672,13 +687,6 @@ class _ResumenCard extends StatelessWidget {
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
-                  if (transferenciasNeto != 0) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'Con transferencias: ${formatCOP(balance)}',
-                      style: TextStyle(fontSize: AppTextSize.caption, color: colors.textTertiary),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -792,6 +800,7 @@ class _TxRow extends StatelessWidget {
   final String libroActualId;
   final CatalogoCategoria? cat;
   final CatalogoCategoria? catPadre;
+  final String? goalNombre;
   final Future<bool> Function() onConfirmDismiss;
   final VoidCallback onDismissed;
   final VoidCallback onEditar;
@@ -803,6 +812,7 @@ class _TxRow extends StatelessWidget {
     required this.libroActualId,
     required this.cat,
     required this.catPadre,
+    this.goalNombre,
     required this.onConfirmDismiss,
     required this.onDismissed,
     required this.onEditar,
@@ -817,7 +827,15 @@ class _TxRow extends StatelessWidget {
     final esTransferencia = tx.tipo == 'transferencia';
     final esTransferenciaEntrante =
         esTransferencia && tx.accountId != libroActualId;
-    final isIngreso = tx.tipo == 'ingreso' || esTransferenciaEntrante;
+    // Aporte/retiro de meta: plata real que sale/entra del registro hacia
+    // un ahorro, no un gasto ni un ingreso — mismo lenguaje visual que una
+    // transferencia (nunca cuenta en ingresos/gastos, ver
+    // calcularIngresosGastos/signedEffectForLibro), con su propio ícono
+    // para distinguirlo de una transferencia entre registros propios.
+    final esMeta = tx.tipo == 'meta_aporte' || tx.tipo == 'meta_retiro';
+    final esMetaAporte = tx.tipo == 'meta_aporte';
+    final nombreMeta = goalNombre ?? 'meta';
+    final isIngreso = tx.tipo == 'ingreso' || esTransferenciaEntrante || (esMeta && !esMetaAporte);
     // Una transferencia no es ni ingreso ni gasto — es plata que sigue
     // siendo tuya, solo cambia de registro. Pintarla roja con "-" (como
     // antes) se leía como una pérdida real, que no es lo que pasó. Pedido
@@ -827,17 +845,22 @@ class _TxRow extends StatelessWidget {
     // transferencia, aplicado también al ícono (reversa deliberada de
     // "colores solo en el monto", ver feedback_finanzas_color_restraint).
     const colorTransferencia = Color(0xFF3B82F6);
-    final accentColor = esTransferencia
-        ? colorTransferencia
-        : (isIngreso ? const Color(0xFF22C55E) : const Color(0xFFEF4444));
+    const colorMeta = Color(0xFF8B5CF6);
+    final accentColor = esMeta
+        ? colorMeta
+        : (esTransferencia
+            ? colorTransferencia
+            : (isIngreso ? const Color(0xFF22C55E) : const Color(0xFFEF4444)));
     final montoColor = accentColor;
-    final montoStr = esTransferencia
+    final montoStr = (esTransferencia || esMeta)
         ? formatCOP(tx.monto)
         : '${isIngreso ? '+' : '-'}${formatCOP(tx.monto)}';
 
-    final catNombre = !esTransferencia
-        ? (cat?.nombre ?? tx.categoryId)
-        : (esTransferenciaEntrante ? 'Transferencia recibida' : 'Transferencia enviada');
+    final catNombre = esMeta
+        ? (esMetaAporte ? 'Aporte a meta: $nombreMeta' : 'Retiro de meta: $nombreMeta')
+        : (!esTransferencia
+            ? (cat?.nombre ?? tx.categoryId)
+            : (esTransferenciaEntrante ? 'Transferencia recibida' : 'Transferencia enviada'));
 
     // La subcategoría es el título (protagonista de la fila); la categoría
     // padre pasa al subtítulo junto con nota y ordenante. catPadre viene
@@ -897,7 +920,9 @@ class _TxRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  esTransferencia ? Icons.swap_horiz : (cat?.icono ?? Icons.label_outline),
+                  esMeta
+                      ? Icons.savings_outlined
+                      : (esTransferencia ? Icons.swap_horiz : (cat?.icono ?? Icons.label_outline)),
                   size: AppIconSize.small,
                   color: accentColor,
                 ),

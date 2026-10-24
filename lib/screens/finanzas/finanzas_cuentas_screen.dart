@@ -997,7 +997,7 @@ class _LibroCard extends ConsumerWidget {
                               ),
                               error: (e, st) => const SizedBox(height: AppTextSize.emphasis),
                               data: (b) {
-                                final balance = b.saldoSinTransferencias;
+                                final balance = b.saldo;
                                 final positivo = balance >= 0;
                                 final balanceColor = positivo
                                     ? const Color(0xFF22C55E)

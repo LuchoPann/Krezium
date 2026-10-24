@@ -119,13 +119,16 @@ class FinanceTransaction {
   // Transporte). Nullable: por defecto cuenta contra el presupuesto de su
   // propia categoría, como siempre — ver gastoCategoriaPeriodo.
   final String? cargaPresupuestoCategoryId;
+  // FK a la meta (FinanceReservations) cuando tipo es 'meta_aporte' o
+  // 'meta_retiro' — null para transacciones normales.
+  final String? goalId;
 
   const FinanceTransaction({
     required this.id, required this.accountId, required this.categoryId,
     required this.tipo, required this.monto, required this.fecha,
     required this.nota, required this.esRecurrente, this.recurrenciaConfig,
     this.personaSitio, this.hora, this.transferToAccountId, this.revisionNota,
-    this.cargaPresupuestoCategoryId,
+    this.cargaPresupuestoCategoryId, this.goalId,
   });
 
   factory FinanceTransaction.fromRow(FinanceTransactionRow row) => FinanceTransaction(
@@ -143,6 +146,7 @@ class FinanceTransaction {
     transferToAccountId: row.transferToAccountId,
     revisionNota: row.revisionNota,
     cargaPresupuestoCategoryId: row.cargaPresupuestoCategoryId,
+    goalId: row.goalId,
   );
 
   Map<String, dynamic> toJson() => {
@@ -153,6 +157,7 @@ class FinanceTransaction {
     'transferToAccountId': transferToAccountId,
     'revisionNota': revisionNota,
     'cargaPresupuestoCategoryId': cargaPresupuestoCategoryId,
+    'goalId': goalId,
   };
 
   factory FinanceTransaction.fromJson(Map<String, dynamic> json) => FinanceTransaction(
@@ -170,6 +175,7 @@ class FinanceTransaction {
     transferToAccountId: json['transferToAccountId'] as String?,
     revisionNota: json['revisionNota'] as String?,
     cargaPresupuestoCategoryId: json['cargaPresupuestoCategoryId'] as String?,
+    goalId: json['goalId'] as String?,
   );
 }
 

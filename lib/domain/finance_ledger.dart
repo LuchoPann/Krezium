@@ -5,12 +5,24 @@ import 'package:krezium/data/models/finance_models.dart';
 /// Una transferencia resta en su registro de origen (accountId) y suma en
 /// su registro de destino (transferToAccountId) — nunca en ambos a la vez
 /// para el mismo [libroId], y nunca se cuenta como ingreso/gasto.
+///
+/// 'meta_aporte'/'meta_retiro': la plata SÍ sale/entra del saldo real del
+/// registro (accountId) — a diferencia de una reserva "virtual" de antes,
+/// un aporte a una meta mueve dinero de verdad, igual que una transferencia
+/// a otro registro, solo que el destino es una meta en vez de otra cuenta.
+/// Nunca cuenta como ingreso/gasto (ver calcularIngresosGastos).
 double signedEffectForLibro(FinanceTransaction t, String libroId) {
   if (t.tipo == 'transferencia') {
     if (t.accountId == t.transferToAccountId) return 0;
     if (t.accountId == libroId) return -t.monto;
     if (t.transferToAccountId == libroId) return t.monto;
     return 0;
+  }
+  if (t.tipo == 'meta_aporte') {
+    return t.accountId == libroId ? -t.monto : 0;
+  }
+  if (t.tipo == 'meta_retiro') {
+    return t.accountId == libroId ? t.monto : 0;
   }
   if (t.accountId != libroId) return 0;
   if (t.tipo == 'ingreso') return t.monto;

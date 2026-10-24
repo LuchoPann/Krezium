@@ -29,6 +29,20 @@ enum ChangeType { nuevo, mejora, correccion }
 
 const List<VersionEntry> changelog = [
   VersionEntry(
+    version: '2.6.0',
+    date: 'Octubre 2026',
+    changes: [
+      ChangeItem(ChangeType.correccion,
+          'Presupuestos: un gasto nuevo ya se refleja de inmediato en el consumo de su categoría — antes la pantalla quedaba con datos viejos hasta reiniciar la app.'),
+      ChangeItem(ChangeType.nuevo,
+          'Metas: aportar o retirar ahora mueve la plata de verdad (como una transferencia a tu ahorro) y queda visible en el historial del registro — antes el dinero "salía de la nada" sin dejar rastro. Las metas virtuales eligen de/hacia qué registro mover la plata en cada aporte.'),
+      ChangeItem(ChangeType.mejora,
+          'El balance de un registro vuelve a mostrar primero el total real (con transferencias incluidas) — mostrarlo sin transferencias hacía que un registro que solo había recibido dinero se viera en \$0.'),
+      ChangeItem(ChangeType.correccion,
+          'El índice clicable de la guía "Cómo funciona Krezium" ya salta a cualquier sección, no solo a la primera.'),
+    ],
+  ),
+  VersionEntry(
     version: '2.5.5',
     date: 'Octubre 2026',
     changes: [

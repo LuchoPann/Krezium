@@ -72,6 +72,26 @@ void main() {
       final t = _tx(accountId: 'A', tipo: 'ingreso', monto: 100);
       expect(signedEffectForLibro(t, 'Z'), 0);
     });
+
+    test('meta_aporte: resta del saldo del registro de origen', () {
+      final t = _tx(accountId: 'A', tipo: 'meta_aporte', monto: 20);
+      expect(signedEffectForLibro(t, 'A'), -20);
+    });
+
+    test('meta_aporte: no afecta a otro registro', () {
+      final t = _tx(accountId: 'A', tipo: 'meta_aporte', monto: 20);
+      expect(signedEffectForLibro(t, 'B'), 0);
+    });
+
+    test('meta_retiro: suma de vuelta al saldo del registro', () {
+      final t = _tx(accountId: 'A', tipo: 'meta_retiro', monto: 20);
+      expect(signedEffectForLibro(t, 'A'), 20);
+    });
+
+    test('meta_retiro: no afecta a otro registro', () {
+      final t = _tx(accountId: 'A', tipo: 'meta_retiro', monto: 20);
+      expect(signedEffectForLibro(t, 'B'), 0);
+    });
   });
 
   group('calcularSaldo', () {
@@ -98,6 +118,17 @@ void main() {
       final r = calcularIngresosGastos(txs, 'A');
       expect(r.ingresos, 100);
       expect(r.gastos, 40);
+    });
+
+    test('aportes/retiros de metas no cuentan como ingreso ni como gasto', () {
+      final txs = [
+        _tx(accountId: 'A', tipo: 'ingreso', monto: 100),
+        _tx(accountId: 'A', tipo: 'meta_aporte', monto: 20),
+        _tx(accountId: 'A', tipo: 'meta_retiro', monto: 5),
+      ];
+      final r = calcularIngresosGastos(txs, 'A');
+      expect(r.ingresos, 100);
+      expect(r.gastos, 0);
     });
   });
 

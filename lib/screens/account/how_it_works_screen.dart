@@ -46,6 +46,15 @@ class _HowItWorksScreenState extends State<HowItWorksScreen> {
       appBar: AppBar(title: const Text('Cómo funciona Krezium')),
       body: ListView(
         controller: _scrollController,
+        // Sin esto, los slivers de ListView solo montan las secciones
+        // cercanas al viewport — las GlobalKey de las secciones lejanas
+        // (ej. Presupuestos, Finanzas) nunca se adjuntan a un contexto
+        // real, así que el índice clicable las saltaba en silencio (solo
+        // la primera sección, pegada al índice, llegaba a montarse a
+        // tiempo). Esta guía es texto fijo y finito — montarla completa
+        // de una vez no tiene el costo que sí tendría en una lista larga
+        // de datos reales (transacciones, créditos, etc.).
+        cacheExtent: 20000,
         padding: const EdgeInsets.all(AppSpacing.card),
         children: [
           // ── Introducción ─────────────────────────────────────────────────
@@ -486,15 +495,31 @@ class _HowItWorksScreenState extends State<HowItWorksScreen> {
           // F6 ── Metas ──────────────────────────────────────────────────────
           _SectionTitle(key: _sectionKeys['f6'], number: '6', title: 'Metas de ahorro'),
           const _Body(
-            'Aparta dinero para un objetivo (monto meta y, opcionalmente, fecha '
-            'límite). Una meta "vinculada" vive dentro del saldo de un registro '
-            'puntual; una meta "virtual" descuenta del disponible global, sin '
-            'atarse a ningún registro. En ambos casos, lo reservado para una meta '
-            'se resta del "disponible estimado" aunque siga contando como parte '
-            'del saldo real.\n\n'
-            'Puedes aportar o retirar dinero de una meta en cualquier momento; '
-            'cancelarla libera lo reservado, finalizarla lo mantiene apartado '
-            'hasta que lo retires explícitamente.',
+            'Una meta es una "hucha" dentro de la app: aportar le mueve plata '
+            'de verdad desde un registro — igual que una transferencia a otro '
+            'registro, solo que el destino es la meta — así que esa plata deja '
+            'de verse en el balance del registro mientras esté guardada, y el '
+            'aporte queda visible en su historial. Retirar hace lo inverso: la '
+            'plata vuelve a sumar al balance del registro elegido.',
+          ),
+          const _SubSection(title: 'Vinculada a un registro'),
+          const _Body(
+            'Siempre aporta/retira del mismo registro, elegido al crear la '
+            'meta — no se puede cambiar después sin mover la reserva.',
+          ),
+          const _SubSection(title: 'Virtual (sin registro fijo)'),
+          const _Body(
+            'No queda atada a un registro: cada vez que aportas o retiras, '
+            'eliges de/hacia cuál registro se mueve la plata en ese momento '
+            '— útil si guardas desde el que tengas disponible cada vez.',
+          ),
+          const _SubSection(title: 'Cerrar una meta'),
+          const _Body(
+            'Completarla o cancelarla pregunta qué hacer con lo guardado: '
+            '"Gastar ahora" simplemente cierra la meta (la plata ya salió del '
+            'registro cuando se aportó, gastarla no resta nada de nuevo); '
+            '"Mantener en un registro" la devuelve como saldo normal de la '
+            'cuenta que elijas.',
           ),
           Divider(height: 1, color: kredit.borderCard),
 

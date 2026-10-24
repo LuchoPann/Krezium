@@ -61,6 +61,15 @@ class FinanceTransactions extends Table {
   // cuenta contra el presupuesto de su propia categoría, como siempre.
   TextColumn get cargaPresupuestoCategoryId => text().nullable()();
 
+  // FK a FinanceReservations (metas) cuando tipo es 'meta_aporte' o
+  // 'meta_retiro' — permite mostrar "Aporte a meta: <nombre>" en el
+  // historial y rastrear de qué movimiento salió/entró la plata de una
+  // meta. Null para transacciones normales. onDelete setNull: si se borra
+  // la meta, el movimiento queda en el historial pero ya sin el vínculo
+  // (nunca se borra el historial de dinero real del usuario).
+  TextColumn get goalId => text().nullable()
+      .references(FinanceReservations, #id, onDelete: KeyAction.setNull)();
+
   @override
   Set<Column> get primaryKey => {id};
 }

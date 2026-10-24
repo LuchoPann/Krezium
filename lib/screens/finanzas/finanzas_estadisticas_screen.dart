@@ -389,7 +389,7 @@ class _FinanzasEstadisticasScreenState
           // Mientras el provider carga/falla, se usa tot.balance como
           // fallback visual.
           final balanceTarjeta = balanceOficial?.maybeWhen(
-                data: (b) => b.saldoSinTransferencias,
+                data: (b) => b.saldo,
                 orElse: () => tot.balance,
               ) ??
               tot.balance;

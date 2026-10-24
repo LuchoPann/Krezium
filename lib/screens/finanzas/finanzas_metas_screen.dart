@@ -8,7 +8,6 @@ import 'package:krezium/data/models/finance_models.dart';
 import 'package:krezium/domain/finance_goal.dart';
 import 'package:krezium/providers/database_provider.dart';
 import 'package:krezium/providers/finance_provider.dart';
-import 'package:krezium/screens/finanzas/nueva_transaccion_sheet.dart';
 import 'package:krezium/theme/app_theme.dart';
 import 'package:krezium/utils/credit_display_utils.dart';
 import 'package:krezium/utils/monto_input_formatter.dart';
@@ -340,31 +339,21 @@ class _FinanzasMetasScreenState extends ConsumerState<FinanzasMetasScreen> {
     final nuevoEstado = tipoCierre == 'finalizar' ? 'finalizada' : 'cancelada';
 
     if (eleccion == 'gastar') {
-      String? libroDestino = meta.accountId;
-      if (libroDestino == null) {
-        // Meta virtual: no tiene cuenta propia, hay que elegir dónde se
-        // refleja el gasto.
-        libroDestino = await _elegirCuentaSimple(context, cuentas);
-        if (libroDestino == null || !context.mounted) return;
+      // La plata de la meta ya salió de verdad del registro con cada
+      // aporte (meta_aporte) — "gastarla ahora" no debe crear un gasto
+      // adicional que la reste otra vez; eso duplicaría el descuento. Acá
+      // solo se cierra la meta: el dinero ya está fuera del balance desde
+      // que se aportó, que es justo lo que significa haberlo gastado.
+      final db = ref.read(databaseProvider);
+      await db.upsertFinanceReservation(FinanceReservationsCompanion(
+        id: Value(meta.id), accountId: Value(meta.accountId), nombre: Value(meta.nombre),
+        monto: const Value(0), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
+        fechaLimite: Value(meta.fechaLimite), estado: Value(nuevoEstado),
+      ));
+      ref.invalidate(allFinanceReservationsProvider);
+      if (meta.accountId != null) {
+        ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
       }
-      await showNuevaTransaccionSheet(
-        context,
-        libroId: libroDestino,
-        tipoInicial: 'gasto',
-        montoInicial: meta.monto,
-        onGuardado: () {
-          final db = ref.read(databaseProvider);
-          db.upsertFinanceReservation(FinanceReservationsCompanion(
-            id: Value(meta.id), accountId: Value(meta.accountId), nombre: Value(meta.nombre),
-            monto: const Value(0), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
-            fechaLimite: Value(meta.fechaLimite), estado: Value(nuevoEstado),
-          ));
-          ref.invalidate(allFinanceReservationsProvider);
-          if (meta.accountId != null) {
-            ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
-          }
-        },
-      );
     } else if (eleccion == 'mantener') {
       final destino = await _elegirRegistroDestino(context, ref, cuentas, meta.accountId);
       if (destino == null || !context.mounted) return;
@@ -390,52 +379,6 @@ class _FinanzasMetasScreenState extends ConsumerState<FinanzasMetasScreen> {
         ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
       }
     }
-  }
-
-  /// Selector simple de cuenta (sin opción de crear) — usado para "gastar
-  /// ahora" cuando la meta es virtual y no tiene cuenta propia.
-  static Future<String?> _elegirCuentaSimple(BuildContext context, List<FinanceAccount> cuentas) {
-    return showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final tc = Theme.of(ctx).extension<AppThemeColors>()!;
-        return Material(
-          color: Theme.of(ctx).scaffoldBackgroundColor,
-          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-          clipBehavior: Clip.antiAlias,
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('¿En qué registro?', style: TextStyle(fontSize: AppTextSize.heading, fontWeight: FontWeight.w700, color: tc.textPrimary)),
-                  ),
-                ),
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final c in cuentas)
-                        ListTile(
-                          leading: Icon(iconFromKey(c.icono), color: _colorFromHex(c.color)),
-                          title: Text(c.nombre),
-                          onTap: () => Navigator.of(ctx).pop(c.id),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   /// Selector para "mantener en un registro": el actual (si la meta es
@@ -863,8 +806,8 @@ class _MetaFormSheetState extends ConsumerState<_MetaFormSheet> {
                 const SizedBox(height: 4),
                 Text(
                   _esVirtual
-                      ? 'Descuenta del disponible global (todas las cuentas), no de un registro puntual.'
-                      : 'Descuenta del disponible del registro elegido.',
+                      ? 'Cada aporte te pregunta de qué registro sale la plata — no queda fija a uno solo.'
+                      : 'Cada aporte sale de verdad de este registro, como una transferencia a tu ahorro.',
                   style: TextStyle(fontSize: AppTextSize.caption, color: tc.textTertiary),
                 ),
                 if (!_esVirtual) ...[
@@ -1009,6 +952,19 @@ class _AportarRetirarSheetState extends ConsumerState<_AportarRetirarSheet> {
     text: widget.montoInicial != null ? agruparMiles(widget.montoInicial!.round()) : '',
   );
   bool _guardando = false;
+  // Meta vinculada: siempre la misma cuenta, no se elige. Meta virtual: no
+  // tiene cuenta fija — cada aporte/retiro elige de/hacia cuál registro se
+  // mueve la plata en ese momento puntual (pedido explícito del usuario:
+  // "cada vez que aporte desde el que tenga plata disponible").
+  String? _cuentaId;
+
+  bool get _esVirtual => widget.meta.accountId == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _cuentaId = widget.meta.accountId;
+  }
 
   @override
   void dispose() {
@@ -1025,6 +981,7 @@ class _AportarRetirarSheetState extends ConsumerState<_AportarRetirarSheet> {
   bool get _valido {
     final m = _monto;
     if (m == null) return false;
+    if (_cuentaId == null) return false;
     return widget.esAporte
         ? puedeAportar(m)
         : puedeRetirar(monto: m, aportado: widget.meta.monto);
@@ -1032,11 +989,13 @@ class _AportarRetirarSheetState extends ConsumerState<_AportarRetirarSheet> {
 
   Future<void> _confirmar() async {
     final m = _monto;
-    if (m == null || !_valido) return;
+    final cuentaId = _cuentaId;
+    if (m == null || cuentaId == null || !_valido) return;
     setState(() => _guardando = true);
     final meta = widget.meta;
     final nuevoMonto = widget.esAporte ? meta.monto + m : meta.monto - m;
     final db = ref.read(databaseProvider);
+    final ahora = DateTime.now();
     await db.upsertFinanceReservation(FinanceReservationsCompanion(
           id: Value(meta.id), accountId: Value(meta.accountId), nombre: Value(meta.nombre),
           monto: Value(nuevoMonto), creadaEn: Value(meta.creadaEn), montoObjetivo: Value(meta.montoObjetivo),
@@ -1049,14 +1008,35 @@ class _AportarRetirarSheetState extends ConsumerState<_AportarRetirarSheet> {
       goalId: meta.id,
       tipo: widget.esAporte ? 'aporte' : 'retiro',
       monto: m,
-      fecha: DateTime.now().toIso8601String(),
+      fecha: ahora.toIso8601String(),
       saldoResultante: nuevoMonto,
+    ));
+    // El aporte/retiro mueve plata de verdad del registro elegido — igual
+    // que una transferencia a otro registro, solo que el "destino" es la
+    // meta. Antes esto solo restaba del "disponible estimado" sin dejar
+    // rastro en el historial, así que el dinero "salía de la nada" desde
+    // el punto de vista del registro — pedido explícito del usuario tras
+    // probar la app en vivo.
+    final fechaStr =
+        '${ahora.year}-${ahora.month.toString().padLeft(2, '0')}-${ahora.day.toString().padLeft(2, '0')}';
+    await db.upsertFinanceTransaction(FinanceTransactionsCompanion.insert(
+      id: const Uuid().v4(),
+      accountId: cuentaId,
+      categoryId: '_meta_ahorro',
+      tipo: widget.esAporte ? 'meta_aporte' : 'meta_retiro',
+      monto: m,
+      fecha: fechaStr,
+      hora: Value(
+          '${ahora.hour.toString().padLeft(2, '0')}:${ahora.minute.toString().padLeft(2, '0')}'),
+      goalId: Value(meta.id),
     ));
     ref.invalidate(allFinanceReservationsProvider);
     ref.invalidate(financeGoalMovementsProvider(meta.id));
-    if (meta.accountId != null) {
-      ref.invalidate(financeAccountBalanceProvider(meta.accountId!));
-    }
+    ref.invalidate(finanzasLibroTxProvider(cuentaId));
+    ref.invalidate(allFinanceAccountBalancesProvider);
+    ref.invalidate(financeTransactionsProvider(fechaStr.substring(0, 7)));
+    ref.invalidate(financeTransactionsProvider(null));
+    ref.invalidate(financeAccountBalanceProvider(cuentaId));
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -1082,10 +1062,36 @@ class _AportarRetirarSheetState extends ConsumerState<_AportarRetirarSheet> {
               const SizedBox(height: 4),
               Text(
                 widget.esAporte
-                    ? 'No es un ingreso: el dinero ya está en el registro, solo se aparta.'
+                    ? 'No es un gasto: la plata sigue siendo tuya, solo se mueve a tu ahorro.'
                     : 'Disponible para retirar: ${formatCOP(widget.meta.monto)}',
                 style: TextStyle(fontSize: AppTextSize.caption, color: tc.textSecondary),
               ),
+              if (_esVirtual) ...[
+                const SizedBox(height: AppSpacing.tile),
+                Text(
+                  widget.esAporte ? 'Desde qué registro' : 'Hacia qué registro',
+                  style: TextStyle(fontSize: AppTextSize.caption, fontWeight: FontWeight.w700, color: tc.textTertiary),
+                ),
+                const SizedBox(height: 6),
+                Consumer(builder: (context, ref, _) {
+                  final cuentasAsync = ref.watch(financeAccountsProvider);
+                  return cuentasAsync.when(
+                    loading: () => const LinearProgressIndicator(),
+                    error: (e, st) => Text('Error: $e'),
+                    data: (rows) {
+                      final cuentas = rows.map(FinanceAccount.fromRow).toList();
+                      return DropdownButtonFormField<String>(
+                        initialValue: _cuentaId,
+                        items: cuentas
+                            .map((c) => DropdownMenuItem(value: c.id, child: Text(c.nombre)))
+                            .toList(),
+                        onChanged: (v) => setState(() => _cuentaId = v),
+                        decoration: const InputDecoration(hintText: 'Elige un registro'),
+                      );
+                    },
+                  );
+                }),
+              ],
               const SizedBox(height: AppSpacing.section),
               TextFormField(
                 controller: _montoCtrl,

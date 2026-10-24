@@ -60,7 +60,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 24;
+  int get schemaVersion => 25;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -355,6 +355,12 @@ class AppDatabase extends _$AppDatabase {
             } catch (_) {
               await customStatement(
                   'CREATE INDEX IF NOT EXISTS idx_finance_budgets_key ON finance_budgets(category_id, anio, mes)');
+            }
+          }
+          if (from < 25) {
+            final txCols = await colsOf('finance_transactions');
+            if (!txCols.contains('goal_id')) {
+              await m.addColumn(financeTransactions, financeTransactions.goalId);
             }
           }
         },

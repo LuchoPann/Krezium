@@ -327,6 +327,21 @@ class _NuevaTransaccionSheetState
         ref.invalidate(finanzasLibroTxProvider(cuentaId));
         ref.invalidate(financeAccountBalanceProvider(cuentaId));
       }
+      // financeTransactionsProvider (por mes, global entre registros) es
+      // lo que leen Presupuestos y Estadísticas — sin esto, un gasto
+      // nuevo nunca aparecía reflejado en el consumo del presupuesto de
+      // su categoría hasta reiniciar la app. allFinanceAccountBalancesProvider
+      // alimenta el encabezado y las tarjetas de la lista de registros.
+      final mesesTocados = <String>{
+        '${_fecha.year}-${_fecha.month.toString().padLeft(2, '0')}',
+        if (widget.editar != null)
+          widget.editar!.fecha.substring(0, 7),
+      };
+      for (final mes in mesesTocados) {
+        ref.invalidate(financeTransactionsProvider(mes));
+      }
+      ref.invalidate(financeTransactionsProvider(null));
+      ref.invalidate(allFinanceAccountBalancesProvider);
       if (ordenante.isNotEmpty) ref.invalidate(financePlacesProvider);
 
       await HapticFeedback.mediumImpact();
